@@ -4,3 +4,5 @@
 runtime/**/*.lua -text whitespace=cr-at-eol
 runtime/**/*.reds -text whitespace=cr-at-eol
 runtime/**/*.yaml -text whitespace=cr-at-eol
+
+*.sh text eol=lf

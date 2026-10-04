@@ -1,0 +1,38 @@
+name: Windows and Linux builds
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (fetch pinned SDK)
+        run: cmake -S . -B build/windows -A x64 -DCOOP_BUILD_PLUGIN=ON
+      - name: Build
+        run: cmake --build build/windows --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build/windows -C Release --output-on-failure
+  debian:
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - name: Toolchain
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build g++
+      - uses: actions/checkout@v4
+      - name: Build and test portable core
+        run: bash scripts/build.sh
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build/sanitizers -DCMAKE_BUILD_TYPE=Debug -DCOOP_BUILD_LEGACY_SERVER=OFF -DCOOP_SANITIZE=ON
+      - name: Build
+        run: cmake --build build/sanitizers --parallel
+      - name: Test
+        run: ctest --test-dir build/sanitizers --output-on-failure

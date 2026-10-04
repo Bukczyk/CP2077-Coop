@@ -69,3 +69,6 @@ Automated gates cover codec fixtures, malformed/fuzzed input, authority rejectio
 
 ## Runtime import update
 The installed bridge is now captured under runtime/ with exact hashes. Its Lua v0.0.26 confirms vehicle markers -666/8888, Caliburn proxy interpolation and manual IS_HOST configuration. Combat matches nearby NPCs by position; remote.reds spawns a Judy proxy; natives.reds declares the existing eight functions. This supersedes the baseline audit's missing-source observation. No runtime behavior was changed during import.
+
+## Stage 2 implementation
+Root CMake now builds a platform-independent shared protocol/session library and headless tests. The implemented subset and exact envelope are in docs/PROTOCOL.md. It enforces trusted connection bindings, HOST authority, owned entities, bounded sessions and sequence/event ordering. Admission remains an in-process API; authentication, actual reliable transport and snapshot transfer are stage 3. The game plugin and legacy Windows relay are not wired to this core. CMake pins the RED4ext SDK; Windows, Debian and sanitizer CI validate the build.

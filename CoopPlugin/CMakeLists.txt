@@ -1,18 +1,10 @@
-cmake_minimum_required(VERSION 3.20)
-
+cmake_minimum_required(VERSION 3.21)
 project(CP2077Coop LANGUAGES CXX)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-add_subdirectory("../RED4ext.SDK" RED4ext.SDK)
-
-add_library(${PROJECT_NAME} SHARED
-    src/main.cpp
-)
-
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    RED4ext::SDK
-    ws2_32
-)
+if(NOT WIN32)
+    message(FATAL_ERROR "CP2077Coop plugin requires Windows")
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../build-support/RED4ext.cmake")
+add_library(CP2077Coop SHARED src/main.cpp)
+target_link_libraries(CP2077Coop PRIVATE RED4ext::SDK ws2_32)

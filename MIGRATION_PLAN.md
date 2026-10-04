@@ -43,3 +43,13 @@ Agent owns edits, builds, tests, error repair, scoped commits and preparation of
 
 ## Baseline validation
 2026-10-04: `cmake --build CoopPlugin/build --config Release` and `cmake --build CoopServer/build --config Release` passed with MSBuild 18.11.0. Produced CP2077Coop.dll and CP2077CoopServer.exe. No gameplay changes in this milestone; no in-game test required yet. Debian compilation and fresh-clone dependency setup remain unverified.
+
+## Stage 2 progress (2026-10-04)
+- [x] Import installed runtime with source/destination hashes; no game writes.
+- [x] Root CMake, optional pinned SDK/plugin, portable core, build scripts and CI definitions.
+- [x] Exact binary envelope, 12 typed messages across control/player/vehicle/combat/world, strict codec and golden fixtures.
+- [x] Trusted connection/member binding, HOST authority, bounded sessions/entities, ownership, ordered events, snapshot sequences, expiry/rejoin/world epochs.
+- [x] Local fresh Windows configure/build of plugin, legacy relay and core; all three CTest suites pass.
+- [ ] Confirm fresh Windows SDK bootstrap, Debian and sanitizer CI after push.
+
+The implemented foundation is detailed in docs/PROTOCOL.md. Session creation/admission are trusted in-process APIs; wire authentication, reliable retry scheduling, snapshot transfer and the Debian network service remain stage 3. No game test or deployment is requested in this stage.

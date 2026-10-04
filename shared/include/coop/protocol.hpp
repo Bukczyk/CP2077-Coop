@@ -1,0 +1,113 @@
+#pragma once
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <variant>
+#include <vector>
+
+namespace coop {
+using SessionId = std::uint64_t;
+using PlayerId = std::uint32_t;
+using EntityId = std::uint64_t;
+constexpr std::uint16_t kProtocolVersion = 1;
+constexpr std::size_t kHeaderSize = 40;
+constexpr std::size_t kMaxPacketSize = 1200;
+
+enum class PacketType : std::uint16_t {
+    Heartbeat = 1, Leave = 2, Ack = 3,
+    PlayerPose = 0x100, PlayerState = 0x101,
+    VehicleInput = 0x200, VehicleState = 0x201,
+    HitRequest = 0x300, DamageApplied = 0x301,
+    EntitySpawn = 0x400, EntityDespawn = 0x401, WorldState = 0x402
+};
+enum class EntityKind : std::uint8_t { Player = 1, Vehicle = 2, World = 3 };
+struct Header {
+    SessionId session = 0;
+    std::uint32_t epoch = 0;
+    PlayerId sender = 0;
+    std::uint32_t sequence = 0;
+    std::uint64_t event = 0;
+    bool operator==(const Header&) const = default;
+};
+struct Vec3 {
+    float x = 0, y = 0, z = 0;
+    bool operator==(const Vec3&) const = default;
+};
+// Euler angles in radians; rotation is never a packet discriminator.
+struct Transform {
+    Vec3 position{}, rotation{};
+    bool operator==(const Transform&) const = default;
+};
+struct Heartbeat { bool operator==(const Heartbeat&) const = default; };
+struct Leave { bool operator==(const Leave&) const = default; };
+struct Ack {
+    std::uint64_t event = 0;
+    bool operator==(const Ack&) const = default;
+};
+struct PlayerPose {
+    EntityId entity = 0;
+    Transform transform{};
+    bool operator==(const PlayerPose&) const = default;
+};
+struct PlayerState {
+    EntityId entity = 0;
+    Transform transform{};
+    bool operator==(const PlayerState&) const = default;
+};
+struct VehicleInput {
+    EntityId entity = 0;
+    float throttle = 0, steering = 0, brake = 0;
+    bool operator==(const VehicleInput&) const = default;
+};
+struct VehicleState {
+    EntityId entity = 0;
+    Transform transform{};
+    bool operator==(const VehicleState&) const = default;
+};
+struct HitRequest {
+    EntityId attacker = 0, target = 0;
+    float proposedDamage = 0;
+    bool operator==(const HitRequest&) const = default;
+};
+struct DamageApplied {
+    EntityId attacker = 0, target = 0;
+    float damage = 0;
+    std::uint64_t request = 0;
+    bool operator==(const DamageApplied&) const = default;
+};
+struct EntitySpawn {
+    EntityId entity = 0;
+    EntityKind kind = EntityKind::World;
+    PlayerId owner = 0;
+    Transform transform{};
+    bool operator==(const EntitySpawn&) const = default;
+};
+struct EntityDespawn {
+    EntityId entity = 0;
+    bool operator==(const EntityDespawn&) const = default;
+};
+struct WorldState {
+    EntityId entity = 0;
+    Transform transform{};
+    bool operator==(const WorldState&) const = default;
+};
+using Payload = std::variant<Heartbeat, Leave, Ack, PlayerPose, PlayerState,
+    VehicleInput, VehicleState, HitRequest, DamageApplied, EntitySpawn, EntityDespawn, WorldState>;
+struct Packet {
+    Header header{};
+    Payload payload{};
+    bool operator==(const Packet&) const = default;
+};
+enum class CodecError { None, Size, Magic, Version, Type, Length, InvalidValue };
+struct DecodeResult {
+    std::optional<Packet> packet;
+    CodecError error = CodecError::None;
+    explicit operator bool() const { return packet.has_value(); }
+};
+PacketType TypeOf(const Payload& payload);
+bool IsReliable(PacketType type);
+bool IsNewer(std::uint32_t candidate, std::uint32_t previous);
+bool Validate(const Packet& packet);
+std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet);
+DecodeResult Decode(std::span<const std::uint8_t> bytes);
+} // namespace coop
