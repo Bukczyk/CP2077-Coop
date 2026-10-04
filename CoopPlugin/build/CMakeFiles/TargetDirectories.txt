@@ -1,5 +1,0 @@
-D:/CP2077-Coop/CoopPlugin/build/CMakeFiles/CP2077Coop.dir
-D:/CP2077-Coop/CoopPlugin/build/CMakeFiles/ALL_BUILD.dir
-D:/CP2077-Coop/CoopPlugin/build/CMakeFiles/ZERO_CHECK.dir
-D:/CP2077-Coop/CoopPlugin/build/RED4ext.SDK/CMakeFiles/RED4ext.SDK.dir
-D:/CP2077-Coop/CoopPlugin/build/RED4ext.SDK/CMakeFiles/ALL_BUILD.dir

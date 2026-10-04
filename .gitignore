@@ -399,3 +399,13 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# CP2077 Coop local dependencies / generated files
+RED4ext.SDK/
+RedLib/
+CMakeCache.txt
+CMakeFiles/
+**/build/
+**/Debug/
+**/Release/
+*.pdb
