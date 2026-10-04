@@ -50,6 +50,14 @@ Agent owns edits, builds, tests, error repair, scoped commits and preparation of
 - [x] Exact binary envelope, 12 typed messages across control/player/vehicle/combat/world, strict codec and golden fixtures.
 - [x] Trusted connection/member binding, HOST authority, bounded sessions/entities, ownership, ordered events, snapshot sequences, expiry/rejoin/world epochs.
 - [x] Local fresh Windows configure/build of plugin, legacy relay and core; all three CTest suites pass.
-- [ ] Confirm fresh Windows SDK bootstrap, Debian and sanitizer CI after push.
+- [x] Confirm fresh Windows SDK bootstrap, Debian and sanitizer CI after push (run 37232411396, code commit 6d6ac0034e566468ad7425592014ce2387ba91b9).
 
 The implemented foundation is detailed in docs/PROTOCOL.md. Session creation/admission are trusted in-process APIs; wire authentication, reliable retry scheduling, snapshot transfer and the Debian network service remain stage 3. No game test or deployment is requested in this stage.
+
+## Verified stage 2 build evidence
+[GitHub Actions run 37232411396](https://github.com/Bukczyk/CP2077-Coop/actions/runs/37232411396) passed all jobs for code commit 6d6ac0034e566468ad7425592014ce2387ba91b9:
+- Windows fresh SDK fetch, Release plugin/legacy relay/core build and 3/3 CTest suites.
+- Debian bookworm, GCC 12.2: portable core build and 3/3 CTest suites.
+- Linux GCC 13.3 with ASan/UBSan: build and 3/3 CTest suites.
+
+Local Windows MSVC 19.51 Release also passed all three suites. Final read-only verification matched all five game source files and repository copies to import-manifest.json. No installation, game file edits or gameplay tests were performed. This evidence completes the stage 2 foundation checks; it does not certify the future network service or v0.1.0 gameplay release.
