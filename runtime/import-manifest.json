@@ -1,0 +1,27 @@
+[
+  {
+    "source": "bin/x64/plugins/cyber_engine_tweaks/mods/CP2077Coop/init.lua",
+    "target": "runtime/cet/CP2077Coop/init.lua",
+    "sha256": "FBB4DB53CE1D0FC593260588F0B595C217FC4A210DC3D896662129BEA609953D"
+  },
+  {
+    "source": "r6/scripts/CP2077Coop/remote.reds",
+    "target": "runtime/redscript/CP2077Coop/remote.reds",
+    "sha256": "3BAF86243D781C4903C1357A501EC67632542679A7F164B081535A686A265CC6"
+  },
+  {
+    "source": "r6/scripts/CP2077Coop/combat.reds",
+    "target": "runtime/redscript/CP2077Coop/combat.reds",
+    "sha256": "ED3902BEE815195885FB30EBCDB7D5A2748BA6C8CCC0593AF516257D199EE4F9"
+  },
+  {
+    "source": "r6/scripts/CP2077Coop/natives.reds",
+    "target": "runtime/redscript/CP2077Coop/natives.reds",
+    "sha256": "A2322929205AAAF5BEFEE74062F0D94B08393C5D89C2E8239C5D4052363995F5"
+  },
+  {
+    "source": "r6/tweaks/CP2077Coop/vehicle_proxy_v7.yaml",
+    "target": "runtime/tweaks/CP2077Coop/vehicle_proxy.yaml",
+    "sha256": "D580AFED3682A47A574A8E3F942EEB5059ABE5CEC7A6B57D700F31576D97F68D"
+  }
+]

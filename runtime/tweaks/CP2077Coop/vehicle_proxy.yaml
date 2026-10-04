@@ -1,0 +1,5 @@
+# CP2077 Coop - Vehicle Proxy Probe v7
+# Use a vanilla Caliburn record that exists during TweakXL load.
+
+Vehicle.CP2077CoopProxyCaliburn:
+  $base: Vehicle.v_sport1_rayfield_caliburn_player

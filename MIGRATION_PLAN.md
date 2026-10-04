@@ -6,7 +6,7 @@ The current milestone is architecture preparation, not a completed runtime migra
 - [x] Review tracked plugin/server sources, build definitions, ignore rules and local dependencies.
 - [x] Add AGENTS.md and ARCHITECTURE.md with authority rules and known gaps.
 - [x] Build existing plugin and Windows relay in Release successfully.
-- [ ] Recover and track the actual CET/REDscript bridge and configuration templates. Search accessible game installation/archives before asking the user; do not invent missing behavior.
+- [x] Import five installed runtime sources under runtime/ with SHA-256 provenance; vehicle_proxy_v7.yaml is tracked as vehicle_proxy.yaml. Configuration templates remain part of client migration.
 
 ## 1. Reproducible foundation
 Add root CMake targets for shared protocol/session core, server, tests and optional Windows plugin. Pin RED4ext.SDK revision with a documented bootstrap mechanism; do not require the SDK for Linux server builds. Add build/check scripts and Windows/Linux CI. Keep legacy targets available until cutover.

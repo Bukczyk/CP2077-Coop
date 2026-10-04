@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+runtime/**/*.lua -text whitespace=cr-at-eol
+runtime/**/*.reds -text whitespace=cr-at-eol
+runtime/**/*.yaml -text whitespace=cr-at-eol

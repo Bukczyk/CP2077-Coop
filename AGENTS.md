@@ -24,4 +24,4 @@ cmake --build CoopServer/build --config Release
 
 Outputs: CoopPlugin/build/Release/CP2077Coop.dll and CoopServer/build/Release/CP2077CoopServer.exe. The latter is currently Windows-only, not the target Debian server.
 
-RED4ext.SDK and RedLib are ignored local checkouts, not reproducible dependencies yet. RED4ext.SDK is linked; RedLib is not used by current targets. Do not modify vendor code to mask integration failures. No tracked CET/REDscript bridge or automated tests currently exist.
+RED4ext.SDK and RedLib are ignored local checkouts, not reproducible dependencies yet. RED4ext.SDK is linked; RedLib is not used by current targets. Do not modify vendor code to mask integration failures. The frozen CET/REDscript/TweakXL bridge is tracked under runtime/; consult runtime/README.md before changing it. Automated core tests are required during stage 2.

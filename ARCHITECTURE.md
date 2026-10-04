@@ -66,3 +66,6 @@ The initial state cache is in memory and only holds accepted HOST state. It is n
 One HOST plus one JOINER first; separate sessions on one Debian server. Acceptance requires handshake and reconnect, player replication, explicit vehicle ownership/seats, HOST-approved combat, stable world entity lifecycle and snapshot recovery. Limit world replication to a documented supported entity set. Full quest synchronization, arbitrary save merging and complete NPC AI replication are out of scope.
 
 Automated gates cover codec fixtures, malformed/fuzzed input, authority rejection, session isolation, loss/reordering/duplicates, expiry and baseline/delta recovery on Windows and Linux. In-game gates cover spawn/despawn, movement during combat, vehicle conflicts, world reset and reconnect. Do not suppress JOINER local world behavior until supported game hooks and reversible cleanup are verified in game.
+
+## Runtime import update
+The installed bridge is now captured under runtime/ with exact hashes. Its Lua v0.0.26 confirms vehicle markers -666/8888, Caliburn proxy interpolation and manual IS_HOST configuration. Combat matches nearby NPCs by position; remote.reds spawns a Judy proxy; natives.reds declares the existing eight functions. This supersedes the baseline audit's missing-source observation. No runtime behavior was changed during import.
