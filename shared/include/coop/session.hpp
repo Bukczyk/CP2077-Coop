@@ -62,13 +62,17 @@ struct ReceiveResult {
 };
 // Single-threaded policy core: the owning server serializes calls. No sockets,
 // credential issuance, retransmission scheduler or game simulation lives here.
+struct SessionLimits {
+    std::size_t maxSessions = 16, maxMembers = 16, maxEntities = 4096;
+    std::uint64_t timeoutMs = 10000;
+};
 class SessionRegistry {
 public:
-    static constexpr std::size_t kMaxSessions = 16, kMaxMembers = 2, kMaxEntities = 1024;
-    static constexpr std::uint64_t kTimeoutMs = 10000;
+    explicit SessionRegistry(SessionLimits limits = {}) : limits_(limits) {}
     Admission Create(ConnectionId connection, std::uint64_t now);
     Admission Join(SessionId session, ConnectionId connection, std::uint64_t now);
     // Trusted adapter calls this only after complete snapshot acknowledgment.
+    SessionError RegisterPlayer(SessionId session, PlayerId player);
     SessionError MarkSynchronized(SessionId session, PlayerId player, std::uint32_t epoch);
     ReceiveResult Receive(ConnectionId connection, const Packet& packet, std::uint64_t now);
     std::optional<Removal> Disconnect(ConnectionId connection);
@@ -77,6 +81,7 @@ public:
     const Session* Find(SessionId id) const;
     std::size_t Size() const { return sessions_.size(); }
 private:
+    SessionLimits limits_;
     bool ConnectionUsed(ConnectionId connection) const;
     SessionId nextSession_ = 1;
     PlayerId nextPlayer_ = 1;

@@ -2,7 +2,7 @@
 #include "coop/session.hpp"
 using namespace coop;
 struct Fixture {
-    SessionRegistry registry;
+    SessionRegistry registry{SessionLimits{16,2,1024,10000}};
     Membership host, joiner;
     Fixture() {
         host = registry.Create(11,0).membership.value();
@@ -98,13 +98,13 @@ void Lifecycle() {
     CHECK(f.registry.Join(f.host.session,55,4).error == SessionError::MissingSession);
 }
 void LimitsAndExpiry() {
-    SessionRegistry registry;
+    SessionRegistry registry{SessionLimits{16,2,1024,10000}};
     CHECK(!registry.Create(0,0));
-    for (std::uint64_t i = 1; i <= SessionRegistry::kMaxSessions; ++i) CHECK(registry.Create(i,0));
+    for (std::uint64_t i = 1; i <= 16; ++i) CHECK(registry.Create(i,0));
     CHECK(registry.Create(100,0).error == SessionError::Capacity);
     CHECK(registry.Create(1,0).error == SessionError::ConnectionInUse);
     CHECK(registry.Expire(9999).empty());
-    CHECK(registry.Expire(10000).size() == SessionRegistry::kMaxSessions);
+    CHECK(registry.Expire(10000).size() == 16);
     CHECK(registry.Size() == 0);
     Fixture f;
     CHECK(f.registry.Join(f.host.session,33,0).error == SessionError::Capacity);
@@ -118,7 +118,7 @@ void LimitsAndExpiry() {
     CHECK(f.registry.Join(f.host.session,44,19000).error == SessionError::Expired);
     CHECK(f.registry.Expire(19000).size() == 1);
     Fixture bounded;
-    for (EntityId id = 1; id <= SessionRegistry::kMaxEntities; ++id)
+    for (EntityId id = 1; id <= 1024; ++id)
         CHECK(bounded.registry.Receive(11,bounded.packet(bounded.host,EntitySpawn{id,EntityKind::World,0,{}}),1));
     CHECK(bounded.registry.Receive(11,bounded.packet(bounded.host,EntitySpawn{1025,EntityKind::World,0,{}}),1).error == SessionError::Capacity);
 }

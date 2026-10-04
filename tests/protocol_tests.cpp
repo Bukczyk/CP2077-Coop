@@ -7,15 +7,15 @@ using namespace coop;
 void Golden() {
     const Packet packet{{0x0102030405060708ULL, 9, 10, 11, 0}, Heartbeat{}};
     const std::vector<std::uint8_t> golden{
-        0x43,0x50,0x53,0x31, 0,1, 0,1, 0,0,0,0,
+        0x43,0x50,0x53,0x31, 0,2, 0,1, 0,0,0,0,
         1,2,3,4,5,6,7,8, 0,0,0,9, 0,0,0,10, 0,0,0,11,
         0,0,0,0,0,0,0,0};
     CHECK(Encode(packet).value() == golden);
     CHECK(Decode(golden).packet.value() == packet);
     const Packet pose{{1,1,1,1,0}, PlayerPose{2, {{1.0f, -2.0f, 0}, {0,0,0}}}};
     auto bytes = Encode(pose).value();
-    CHECK(bytes.size() == 72);
-    CHECK(bytes[6] == 1 && bytes[7] == 0 && bytes[11] == 32);
+    CHECK(bytes.size() == 80);
+    CHECK(bytes[6] == 1 && bytes[7] == 0 && bytes[11] == 40);
     const std::array<std::uint8_t, 12> expected{0x3f,0x80,0,0, 0xc0,0,0,0, 0,0,0,0};
     for (std::size_t i = 0; i < expected.size(); ++i) CHECK(bytes[48+i] == expected[i]);
 }
@@ -40,7 +40,7 @@ void CodecCases() {
     }
     auto bad = Encode(Packet{{1,1,1,1,0}, Heartbeat{}}).value();
     bad[0] = 0; CHECK(Decode(bad).error == CodecError::Magic); bad[0] = 0x43;
-    bad[5] = 2; CHECK(Decode(bad).error == CodecError::Version); bad[5] = 1;
+    bad[5] = 3; CHECK(Decode(bad).error == CodecError::Version); bad[5] = 2;
     bad[7] = 255; CHECK(Decode(bad).error == CodecError::Type); bad[7] = 1;
     bad[11] = 1; CHECK(Decode(bad).error == CodecError::Length);
     CHECK(Decode(std::vector<std::uint8_t>(1201)).error == CodecError::Size);

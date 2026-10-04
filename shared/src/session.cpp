@@ -5,8 +5,8 @@
 
 namespace coop {
 namespace {
-bool expired(const Member& m, std::uint64_t now) {
-    return now >= m.lastSeen && now - m.lastSeen >= SessionRegistry::kTimeoutMs;
+bool expired(const Member& m, std::uint64_t now, std::uint64_t timeout) {
+    return now >= m.lastSeen && now - m.lastSeen >= timeout;
 }
 EntityId entityOf(const Payload& payload) {
     return std::visit([](const auto& p) -> EntityId {
@@ -44,7 +44,7 @@ const Session* SessionRegistry::Find(SessionId id) const {
 Admission SessionRegistry::Create(ConnectionId connection, std::uint64_t now) {
     if (!connection) return {{}, SessionError::Invalid};
     if (ConnectionUsed(connection)) return {{}, SessionError::ConnectionInUse};
-    if (sessions_.size() >= kMaxSessions || nextSession_ == std::numeric_limits<SessionId>::max()
+    if (sessions_.size() >= limits_.maxSessions || nextSession_ == std::numeric_limits<SessionId>::max()
         || nextPlayer_ == std::numeric_limits<PlayerId>::max()) return {{}, SessionError::Capacity};
     Session s;
     s.id = nextSession_++;
@@ -62,12 +62,22 @@ Admission SessionRegistry::Join(SessionId id, ConnectionId connection, std::uint
     auto& s = it->second;
     const auto& host = s.members.at(s.host);
     if (now < host.lastSeen) return {{}, SessionError::Clock};
-    if (expired(host, now)) return {{}, SessionError::Expired};
-    if (s.members.size() >= kMaxMembers || nextPlayer_ == std::numeric_limits<PlayerId>::max())
+    if (expired(host, now, limits_.timeoutMs)) return {{}, SessionError::Expired};
+    if (s.members.size() >= limits_.maxMembers || nextPlayer_ == std::numeric_limits<PlayerId>::max())
         return {{}, SessionError::Capacity};
     const auto player = nextPlayer_++;
     s.members.emplace(player, Member{player, connection, Role::Joiner, Phase::Synchronizing, now, 0, {}});
     return {Membership{id, player, s.epoch, Role::Joiner}, SessionError::None};
+}
+SessionError SessionRegistry::RegisterPlayer(SessionId id, PlayerId player) {
+    auto it = sessions_.find(id);
+    if (it == sessions_.end()) return SessionError::MissingSession;
+    auto& s = it->second;
+    if (!s.members.contains(player)) return SessionError::MissingMember;
+    if (s.entities.contains(player) || s.entities.size() >= limits_.maxEntities) return SessionError::Capacity;
+    s.entities.emplace(player, Entity{EntityKind::Player,player,{}});
+    s.lastEntity = std::max(s.lastEntity,static_cast<EntityId>(player));
+    return SessionError::None;
 }
 SessionError SessionRegistry::MarkSynchronized(SessionId id, PlayerId player, std::uint32_t epoch) {
     auto it = sessions_.find(id);
@@ -82,6 +92,7 @@ SessionError SessionRegistry::MarkSynchronized(SessionId id, PlayerId player, st
 ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& packet, std::uint64_t now) {
     const auto fail = [](SessionError e) { return ReceiveResult{e, Route::None, {}, {}}; };
     if (!Validate(packet)) return fail(SessionError::Invalid);
+    if (packet.payload.index() >= 12) return fail(SessionError::Invalid); // Admission is transport policy, not gameplay.
     auto it = sessions_.find(packet.header.session);
     if (it == sessions_.end()) return fail(SessionError::MissingSession);
     auto& s = it->second;
@@ -92,7 +103,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if (connection == 0 || m.connection != connection) return fail(SessionError::Identity);
     const auto& host = s.members.at(s.host);
     if (now < m.lastSeen || now < host.lastSeen) return fail(SessionError::Clock);
-    if (expired(m, now) || expired(host, now)) return fail(SessionError::Expired);
+    if (expired(m, now, limits_.timeoutMs) || expired(host, now, limits_.timeoutMs)) return fail(SessionError::Expired);
     const auto type = TypeOf(packet.payload);
     const bool control = type == PacketType::Heartbeat || type == PacketType::Ack || type == PacketType::Leave;
     if (!control && m.phase != Phase::Active) return fail(SessionError::NotReady);
@@ -115,7 +126,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if (type == PacketType::WorldState && entity->second.kind != EntityKind::World) return fail(SessionError::Kind);
     if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
         if (spawn->entity <= s.lastEntity) return fail(SessionError::EntityReuse);
-        if (s.entities.size() >= kMaxEntities) return fail(SessionError::Capacity);
+        if (s.entities.size() >= limits_.maxEntities) return fail(SessionError::Capacity);
         if (spawn->owner && !s.members.contains(spawn->owner)) return fail(SessionError::Ownership);
         if (spawn->kind == EntityKind::World && spawn->owner != 0) return fail(SessionError::Ownership);
         if (spawn->kind == EntityKind::Player) {
@@ -148,7 +159,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if (!control) {
         result.route = hostOnly(type) ? Route::Peers : Route::Host;
         for (const auto& [peerId, peer] : s.members) {
-            if (peerId != m.id && peer.phase == Phase::Active && !expired(peer, now)
+            if (peerId != m.id && peer.phase == Phase::Active && !expired(peer, now, limits_.timeoutMs)
                 && (result.route == Route::Peers || peer.role == Role::Host)) result.recipients.push_back(peerId);
         }
     }
@@ -192,10 +203,10 @@ std::vector<Removal> SessionRegistry::Expire(std::uint64_t now) {
     std::vector<ConnectionId> expiredConnections;
     for (const auto& [unused, s] : sessions_) {
         (void)unused;
-        if (expired(s.members.at(s.host), now)) expiredConnections.push_back(s.members.at(s.host).connection);
+        if (expired(s.members.at(s.host), now, limits_.timeoutMs)) expiredConnections.push_back(s.members.at(s.host).connection);
         else for (const auto& [id, m] : s.members) {
             (void)id;
-            if (expired(m, now)) expiredConnections.push_back(m.connection);
+            if (expired(m, now, limits_.timeoutMs)) expiredConnections.push_back(m.connection);
         }
     }
     std::vector<Removal> result;

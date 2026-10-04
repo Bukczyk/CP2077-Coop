@@ -9,17 +9,23 @@ namespace coop {
 namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 constexpr std::uint32_t kMagic = 0x43505331; // CPS1
-constexpr std::array<PacketType, 12> kTypes{
+constexpr std::array<PacketType, 23> kTypes{
     PacketType::Heartbeat, PacketType::Leave, PacketType::Ack,
     PacketType::PlayerPose, PacketType::PlayerState, PacketType::VehicleInput,
     PacketType::VehicleState, PacketType::HitRequest, PacketType::DamageApplied,
-    PacketType::EntitySpawn, PacketType::EntityDespawn, PacketType::WorldState};
-constexpr std::array<std::uint32_t, 12> kSizes{0, 0, 8, 32, 32, 20, 32, 20, 28, 37, 8, 32};
+    PacketType::EntitySpawn, PacketType::EntityDespawn, PacketType::WorldState,
+    PacketType::Hello, PacketType::HelloOk, PacketType::CreateSession, PacketType::JoinSession,
+    PacketType::SessionAccepted, PacketType::Reject, PacketType::MemberJoined, PacketType::MemberLeft,
+    PacketType::SessionClosed, PacketType::Ready, PacketType::SessionReady};
+constexpr std::array<std::uint32_t, 23> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0};
 struct Writer {
     std::vector<std::uint8_t> data;
     void integer(std::uint64_t value, unsigned width) {
         for (unsigned i = width; i > 0; --i)
             data.push_back(static_cast<std::uint8_t>(value >> ((i - 1) * 8)));
+    }
+    void text(const std::string& value, unsigned width) {
+        for (unsigned i = 0; i < width; ++i) integer(i < value.size() ? static_cast<unsigned char>(value[i]) : 0, 1);
     }
     void scalar(float value) { integer(std::bit_cast<std::uint32_t>(value), 4); }
     void vector(Vec3 v) { scalar(v.x); scalar(v.y); scalar(v.z); }
@@ -29,6 +35,17 @@ struct Writer {
 struct Reader {
     std::span<const std::uint8_t> data;
     std::size_t offset = 0;
+    bool canonical = true;
+    std::string text(unsigned width) {
+        std::string value; bool end = false;
+        for (unsigned i = 0; i < width; ++i) {
+            char c = static_cast<char>(integer(1));
+            if (!c) end = true;
+            else if (end) canonical = false;
+            else value.push_back(c);
+        }
+        return value;
+    }
     std::uint64_t integer(unsigned width) {
         std::uint64_t value = 0;
         for (unsigned i = 0; i < width; ++i) value = (value << 8) | data[offset++];
@@ -66,11 +83,32 @@ bool IsNewer(std::uint32_t candidate, std::uint32_t previous) {
 }
 bool Validate(const Packet& packet) {
     const auto& h = packet.header;
-    if (h.session == 0 || h.epoch == 0 || h.sender == 0) return false;
+    const auto type = TypeOf(packet.payload);
+    const bool pre = type == PacketType::Hello || type == PacketType::HelloOk
+        || type == PacketType::CreateSession || type == PacketType::JoinSession || type == PacketType::Reject;
+    const bool server = type == PacketType::SessionAccepted || type == PacketType::MemberJoined
+        || type == PacketType::MemberLeft || type == PacketType::SessionClosed || type == PacketType::SessionReady;
+    if (pre) { if (h.session || h.epoch || h.sender || h.sequence || h.event) return false; }
+    else if (server) { if (!h.session || !h.epoch || h.sender || h.sequence || h.event) return false; }
+    else if (h.session == 0 || h.epoch == 0 || h.sender == 0) return false;
     if (IsReliable(TypeOf(packet.payload)) ? (h.event == 0 || h.sequence != 0) : h.event != 0) return false;
     return std::visit([](const auto& p) {
         using T = std::decay_t<decltype(p)>;
         if constexpr (std::is_same_v<T, Heartbeat> || std::is_same_v<T, Leave>) return true;
+        else if constexpr (std::is_same_v<T, Hello>) {
+            if (p.key.size() != 64) return false;
+            for (auto c : p.key) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+            return true;
+        } else if constexpr (std::is_same_v<T, CreateSession> || std::is_same_v<T, JoinSession>) {
+            if (p.name.empty() || p.name.size() > 31) return false;
+            for (auto c : p.name) if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9') || c == '-' || c == '_')) return false;
+            return true;
+        } else if constexpr (std::is_same_v<T, SessionAccepted>) return p.player && p.host;
+        else if constexpr (std::is_same_v<T, Reject>) return p.reason >= RejectReason::Auth && p.reason <= RejectReason::HostLeft;
+        else if constexpr (std::is_same_v<T, MemberJoined> || std::is_same_v<T, MemberLeft>) return p.player != 0;
+        else if constexpr (std::is_same_v<T, HelloOk> || std::is_same_v<T, SessionClosed>
+            || std::is_same_v<T, Ready> || std::is_same_v<T, SessionReady>) return true;
         else if constexpr (std::is_same_v<T, Ack>) return p.event != 0;
         else if constexpr (std::is_same_v<T, HitRequest>)
             return p.attacker != 0 && p.target != 0 && p.attacker != p.target && bounded(p.proposedDamage, 0.001f, 100000);
@@ -97,6 +135,13 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
     std::visit([&](const auto& p) {
         using T = std::decay_t<decltype(p)>;
         if constexpr (std::is_same_v<T, Heartbeat> || std::is_same_v<T, Leave>) {}
+        else if constexpr (std::is_same_v<T, Hello>) w.text(p.key,64);
+        else if constexpr (std::is_same_v<T, CreateSession> || std::is_same_v<T, JoinSession>) w.text(p.name,32);
+        else if constexpr (std::is_same_v<T, SessionAccepted>) { w.integer(p.player,4); w.integer(p.host,4); for (auto b : p.token) w.integer(b,1); }
+        else if constexpr (std::is_same_v<T, Reject>) w.integer(static_cast<std::uint16_t>(p.reason),2);
+        else if constexpr (std::is_same_v<T, MemberJoined> || std::is_same_v<T, MemberLeft>) w.integer(p.player,4);
+        else if constexpr (std::is_same_v<T, HelloOk> || std::is_same_v<T, SessionClosed>
+            || std::is_same_v<T, Ready> || std::is_same_v<T, SessionReady>) {}
         else if constexpr (std::is_same_v<T, Ack>) w.integer(p.event, 8);
         else if constexpr (std::is_same_v<T, HitRequest> || std::is_same_v<T, DamageApplied>) {
             w.integer(p.attacker, 8); w.integer(p.target, 8);
@@ -108,7 +153,10 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
                 w.scalar(p.throttle); w.scalar(p.steering); w.scalar(p.brake);
             } else if constexpr (std::is_same_v<T, EntitySpawn>) {
                 w.integer(static_cast<std::uint8_t>(p.kind), 1); w.integer(p.owner, 4); w.transform(p.transform);
-            } else if constexpr (!std::is_same_v<T, EntityDespawn>) w.transform(p.transform);
+            } else if constexpr (!std::is_same_v<T, EntityDespawn>) {
+                w.transform(p.transform);
+                if constexpr (requires { p.sampleTimeMs; }) w.integer(p.sampleTimeMs,8);
+            }
         }
     }, packet.payload);
     return w.data;
@@ -128,20 +176,31 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     Packet packet;
     packet.header = {r.integer(8), r.u32(), r.u32(), r.u32(), r.integer(8)};
     switch (type) {
+    case PacketType::Hello: packet.payload = Hello{r.text(64)}; break;
+    case PacketType::HelloOk: packet.payload = HelloOk{}; break;
+    case PacketType::CreateSession: packet.payload = CreateSession{r.text(32)}; break;
+    case PacketType::JoinSession: packet.payload = JoinSession{r.text(32)}; break;
+    case PacketType::SessionAccepted: { SessionAccepted accepted{r.u32(),r.u32(),{}}; for (auto& b : accepted.token) b = static_cast<std::uint8_t>(r.integer(1)); packet.payload = accepted; break; }
+    case PacketType::Reject: packet.payload = Reject{static_cast<RejectReason>(r.integer(2))}; break;
+    case PacketType::MemberJoined: packet.payload = MemberJoined{r.u32()}; break;
+    case PacketType::MemberLeft: packet.payload = MemberLeft{r.u32()}; break;
+    case PacketType::SessionClosed: packet.payload = SessionClosed{}; break;
+    case PacketType::Ready: packet.payload = Ready{}; break;
+    case PacketType::SessionReady: packet.payload = SessionReady{}; break;
     case PacketType::Heartbeat: packet.payload = Heartbeat{}; break;
     case PacketType::Leave: packet.payload = Leave{}; break;
     case PacketType::Ack: packet.payload = Ack{r.integer(8)}; break;
-    case PacketType::PlayerPose: packet.payload = PlayerPose{r.integer(8), r.transform()}; break;
-    case PacketType::PlayerState: packet.payload = PlayerState{r.integer(8), r.transform()}; break;
+    case PacketType::PlayerPose: packet.payload = PlayerPose{r.integer(8), r.transform(), r.integer(8)}; break;
+    case PacketType::PlayerState: packet.payload = PlayerState{r.integer(8), r.transform(), r.integer(8)}; break;
     case PacketType::VehicleInput: packet.payload = VehicleInput{r.integer(8), r.scalar(), r.scalar(), r.scalar()}; break;
-    case PacketType::VehicleState: packet.payload = VehicleState{r.integer(8), r.transform()}; break;
+    case PacketType::VehicleState: packet.payload = VehicleState{r.integer(8), r.transform(), r.integer(8)}; break;
     case PacketType::HitRequest: packet.payload = HitRequest{r.integer(8), r.integer(8), r.scalar()}; break;
     case PacketType::DamageApplied: packet.payload = DamageApplied{r.integer(8), r.integer(8), r.scalar(), r.integer(8)}; break;
     case PacketType::EntitySpawn: packet.payload = EntitySpawn{r.integer(8), static_cast<EntityKind>(r.integer(1)), r.u32(), r.transform()}; break;
     case PacketType::EntityDespawn: packet.payload = EntityDespawn{r.integer(8)}; break;
     case PacketType::WorldState: packet.payload = WorldState{r.integer(8), r.transform()}; break;
     }
-    if (!Validate(packet)) return fail(CodecError::InvalidValue);
+    if (!r.canonical || !Validate(packet)) return fail(CodecError::InvalidValue);
     return {packet, CodecError::None};
 }
 } // namespace coop

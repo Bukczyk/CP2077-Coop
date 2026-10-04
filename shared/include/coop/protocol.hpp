@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <span>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -9,12 +11,16 @@ namespace coop {
 using SessionId = std::uint64_t;
 using PlayerId = std::uint32_t;
 using EntityId = std::uint64_t;
-constexpr std::uint16_t kProtocolVersion = 1;
+using VehicleId = EntityId;
+using ConnectionToken = std::array<std::uint8_t,16>;
+constexpr std::uint16_t kProtocolVersion = 2;
 constexpr std::size_t kHeaderSize = 40;
 constexpr std::size_t kMaxPacketSize = 1200;
 
 enum class PacketType : std::uint16_t {
     Heartbeat = 1, Leave = 2, Ack = 3,
+    Hello = 0x10, HelloOk, CreateSession, JoinSession, SessionAccepted,
+    Reject, MemberJoined, MemberLeft, SessionClosed, Ready, SessionReady,
     PlayerPose = 0x100, PlayerState = 0x101,
     VehicleInput = 0x200, VehicleState = 0x201,
     HitRequest = 0x300, DamageApplied = 0x301,
@@ -47,11 +53,13 @@ struct Ack {
 struct PlayerPose {
     EntityId entity = 0;
     Transform transform{};
+    std::uint64_t sampleTimeMs = 0;
     bool operator==(const PlayerPose&) const = default;
 };
 struct PlayerState {
     EntityId entity = 0;
     Transform transform{};
+    std::uint64_t sampleTimeMs = 0;
     bool operator==(const PlayerState&) const = default;
 };
 struct VehicleInput {
@@ -62,6 +70,7 @@ struct VehicleInput {
 struct VehicleState {
     EntityId entity = 0;
     Transform transform{};
+    std::uint64_t sampleTimeMs = 0;
     bool operator==(const VehicleState&) const = default;
 };
 struct HitRequest {
@@ -91,8 +100,25 @@ struct WorldState {
     Transform transform{};
     bool operator==(const WorldState&) const = default;
 };
+struct Hello { std::string key; bool operator==(const Hello&) const = default; };
+struct HelloOk { bool operator==(const HelloOk&) const = default; };
+struct CreateSession { std::string name; bool operator==(const CreateSession&) const = default; };
+struct JoinSession { std::string name; bool operator==(const JoinSession&) const = default; };
+struct SessionAccepted {
+    PlayerId player = 0, host = 0;
+    ConnectionToken token{};
+    bool operator==(const SessionAccepted&) const = default;
+};
+enum class RejectReason : std::uint16_t { Auth = 1, Protocol, NameInUse, MissingSession, Full, Policy, Timeout, HostLeft };
+struct Reject { RejectReason reason = RejectReason::Protocol; bool operator==(const Reject&) const = default; };
+struct MemberJoined { PlayerId player = 0; bool operator==(const MemberJoined&) const = default; };
+struct MemberLeft { PlayerId player = 0; bool operator==(const MemberLeft&) const = default; };
+struct SessionClosed { bool operator==(const SessionClosed&) const = default; };
+struct Ready { bool operator==(const Ready&) const = default; };
+struct SessionReady { bool operator==(const SessionReady&) const = default; };
 using Payload = std::variant<Heartbeat, Leave, Ack, PlayerPose, PlayerState,
-    VehicleInput, VehicleState, HitRequest, DamageApplied, EntitySpawn, EntityDespawn, WorldState>;
+    VehicleInput, VehicleState, HitRequest, DamageApplied, EntitySpawn, EntityDespawn, WorldState, Hello, HelloOk, CreateSession, JoinSession,
+    SessionAccepted, Reject, MemberJoined, MemberLeft, SessionClosed, Ready, SessionReady>;
 struct Packet {
     Header header{};
     Payload payload{};
