@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/CP2077-Coop/CoopPlugin/build/cmake_install.cmake",
+		"D:/CP2077-Coop/CoopPlugin/build/RED4ext.SDK/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
