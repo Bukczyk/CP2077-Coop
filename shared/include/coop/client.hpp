@@ -1,0 +1,60 @@
+#pragma once
+#include "coop/server.hpp"
+#include "coop/interpolation.hpp"
+#include <unordered_set>
+namespace coop {
+enum class ClientPhase { Disconnected, Hello, Admission, Synchronizing, Active, Failed };
+struct ClientConfig {
+    net::Endpoint server{"127.0.0.1",11779};
+    std::string accessKey, sessionName="first-test";
+    bool host=false, automaticSnapshots=true;
+    unsigned playerSnapshotRate=60, vehicleSnapshotRate=60;
+    InterpolationConfig interpolation{};
+    std::uint64_t timeoutMs=10000;
+};
+struct RemotePlayer {
+    SnapshotBuffer snapshots;
+    std::uint32_t sequence=0;
+    std::uint64_t sourceTime=0, receivedTime=0;
+    bool initialized=false;
+    explicit RemotePlayer(InterpolationConfig config = {}) : snapshots(config) {}
+};
+struct ClientStats { std::uint64_t sent=0, received=0, stale=0, rejected=0; };
+class SessionClient {
+public:
+    explicit SessionClient(ClientConfig config, LogSink log = {});
+    bool Connect();
+    void Disconnect();
+    void Tick(std::uint64_t now);
+    void SetLocal(Transform value) { local_=value; }
+    // Engine snapshots have explicit sequence/time. Automatic Tick uses the configured rate.
+    bool SendLocalSnapshot(Transform value, std::uint32_t sequence, std::uint64_t sourceTime);
+    ClientPhase Phase() const { return phase_; }
+    const Membership& Member() const { return member_; }
+    PlayerId Host() const { return host_; }
+    const std::unordered_map<PlayerId,RemotePlayer>& Remotes() const { return remotes_; }
+    const ClientStats& Stats() const { return stats_; }
+private:
+    void Control(const Packet& packet,std::uint64_t now);
+    void State(const net::Datagram& datagram,std::uint64_t now);
+    void Fail(const std::string& reason);
+    bool Snapshot(PlayerId player,const Packet& packet,const Transform& value,std::uint64_t sourceTime,std::uint64_t now);
+    void Log(const std::string& message) const { if(log_) log_(message); }
+    ClientConfig config_;
+    LogSink log_;
+    net::Channel control_;
+    net::Socket udp_;
+    ConnectionToken token_{};
+    ClientPhase phase_=ClientPhase::Disconnected;
+    Membership member_{};
+    PlayerId host_=0;
+    std::unordered_set<PlayerId> members_;
+    std::unordered_map<PlayerId,RemotePlayer> remotes_;
+    std::optional<Transform> local_;
+    std::uint64_t lastReceive_=0, nextHeartbeat_=0;
+    double nextSnapshot_=0;
+    std::uint32_t sequence_=0, heartbeat_=0;
+    bool readySent_=false;
+    ClientStats stats_;
+};
+} // namespace coop

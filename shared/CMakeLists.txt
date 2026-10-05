@@ -1,4 +1,4 @@
-add_library(coop_core STATIC src/protocol.cpp src/session.cpp src/net.cpp src/interpolation.cpp)
+add_library(coop_core STATIC src/protocol.cpp src/session.cpp src/net.cpp src/interpolation.cpp src/server.cpp src/client.cpp)
 add_library(coop::core ALIAS coop_core)
 target_include_directories(coop_core PUBLIC include)
 target_compile_features(coop_core PUBLIC cxx_std_20)
