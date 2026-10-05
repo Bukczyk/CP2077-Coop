@@ -12,3 +12,7 @@ if(COOP_BUILD_SESSION_SERVER)
     add_test(NAME server_smoke COMMAND CP2077SessionServer --config "${CMAKE_CURRENT_SOURCE_DIR}/server.ini" --run-for-ms 50)
     set_tests_properties(server_smoke PROPERTIES TIMEOUT 10 PASS_REGULAR_EXPRESSION "STOP accepted_states=0")
 endif()
+
+add_test(NAME session_bridge_contract COMMAND "${CMAKE_COMMAND}" -DROOT=${PROJECT_SOURCE_DIR}
+    -P "${PROJECT_SOURCE_DIR}/build-support/VerifySessionBridge.cmake")
+set_tests_properties(game_bridge session_bridge_contract PROPERTIES TIMEOUT 40)

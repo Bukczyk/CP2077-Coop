@@ -22,8 +22,12 @@ jobs:
     container: debian:bookworm
     steps:
       - name: Toolchain
-        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build g++
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build g++ lua5.4
       - uses: actions/checkout@v4
+      - name: Validate runtime and deploy syntax
+        run: |
+          luac -p runtime/session/cet/CP2077Coop/init.lua
+          bash -n deploy/debian/install.sh
       - name: Build and test portable core
         run: bash scripts/build.sh
   sanitizers:
