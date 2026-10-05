@@ -1,4 +1,4 @@
-foreach(suite protocol session net interpolation network_e2e)
+foreach(suite protocol session net interpolation network_e2e game_bridge)
     add_executable(${suite}_tests ${suite}_tests.cpp)
     target_link_libraries(${suite}_tests PRIVATE coop::core)
     add_test(NAME ${suite} COMMAND ${suite}_tests)

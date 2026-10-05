@@ -1,4 +1,4 @@
-add_library(coop_core STATIC src/protocol.cpp src/session.cpp src/net.cpp src/interpolation.cpp src/server.cpp src/client.cpp)
+add_library(coop_core STATIC src/protocol.cpp src/session.cpp src/net.cpp src/interpolation.cpp src/server.cpp src/client.cpp src/game_bridge.cpp)
 add_library(coop::core ALIAS coop_core)
 target_include_directories(coop_core PUBLIC include)
 target_compile_features(coop_core PUBLIC cxx_std_20)
@@ -15,3 +15,6 @@ endif()
 if(WIN32)
     target_link_libraries(coop_core PUBLIC ws2_32 bcrypt)
 endif()
+
+find_package(Threads REQUIRED)
+target_link_libraries(coop_core PUBLIC Threads::Threads)
