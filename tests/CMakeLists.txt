@@ -16,3 +16,7 @@ endif()
 add_test(NAME session_bridge_contract COMMAND "${CMAKE_COMMAND}" -DROOT=${PROJECT_SOURCE_DIR}
     -P "${PROJECT_SOURCE_DIR}/build-support/VerifySessionBridge.cmake")
 set_tests_properties(game_bridge npc session_bridge_contract PROPERTIES TIMEOUT 40)
+
+include("${PROJECT_SOURCE_DIR}/build-support/LuaTests.cmake")
+add_test(NAME npc_population COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_population_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(npc_population PROPERTIES TIMEOUT 15)

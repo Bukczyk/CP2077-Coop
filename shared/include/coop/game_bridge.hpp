@@ -27,6 +27,7 @@ public:
     bool Accept(Identity identity,Projection projection,PlayerId authority);
     bool Bind(SessionEntityId id,LocalEntityId local);
     bool Remove(SessionEntityId id);
+    bool Unbind(SessionEntityId id);
     const Projection* Find(SessionEntityId id) const;
     std::optional<SessionEntityId> FromLocal(LocalEntityId local) const;
     std::size_t Size() const { return entities_.size(); }
@@ -67,12 +68,14 @@ private:
     std::deque<AcceptedEvent> events_;
 };
 struct RenderPlayer { PlayerId player=0; SessionEntityId entity=0; Transform transform{}; };
+struct RenderNpc { NpcSpawn descriptor{}; LocalEntityId hostLocal=0; Transform transform{}; };
 struct Frame {
     ClientPhase phase=ClientPhase::Disconnected;
     Membership member{};
     PlayerId host=0;
     std::uint64_t generation=0;
     std::vector<RenderPlayer> players;
+    std::vector<RenderNpc> npcs;
 };
 // Worker owns SessionClient. Only value snapshots cross the mutex. Render sampling
 // happens in ReadFrame at the caller's frame time, independently of network ticks.
@@ -85,6 +88,8 @@ public:
     void SetActive(bool active);
     bool SetLocal(Transform transform);
     Frame ReadFrame(std::uint64_t now) const;
+    bool OfferNpc(LocalEntityId local,std::uint64_t record,Transform transform);
+    void ForgetNpc(LocalEntityId local);
     SubmitResult SubmitWorld(const WorldAction&) { return SubmitResult::Unsupported; }
 private:
     void Run(std::stop_token stop);
@@ -96,6 +101,11 @@ private:
     std::optional<Transform> local_;
     Frame frame_;
     std::unordered_map<PlayerId,RemotePlayer> remote_;
+    struct DesiredNpc { std::uint64_t adoption=0, record=0; Transform transform{}; bool releasing=false; };
+    std::uint64_t nextAdoption_=1;
+    std::unordered_map<LocalEntityId,DesiredNpc> desiredNpcs_;
+    std::unordered_map<EntityId,RemoteNpc> npcSnapshots_;
+    std::unordered_map<std::uint64_t,LocalEntityId> npcLocals_;
     std::jthread worker_;
 };
 } // namespace coop::game

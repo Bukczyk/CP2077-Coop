@@ -25,7 +25,7 @@ bool SessionClient::Connect() {
 }
 void SessionClient::Disconnect() {
     control_.Close(); udp_.Close(); members_.clear(); remotes_.clear(); member_={}; host_=0; token_={};
-    phase_=ClientPhase::Disconnected; npcs_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false;
+    phase_=ClientPhase::Disconnected; npcs_.clear(); npcDenied_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false;
 }
 void SessionClient::Fail(const std::string& reason) { Disconnect(); phase_=ClientPhase::Failed; Log(reason); }
 void SessionClient::Control(const Packet& packet,std::uint64_t now) {
@@ -75,7 +75,9 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
         Log("NPC_REMOVED entity="+std::to_string(removed->entity));
     } else if(std::holds_alternative<NpcSnapshotEnd>(packet.payload)) {
         npcSnapshotReady_=true; Log("NPC_SNAPSHOT_COMPLETE");
-    } else if(std::holds_alternative<NpcDenied>(packet.payload)) {
+    } else if(const auto* denied=std::get_if<NpcDenied>(&packet.payload)) {
+        if(!config_.host || !npcRequests_.contains(denied->adoption)) { Fail("UNEXPECTED_NPC_DENIAL"); return; }
+        npcDenied_.insert(denied->adoption);
         Log("NPC_ADOPTION_DENIED"); // Retain bounded request to avoid retrying a denied token.
     } else if(std::holds_alternative<SessionClosed>(packet.payload)) Fail("SESSION_CLOSED");
     else Fail("UNEXPECTED_CONTROL");

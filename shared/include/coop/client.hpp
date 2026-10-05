@@ -38,6 +38,7 @@ public:
     bool AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform);
     bool DespawnNpc(EntityId entity);
     bool SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time);
+    bool NpcDeniedByServer(std::uint64_t adoption) const { return npcDenied_.contains(adoption); }
     const std::unordered_map<EntityId,RemoteNpc>& Npcs() const { return npcs_; }
     ClientPhase Phase() const { return phase_; }
     const Membership& Member() const { return member_; }
@@ -69,6 +70,7 @@ private:
     std::unordered_map<EntityId,RemoteNpc> npcs_;
     std::unordered_map<std::uint64_t,NpcAdopt> npcRequests_;
     std::unordered_set<EntityId> npcReleasing_;
+    std::unordered_set<std::uint64_t> npcDenied_;
     ClientStats stats_;
 };
 } // namespace coop

@@ -32,7 +32,9 @@ foreach ($role in @('HOST','JOINER')) {
     $reds = Join-Path $base 'r6/scripts/CP2077Coop'
     New-Item -ItemType Directory -Path $plugin,$cet,$reds -Force | Out-Null
     Copy-Item -LiteralPath $dll -Destination $plugin
-    Copy-Item -LiteralPath "$root/runtime/session/cet/CP2077Coop/init.lua" -Destination $cet
+    Get-ChildItem -LiteralPath "$root/runtime/session/cet/CP2077Coop" -Filter '*.lua' -File | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $cet
+    }
     Copy-Item -LiteralPath "$root/runtime/session/redscript/CP2077Coop/natives.reds","$root/runtime/session/redscript/CP2077Coop/remote.reds" -Destination $reds
     # Replace the prior combat bridge explicitly if a future installer overlays files.
     [IO.File]::WriteAllText((Join-Path $reds 'combat.reds'), '// Combat hooks disabled in session foundation; legacy sentinel hooks must not run.' + "`n", $utf8)
@@ -45,6 +47,9 @@ session=$Session
 access_key_file=access.key
 player_snapshot_rate=$SnapshotRate
 vehicle_snapshot_rate=$SnapshotRate
+npc_snapshot_rate=20
+max_npcs=128
+bubble_radius=100
 interpolation_ms=100
 extrapolation_ms=100
 snap_distance=6

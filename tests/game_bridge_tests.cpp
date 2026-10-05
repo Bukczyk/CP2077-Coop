@@ -49,6 +49,20 @@ void WorkerSockets() {
     auto frame=joiner.ReadFrame(net::NowMs()); CHECK(frame.players.size()==1);
     CHECK(frame.players[0].player==frame.host); CHECK(frame.players[0].transform.position.x==10);
     const auto old=frame.member.player;
+    constexpr std::uint64_t localNpc=0x123456789abcULL;
+    CHECK(host.OfferNpc(localNpc,123,{{12,20,30},{}}));
+    CHECK(host.OfferNpc(localNpc,123,{{13,20,30},{}}));
+    CHECK(!host.OfferNpc(localNpc,124,{})); CHECK(!joiner.OfferNpc(42,123,{}));
+    until([&]{return joiner.ReadFrame(net::NowMs()).npcs.size()==1 && host.ReadFrame(net::NowMs()).npcs.size()==1;});
+    const auto npcId=joiner.ReadFrame(net::NowMs()).npcs.front().descriptor.entity;
+    CHECK(npcId>=kNpcEntityBase);
+    auto hostFrame=host.ReadFrame(net::NowMs()); CHECK(hostFrame.npcs.size()==1 && hostFrame.npcs.front().hostLocal==localNpc);
+    CHECK(joiner.ReadFrame(net::NowMs()).npcs.front().hostLocal==0);
+    host.ForgetNpc(localNpc);
+    until([&]{return joiner.ReadFrame(net::NowMs()).npcs.empty() && host.ReadFrame(net::NowMs()).npcs.empty();});
+    until([&]{return host.OfferNpc(localNpc,123,{{14,20,30},{}});});
+    until([&]{return !joiner.ReadFrame(net::NowMs()).npcs.empty();});
+    CHECK(joiner.ReadFrame(net::NowMs()).npcs.front().descriptor.entity!=npcId);
     Transform invalid; invalid.position.x=std::numeric_limits<float>::quiet_NaN(); CHECK(!host.SetLocal(invalid));
     CHECK(host.SubmitWorld(g::EntityDeath{10,1})==g::SubmitResult::Unsupported);
     joiner.SetActive(false); CHECK(joiner.ReadFrame(net::NowMs()).players.empty());
@@ -59,4 +73,4 @@ void WorkerSockets() {
     host.SetActive(false);
     until([&]{return joiner.ReadFrame(net::NowMs()).phase==ClientPhase::Failed;});
 }
-int main() { Registry(); Events(); WorkerSockets(); }
+int main() { return Run([]{Registry(); Events(); WorkerSockets();}); }

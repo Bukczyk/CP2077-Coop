@@ -12,7 +12,9 @@ namespace g=coop::game;
 std::unique_ptr<g::SessionBridge> bridge;
 g::EntityRegistry registry;
 g::Frame frame;
-std::size_t selected=0;
+std::size_t selected=0, selectedNpc=0;
+std::uint32_t npcCapacity=128;
+float bubbleRadius=100;
 std::unordered_set<coop::EntityId> projections;
 std::ofstream logfile;
 void Log(const std::string& s) { logfile<<s<<std::endl; }
@@ -43,6 +45,9 @@ coop::ClientConfig Config(const std::filesystem::path& directory) {
         }
         else if(key=="player_snapshot_rate") c.playerSnapshotRate=Number(value);
         else if(key=="vehicle_snapshot_rate") c.vehicleSnapshotRate=Number(value);
+        else if(key=="npc_snapshot_rate") c.npcSnapshotRate=Number(value);
+        else if(key=="max_npcs") c.maxNpcs=Number(value);
+        else if(key=="bubble_radius") { auto radius=Number(value); if(!radius || radius>500) throw std::runtime_error("Invalid bubble radius"); bubbleRadius=static_cast<float>(radius); }
         else if(key=="interpolation_ms") c.interpolation.delayMs=Number(value);
         else if(key=="extrapolation_ms") c.interpolation.extrapolationMs=Number(value);
         else if(key=="snap_distance") c.interpolation.snapDistance=static_cast<float>(Number(value));
@@ -50,9 +55,11 @@ coop::ClientConfig Config(const std::filesystem::path& directory) {
         else throw std::runtime_error("Unknown config key: "+key);
     }
     if(!keys.contains("role") || !keys.contains("access_key_file")) throw std::runtime_error("Missing role/key configuration");
+    npcCapacity=static_cast<std::uint32_t>(c.maxNpcs);
     return c;
 }
 const g::RenderPlayer* Current() { return selected<frame.players.size()?&frame.players[selected]:nullptr; }
+const g::RenderNpc* CurrentNpc() { return selectedNpc<frame.npcs.size()?&frame.npcs[selectedNpc]:nullptr; }
 #define NATIVE(name,type) void name(RED4ext::IScriptable*,RED4ext::CStackFrame* f,type* out,int64_t)
 NATIVE(SetActive,void) {
     bool active=false; RED4ext::GetParameter(f,&active); ++f->code;
@@ -69,7 +76,7 @@ NATIVE(BeginFrame,std::uint32_t) {
     if(next.member.session!=frame.member.session || next.member.epoch!=frame.member.epoch || next.generation!=frame.generation) {
         registry.Reset({next.member.session,next.member.epoch},next.host); projections.clear();
     }
-    frame=std::move(next); selected=0;
+    frame=std::move(next); selected=0; selectedNpc=0;
     std::unordered_set<coop::EntityId> live;
     if(frame.member.player) {
         registry.Accept({frame.member.session,frame.member.epoch},{frame.member.player,g::Kind::Player,frame.member.player,frame.host,0},frame.host);
@@ -78,6 +85,13 @@ NATIVE(BeginFrame,std::uint32_t) {
     for(const auto& p:frame.players) {
         registry.Accept({frame.member.session,frame.member.epoch},{p.entity,g::Kind::Player,p.player,frame.host,0},frame.host);
         live.insert(p.entity);
+    }
+    for(const auto& npc:frame.npcs) {
+        auto id=npc.descriptor.entity;
+        if(registry.Accept({frame.member.session,frame.member.epoch},{id,g::Kind::NPC,frame.host,frame.host,0},frame.host)) {
+            if(npc.hostLocal) registry.Bind(id,npc.hostLocal);
+            live.insert(id);
+        }
     }
     for(auto id:projections) if(!live.contains(id)) registry.Remove(id);
     projections=std::move(live); *out=static_cast<std::uint32_t>(frame.players.size());
@@ -100,9 +114,103 @@ NATIVE(X,float) { ++f->code; *out=Current()?Current()->transform.position.x:0; }
 NATIVE(Y,float) { ++f->code; *out=Current()?Current()->transform.position.y:0; }
 NATIVE(Z,float) { ++f->code; *out=Current()?Current()->transform.position.z:0; }
 NATIVE(Yaw,float) { ++f->code; *out=Current()?Current()->transform.rotation.z:0; }
+NATIVE(NpcOffer,bool) {
+    RED4ext::ent::EntityID local{}; RED4ext::TweakDBID record{}; coop::Transform t;
+    RED4ext::GetParameter(f,&local); RED4ext::GetParameter(f,&record);
+    RED4ext::GetParameter(f,&t.position.x); RED4ext::GetParameter(f,&t.position.y);
+    RED4ext::GetParameter(f,&t.position.z); RED4ext::GetParameter(f,&t.rotation.z); ++f->code;
+    *out=bridge && bridge->OfferNpc(local.hash,record.value & 0xffffffffffULL,t);
+}
+NATIVE(NpcForget,void) {
+    RED4ext::ent::EntityID local{}; RED4ext::GetParameter(f,&local); ++f->code;
+    if(bridge) bridge->ForgetNpc(local.hash);
+}
+NATIVE(NpcSelect,bool) { std::uint32_t index=0; RED4ext::GetParameter(f,&index); ++f->code; selectedNpc=index; *out=CurrentNpc()!=nullptr; }
+NATIVE(Unbind,bool) { std::uint64_t entity=0; RED4ext::GetParameter(f,&entity); ++f->code; *out=registry.Unbind(entity); }
+NATIVE(Resolve,std::uint64_t) { RED4ext::ent::EntityID local{}; RED4ext::GetParameter(f,&local); ++f->code; *out=registry.FromLocal(local.hash).value_or(0); }
+NATIVE(Epoch,std::uint32_t) { ++f->code; *out=frame.member.epoch; }
+NATIVE(NpcCapacity,std::uint32_t) { ++f->code; *out=npcCapacity; }
+NATIVE(BubbleRadius,float) { ++f->code; *out=bubbleRadius; }
+NATIVE(NpcCount,std::uint32_t) { ++f->code; *out=static_cast<std::uint32_t>(frame.npcs.size()); }
+NATIVE(NpcEntity,std::uint64_t) { ++f->code; *out=CurrentNpc()?CurrentNpc()->descriptor.entity:0; }
+NATIVE(NpcRecord,RED4ext::TweakDBID) { ++f->code; *out=RED4ext::TweakDBID{CurrentNpc()?CurrentNpc()->descriptor.record:std::uint64_t{0}}; }
+NATIVE(NpcX,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.x:0; }
+NATIVE(NpcY,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.y:0; }
+NATIVE(NpcZ,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.z:0; }
+NATIVE(NpcYaw,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.rotation.z:0; }
 void RegisterTypes() {}
 void RegisterFunctions() {
     auto rtti=RED4ext::CRTTISystem::Get();
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcOffer","CP2077Session_NpcOffer",&NpcOffer);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Bool");
+      fn->AddParam("EntityID","local");
+      fn->AddParam("TweakDBID","record");
+      fn->AddParam("Float","x");
+      fn->AddParam("Float","y");
+      fn->AddParam("Float","z");
+      fn->AddParam("Float","yawRadians");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcForget","CP2077Session_NpcForget",&NpcForget);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->AddParam("EntityID","local");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcSelect","CP2077Session_NpcSelect",&NpcSelect);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Bool");
+      fn->AddParam("Uint32","index");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_Unbind","CP2077Session_Unbind",&Unbind);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Bool");
+      fn->AddParam("Uint64","entity");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_Resolve","CP2077Session_Resolve",&Resolve);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Uint64");
+      fn->AddParam("EntityID","local");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_Epoch","CP2077Session_Epoch",&Epoch);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Uint32");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcCapacity","CP2077Session_NpcCapacity",&NpcCapacity);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Uint32");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_BubbleRadius","CP2077Session_BubbleRadius",&BubbleRadius);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Float");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcCount","CP2077Session_NpcCount",&NpcCount);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Uint32");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcEntity","CP2077Session_NpcEntity",&NpcEntity);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Uint64");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcRecord","CP2077Session_NpcRecord",&NpcRecord);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("TweakDBID");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcX","CP2077Session_NpcX",&NpcX);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Float");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcY","CP2077Session_NpcY",&NpcY);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Float");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcZ","CP2077Session_NpcZ",&NpcZ);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Float");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcYaw","CP2077Session_NpcYaw",&NpcYaw);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Float");
+      rtti->RegisterFunction(fn); }
+
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_SelfEntity","CP2077Session_SelfEntity",&SelfEntity);
       fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Uint64"); rtti->RegisterFunction(fn); }
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_SetActive","CP2077Session_SetActive",&SetActive);
