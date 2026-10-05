@@ -10,6 +10,7 @@ struct ServerConfig {
     SessionLimits limits{};
     std::size_t maxConnections = 512;
     unsigned snapshotRate = 60, distantRate = 15;
+    unsigned npcSnapshotRate=20, npcDistantRate=10;
     float nearDistance = 60, interestDistance = 250;
 };
 struct ServerStats {
@@ -33,6 +34,7 @@ private:
         ConnectionToken token{};
         std::optional<net::Endpoint> endpoint;
         std::unordered_map<EntityId,Sent> sent;
+        std::deque<Packet> npcOutbox;
         std::unordered_map<EntityId,std::uint64_t> sourceTimes;
     };
     struct Room { std::string name; std::unordered_map<EntityId,Packet> states; };
@@ -41,6 +43,8 @@ private:
     void RejectPeer(Peer& peer, RejectReason reason, std::uint64_t now);
     void NotifyRemoval(const Removal& removal, std::uint64_t now);
     void RouteStates(std::uint64_t now);
+    void QueueNpc(Peer& peer,Payload payload);
+    void RouteNpcs(std::uint64_t now);
     void Log(const std::string& message) const { if (log_) log_(message); }
     ServerConfig config_;
     LogSink log_;

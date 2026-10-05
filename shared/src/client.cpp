@@ -6,6 +6,7 @@ namespace coop {
 SessionClient::SessionClient(ClientConfig config,LogSink log) : config_(std::move(config)),log_(std::move(log)) {
     if(!Validate(Packet{{},Hello{config_.accessKey}}) || !Validate(Packet{{},CreateSession{config_.sessionName}})
         || !config_.server.port || config_.playerSnapshotRate<1 || config_.playerSnapshotRate>60
+        || !config_.maxNpcs || config_.maxNpcs>4096 || config_.npcSnapshotRate<1 || config_.npcSnapshotRate>20
         || config_.vehicleSnapshotRate<1 || config_.vehicleSnapshotRate>60 || config_.timeoutMs<1000)
         throw std::invalid_argument("Invalid client config");
     SnapshotBuffer validation{config_.interpolation};
@@ -24,7 +25,7 @@ bool SessionClient::Connect() {
 }
 void SessionClient::Disconnect() {
     control_.Close(); udp_.Close(); members_.clear(); remotes_.clear(); member_={}; host_=0; token_={};
-    phase_=ClientPhase::Disconnected;
+    phase_=ClientPhase::Disconnected; npcs_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false;
 }
 void SessionClient::Fail(const std::string& reason) { Disconnect(); phase_=ClientPhase::Failed; Log(reason); }
 void SessionClient::Control(const Packet& packet,std::uint64_t now) {
@@ -57,6 +58,25 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
         Log("MEMBER_JOINED player="+std::to_string(joined->player));
     } else if(const auto* left=std::get_if<MemberLeft>(&packet.payload)) {
         members_.erase(left->player); remotes_.erase(left->player); Log("MEMBER_LEFT player="+std::to_string(left->player));
+    } else if(const auto* spawn=std::get_if<NpcSpawn>(&packet.payload)) {
+        auto prior=npcs_.find(spawn->entity);
+        if(prior!=npcs_.end()) {
+            if(prior->second.descriptor.adoption!=spawn->adoption || prior->second.descriptor.record!=spawn->record) Fail("NPC_IDENTITY_CHANGED");
+            return;
+        }
+        if(npcs_.size()>=config_.maxNpcs) { Fail("NPC_CAPACITY"); return; }
+        auto [it,inserted]=npcs_.try_emplace(spawn->entity,*spawn,config_.interpolation); (void)inserted;
+        it->second.snapshots.Push(spawn->sequence,static_cast<double>(now),spawn->transform,spawn->sampleTimeMs);
+        Log("NPC_SPAWN entity="+std::to_string(spawn->entity));
+    } else if(const auto* removed=std::get_if<NpcRemoved>(&packet.payload)) {
+        auto it=npcs_.find(removed->entity);
+        if(it!=npcs_.end()) npcRequests_.erase(it->second.descriptor.adoption);
+        npcs_.erase(removed->entity); npcReleasing_.erase(removed->entity);
+        Log("NPC_REMOVED entity="+std::to_string(removed->entity));
+    } else if(std::holds_alternative<NpcSnapshotEnd>(packet.payload)) {
+        npcSnapshotReady_=true; Log("NPC_SNAPSHOT_COMPLETE");
+    } else if(std::holds_alternative<NpcDenied>(packet.payload)) {
+        Log("NPC_ADOPTION_DENIED"); // Retain bounded request to avoid retrying a denied token.
     } else if(std::holds_alternative<SessionClosed>(packet.payload)) Fail("SESSION_CLOSED");
     else Fail("UNEXPECTED_CONTROL");
 }
@@ -77,6 +97,14 @@ void SessionClient::State(const net::Datagram& d,std::uint64_t now) {
     const auto& packet=*parsed.packet;
     if(packet.header.session!=member_.session || packet.header.epoch!=member_.epoch) { ++stats_.rejected; return; }
     if(std::holds_alternative<Heartbeat>(packet.payload) && packet.header.sender==member_.player) { lastReceive_=now; return; }
+    if(const auto* state=std::get_if<NpcState>(&packet.payload)) {
+        auto it=npcs_.find(state->entity);
+        if(config_.host || packet.header.sender!=host_ || it==npcs_.end()) { ++stats_.rejected; return; }
+        if(!it->second.snapshots.Push(packet.header.sequence,static_cast<double>(now),state->transform,state->sampleTimeMs)) { ++stats_.stale; return; }
+        auto& descriptor=it->second.descriptor; descriptor.transform=state->transform;
+        descriptor.sequence=packet.header.sequence; descriptor.sampleTimeMs=state->sampleTimeMs;
+        lastReceive_=now; ++stats_.received; return;
+    }
     if(const auto* pose=std::get_if<PlayerPose>(&packet.payload)) {
         if(!config_.host || phase_!=ClientPhase::Active || pose->entity!=packet.header.sender || !members_.contains(packet.header.sender)) {
             ++stats_.rejected; return;
@@ -96,9 +124,7 @@ void SessionClient::State(const net::Datagram& d,std::uint64_t now) {
         if(player==member_.player) return;
         if(Snapshot(player,packet,state->transform,state->sampleTimeMs,now)) {
             lastReceive_=now;
-            if(player==host_ && phase_==ClientPhase::Synchronizing && !readySent_) {
-                control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,0},Ready{}}); readySent_=true;
-            }
+
         }
         return;
     }
@@ -112,6 +138,28 @@ bool SessionClient::SendLocalSnapshot(Transform value,std::uint32_t sequence,std
     if(result) ++stats_.sent;
     return result;
 }
+bool SessionClient::AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform) {
+    if(!config_.host || phase_!=ClientPhase::Active) return false;
+    if(auto prior=npcRequests_.find(adoption);prior!=npcRequests_.end()) return prior->second.record==record;
+    if(npcRequests_.size()>=config_.maxNpcs || control_.Pending()) return false;
+    NpcAdopt request{adoption,record,transform};
+    if(!control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,npcEvent_+1},request})) return false;
+    ++npcEvent_; npcRequests_.emplace(adoption,request); return true;
+}
+bool SessionClient::DespawnNpc(EntityId entity) {
+    if(!config_.host || phase_!=ClientPhase::Active || !npcs_.contains(entity)) return false;
+    if(npcReleasing_.contains(entity)) return true;
+    if(control_.Pending()) return false;
+    if(!control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,npcEvent_+1},NpcDespawn{entity}})) return false;
+    ++npcEvent_; npcReleasing_.insert(entity); return true;
+}
+bool SessionClient::SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time) {
+    if(!config_.host || phase_!=ClientPhase::Active || !npcs_.contains(entity) || npcReleasing_.contains(entity)) return false;
+    Packet packet{{member_.session,member_.epoch,member_.player,sequence,0},NpcState{entity,transform,time}};
+    const bool sent=net::SendUdp(udp_,config_.server,token_,packet);
+    if(sent) ++stats_.sent;
+    return sent;
+}
 void SessionClient::Tick(std::uint64_t now) {
     if(phase_==ClientPhase::Disconnected || phase_==ClientPhase::Failed) return;
     std::vector<Packet> incoming;
@@ -121,6 +169,10 @@ void SessionClient::Tick(std::uint64_t now) {
         if(phase_==ClientPhase::Failed) return;
     }
     for(unsigned i=0;i<2048;++i) { auto d=net::ReceiveUdp(udp_); if(!d) break; State(*d,now); }
+    if(phase_==ClientPhase::Synchronizing && !config_.host && npcSnapshotReady_ && !readySent_
+        && remotes_.contains(host_) && remotes_.at(host_).initialized) {
+        if(control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,0},Ready{}})) readySent_=true;
+    }
     if(now>=lastReceive_ && now-lastReceive_>config_.timeoutMs) { Fail("SESSION_TIMEOUT"); return; }
     if(member_.session && now>=nextHeartbeat_) {
         net::SendUdp(udp_,config_.server,token_,Packet{{member_.session,member_.epoch,member_.player,++heartbeat_,0},Heartbeat{}});

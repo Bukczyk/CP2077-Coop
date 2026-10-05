@@ -9,15 +9,17 @@ namespace coop {
 namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 constexpr std::uint32_t kMagic = 0x43505331; // CPS1
-constexpr std::array<PacketType, 23> kTypes{
+constexpr std::array<PacketType, 30> kTypes{
     PacketType::Heartbeat, PacketType::Leave, PacketType::Ack,
     PacketType::PlayerPose, PacketType::PlayerState, PacketType::VehicleInput,
     PacketType::VehicleState, PacketType::HitRequest, PacketType::DamageApplied,
     PacketType::EntitySpawn, PacketType::EntityDespawn, PacketType::WorldState,
     PacketType::Hello, PacketType::HelloOk, PacketType::CreateSession, PacketType::JoinSession,
     PacketType::SessionAccepted, PacketType::Reject, PacketType::MemberJoined, PacketType::MemberLeft,
-    PacketType::SessionClosed, PacketType::Ready, PacketType::SessionReady};
-constexpr std::array<std::uint32_t, 23> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0};
+    PacketType::SessionClosed, PacketType::Ready, PacketType::SessionReady,
+    PacketType::NpcAdopt, PacketType::NpcSpawn, PacketType::NpcDespawn, PacketType::NpcRemoved,
+    PacketType::NpcState, PacketType::NpcSnapshotEnd, PacketType::NpcDenied};
+constexpr std::array<std::uint32_t, 30> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8};
 struct Writer {
     std::vector<std::uint8_t> data;
     void integer(std::uint64_t value, unsigned width) {
@@ -75,7 +77,7 @@ PacketType TypeOf(const Payload& payload) { return kTypes[payload.index()]; }
 bool IsReliable(PacketType type) {
     return type == PacketType::Leave || type == PacketType::HitRequest
         || type == PacketType::DamageApplied || type == PacketType::EntitySpawn
-        || type == PacketType::EntityDespawn;
+        || type == PacketType::EntityDespawn || type == PacketType::NpcAdopt || type == PacketType::NpcDespawn;
 }
 bool IsNewer(std::uint32_t candidate, std::uint32_t previous) {
     const auto distance = candidate - previous;
@@ -87,7 +89,8 @@ bool Validate(const Packet& packet) {
     const bool pre = type == PacketType::Hello || type == PacketType::HelloOk
         || type == PacketType::CreateSession || type == PacketType::JoinSession || type == PacketType::Reject;
     const bool server = type == PacketType::SessionAccepted || type == PacketType::MemberJoined
-        || type == PacketType::MemberLeft || type == PacketType::SessionClosed || type == PacketType::SessionReady;
+        || type == PacketType::MemberLeft || type == PacketType::SessionClosed || type == PacketType::SessionReady
+        || type == PacketType::NpcSpawn || type == PacketType::NpcRemoved || type == PacketType::NpcSnapshotEnd || type == PacketType::NpcDenied;
     if (pre) { if (h.session || h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (server) { if (!h.session || !h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (h.session == 0 || h.epoch == 0 || h.sender == 0) return false;
@@ -109,6 +112,12 @@ bool Validate(const Packet& packet) {
         else if constexpr (std::is_same_v<T, MemberJoined> || std::is_same_v<T, MemberLeft>) return p.player != 0;
         else if constexpr (std::is_same_v<T, HelloOk> || std::is_same_v<T, SessionClosed>
             || std::is_same_v<T, Ready> || std::is_same_v<T, SessionReady>) return true;
+        else if constexpr (std::is_same_v<T, NpcAdopt>) return p.adoption && p.record && p.record<=0xffffffffffULL && valid(p.transform);
+        else if constexpr (std::is_same_v<T, NpcSpawn>) return p.entity>=kNpcEntityBase && p.adoption && p.record && p.record<=0xffffffffffULL && valid(p.transform);
+        else if constexpr (std::is_same_v<T, NpcDespawn> || std::is_same_v<T, NpcRemoved>) return p.entity>=kNpcEntityBase;
+        else if constexpr (std::is_same_v<T, NpcState>) return p.entity>=kNpcEntityBase && p.sampleTimeMs && valid(p.transform);
+        else if constexpr (std::is_same_v<T, NpcSnapshotEnd>) return true;
+        else if constexpr (std::is_same_v<T, NpcDenied>) return p.adoption!=0;
         else if constexpr (std::is_same_v<T, Ack>) return p.event != 0;
         else if constexpr (std::is_same_v<T, HitRequest>)
             return p.attacker != 0 && p.target != 0 && p.attacker != p.target && bounded(p.proposedDamage, 0.001f, 100000);
@@ -134,7 +143,15 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
     w.integer(h.sequence, 4); w.integer(h.event, 8);
     std::visit([&](const auto& p) {
         using T = std::decay_t<decltype(p)>;
-        if constexpr (std::is_same_v<T, Heartbeat> || std::is_same_v<T, Leave>) {}
+        if constexpr (std::is_same_v<T, NpcSnapshotEnd>) {}
+        else if constexpr (std::is_same_v<T, NpcDenied>) w.integer(p.adoption,8);
+        else if constexpr (std::is_same_v<T, NpcAdopt>) { w.integer(p.adoption,8); w.integer(p.record,8); w.transform(p.transform); }
+        else if constexpr (std::is_same_v<T, NpcSpawn>) {
+            w.integer(p.entity,8); w.integer(p.adoption,8); w.integer(p.record,8); w.transform(p.transform);
+            w.integer(p.sequence,4); w.integer(p.sampleTimeMs,8);
+        }
+        else if constexpr (std::is_same_v<T, NpcDespawn> || std::is_same_v<T, NpcRemoved>) w.integer(p.entity,8);
+        else if constexpr (std::is_same_v<T, Heartbeat> || std::is_same_v<T, Leave>) {}
         else if constexpr (std::is_same_v<T, Hello>) w.text(p.key,64);
         else if constexpr (std::is_same_v<T, CreateSession> || std::is_same_v<T, JoinSession>) w.text(p.name,32);
         else if constexpr (std::is_same_v<T, SessionAccepted>) { w.integer(p.player,4); w.integer(p.host,4); for (auto b : p.token) w.integer(b,1); }
@@ -176,6 +193,13 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     Packet packet;
     packet.header = {r.integer(8), r.u32(), r.u32(), r.u32(), r.integer(8)};
     switch (type) {
+    case PacketType::NpcAdopt: packet.payload=NpcAdopt{r.integer(8),r.integer(8),r.transform()}; break;
+    case PacketType::NpcSpawn: packet.payload=NpcSpawn{r.integer(8),r.integer(8),r.integer(8),r.transform(),r.u32(),r.integer(8)}; break;
+    case PacketType::NpcDespawn: packet.payload=NpcDespawn{r.integer(8)}; break;
+    case PacketType::NpcRemoved: packet.payload=NpcRemoved{r.integer(8)}; break;
+    case PacketType::NpcState: packet.payload=NpcState{r.integer(8),r.transform(),r.integer(8)}; break;
+    case PacketType::NpcSnapshotEnd: packet.payload=NpcSnapshotEnd{}; break;
+    case PacketType::NpcDenied: packet.payload=NpcDenied{r.integer(8)}; break;
     case PacketType::Hello: packet.payload = Hello{r.text(64)}; break;
     case PacketType::HelloOk: packet.payload = HelloOk{}; break;
     case PacketType::CreateSession: packet.payload = CreateSession{r.text(32)}; break;

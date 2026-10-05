@@ -20,6 +20,7 @@ SessionServer::SessionServer(ServerConfig config,LogSink log)
     if(!Validate(Packet{{},Hello{config_.accessKey}}) || config_.maxConnections<config_.limits.maxMembers
         || config_.snapshotRate<1 || config_.snapshotRate>60 || config_.distantRate<1 || config_.distantRate>config_.snapshotRate
         || !std::isfinite(config_.nearDistance) || !std::isfinite(config_.interestDistance)
+        || config_.npcSnapshotRate<1 || config_.npcSnapshotRate>20 || config_.npcDistantRate<1 || config_.npcDistantRate>config_.npcSnapshotRate
         || config_.nearDistance<=0 || config_.interestDistance<config_.nearDistance)
         throw std::invalid_argument("Invalid server config");
     listener_=net::Listen(config_.bind,config_.port);
@@ -65,6 +66,8 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
             p.control.Queue(serverPacket(m,MemberJoined{other.member->player}));
             other.control.Queue(serverPacket(*other.member,MemberJoined{m.player}));
         }
+        for(const auto& [npcId,npc]:s->npcs) { (void)npcId; QueueNpc(p,npc); }
+        QueueNpc(p,NpcSnapshotEnd{});
         if(create) p.control.Queue(serverPacket(m,SessionReady{}));
         Log(std::string(create?"CREATE_SESSION":"JOIN_SESSION")+" session="+std::to_string(m.session)
             +" player="+std::to_string(m.player)+" host="+std::to_string(s->host));
@@ -81,6 +84,22 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
         p.control.Queue(serverPacket(m,SessionReady{}));
         Log("SESSION_READY session="+std::to_string(m.session)+" player="+std::to_string(m.player)); return;
     }
+    if(std::holds_alternative<NpcAdopt>(packet.payload) || std::holds_alternative<NpcDespawn>(packet.payload)) {
+        const auto accepted=registry_.Receive(id,packet,now);
+        if(!accepted) { RejectPeer(p,RejectReason::Policy,now); return; }
+        if(accepted.npcDenied) { QueueNpc(p,NpcDenied{std::get<NpcAdopt>(packet.payload).adoption}); return; }
+        for(auto& [unused,peer]:peers_) {
+            (void)unused;
+            if(!peer.member || peer.member->session!=m.session || peer.closing) continue;
+            if(accepted.adopted) QueueNpc(peer,*accepted.adopted);
+            else {
+                auto entity=std::get<NpcDespawn>(packet.payload).entity;
+                QueueNpc(peer,NpcRemoved{entity}); peer.sent.erase(entity); peer.sourceTimes.erase(entity);
+            }
+        }
+        Log(accepted.adopted?"NPC_ADOPTED entity="+std::to_string(accepted.adopted->entity):"NPC_DESPAWN");
+        return;
+    }
     if(std::holds_alternative<Leave>(packet.payload)) { p.closing=now+1; return; }
     RejectPeer(p,RejectReason::Protocol,now);
 }
@@ -95,7 +114,14 @@ void SessionServer::State(const net::Datagram& d,std::uint64_t now) {
         if(packet.header.session!=m.session || packet.header.sender!=m.player || packet.header.epoch!=m.epoch
             || (p.endpoint && *p.endpoint!=d.sender)) { ++stats_.rejected; return; }
         if(now-p.window>=1000) { p.window=now; p.frames=0; }
-        if(++p.frames > 120+config_.snapshotRate*config_.limits.maxMembers*2) { ++stats_.rejected; return; }
+        if(++p.frames > 120+config_.snapshotRate*config_.limits.maxMembers*2+config_.npcSnapshotRate*config_.limits.maxNpcs*2) { ++stats_.rejected; return; }
+        if(std::holds_alternative<NpcState>(packet.payload)) {
+            const auto accepted=registry_.Receive(connection,packet,now);
+            if(accepted) { p.endpoint=d.sender; ++stats_.acceptedStates; }
+            else if(accepted.error==SessionError::Stale) ++stats_.stale;
+            else ++stats_.rejected;
+            return;
+        }
         const auto* pose=std::get_if<PlayerPose>(&packet.payload);
         const auto* state=std::get_if<PlayerState>(&packet.payload);
         const bool heartbeat=std::holds_alternative<Heartbeat>(packet.payload);
@@ -156,6 +182,32 @@ void SessionServer::RouteStates(std::uint64_t now) {
         }
     }
 }
+void SessionServer::QueueNpc(Peer& p,Payload payload) {
+    if(!p.member || p.npcOutbox.size()>=2*config_.limits.maxNpcs+16) { p.control.Close(); return; }
+    p.npcOutbox.push_back(serverPacket(*p.member,std::move(payload)));
+}
+void SessionServer::RouteNpcs(std::uint64_t now) {
+    for(auto& [unused,p]:peers_) {
+        (void)unused;
+        if(!p.member || !p.endpoint || p.closing || p.member->role==Role::Host) continue;
+        const auto& m=*p.member; const auto* session=registry_.Find(m.session);
+        if(!session || session->members.at(m.player).phase!=Phase::Active) continue;
+        const auto& playerStates=rooms_.at(m.session).states;
+        const auto observer=playerStates.find(m.player); if(observer==playerStates.end()) continue;
+        auto position=std::get<PlayerState>(observer->second.payload).transform.position;
+        for(const auto& [entity,npc]:session->npcs) {
+            if(!npc.sampleTimeMs) continue;
+            const auto d=distance(position,npc.transform.position);
+            if(d>config_.interestDistance) { ++stats_.filtered; continue; }
+            const auto rate=d>config_.nearDistance?config_.npcDistantRate:config_.npcSnapshotRate;
+            auto& sent=p.sent[entity];
+            if(sent.initialized && now-sent.time<1000/rate) continue;
+            // Repeat latest state after loss/interest re-entry; clients reject duplicates.
+            Packet packet{{m.session,m.epoch,session->host,npc.sequence,0},NpcState{entity,npc.transform,npc.sampleTimeMs}};
+            if(net::SendUdp(udp_,*p.endpoint,p.token,packet)) { sent={npc.sequence,now,true}; ++stats_.routed; }
+        }
+    }
+}
 void SessionServer::NotifyRemoval(const Removal& r,std::uint64_t now) {
     auto room=rooms_.find(r.session);
     if(room!=rooms_.end()) {
@@ -183,6 +235,12 @@ void SessionServer::Tick(std::uint64_t now) {
     for(auto& [id,p]:peers_) {
         std::vector<Packet> incoming;
         if(!p.control.Pump(incoming)) continue;
+        if(!p.control.Pending()) {
+            for(unsigned i=0;i<8 && !p.npcOutbox.empty();++i) {
+                if(!p.control.Queue(p.npcOutbox.front())) break;
+                p.npcOutbox.pop_front();
+            }
+        }
         if(incoming.size()>32) { RejectPeer(p,RejectReason::Protocol,now); continue; }
         for(const auto& packet:incoming) Control(id,p,packet,now);
         if(!p.member && now-p.connected>5000) RejectPeer(p,RejectReason::Timeout,now);
@@ -201,6 +259,6 @@ void SessionServer::Tick(std::uint64_t now) {
         if(auto removed=registry_.Disconnect(it->first)) NotifyRemoval(*removed,now);
         it=peers_.erase(it);
     }
-    RouteStates(now);
+    RouteStates(now); RouteNpcs(now);
 }
 } // namespace coop

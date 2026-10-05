@@ -45,6 +45,10 @@ struct Session {
     EntityId lastEntity = 0;
     std::unordered_map<PlayerId, Member> members;
     std::unordered_map<EntityId, Entity> entities;
+    EntityId lastNpc=kNpcEntityBase-1;
+    std::unordered_map<EntityId,NpcSpawn> npcs;
+    // Tombstones prevent an adoption token from resurrecting a retired NPC.
+    std::unordered_map<std::uint64_t,EntityId> npcAdoptions;
 };
 struct Removal {
     SessionId session = 0;
@@ -58,6 +62,8 @@ struct ReceiveResult {
     Route route = Route::None;
     std::vector<PlayerId> recipients;
     std::optional<Removal> removal;
+    std::optional<NpcSpawn> adopted;
+    bool npcDenied=false;
     explicit operator bool() const { return error == SessionError::None; }
 };
 // Single-threaded policy core: the owning server serializes calls. No sockets,
@@ -65,6 +71,7 @@ struct ReceiveResult {
 struct SessionLimits {
     std::size_t maxSessions = 16, maxMembers = 16, maxEntities = 4096;
     std::uint64_t timeoutMs = 10000;
+    std::size_t maxNpcs = 128;
 };
 class SessionRegistry {
 public:

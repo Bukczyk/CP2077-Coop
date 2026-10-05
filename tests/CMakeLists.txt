@@ -1,4 +1,4 @@
-foreach(suite protocol session net interpolation network_e2e game_bridge)
+foreach(suite protocol session net interpolation network_e2e game_bridge npc)
     add_executable(${suite}_tests ${suite}_tests.cpp)
     target_link_libraries(${suite}_tests PRIVATE coop::core)
     add_test(NAME ${suite} COMMAND ${suite}_tests)
@@ -15,4 +15,4 @@ endif()
 
 add_test(NAME session_bridge_contract COMMAND "${CMAKE_COMMAND}" -DROOT=${PROJECT_SOURCE_DIR}
     -P "${PROJECT_SOURCE_DIR}/build-support/VerifySessionBridge.cmake")
-set_tests_properties(game_bridge session_bridge_contract PROPERTIES TIMEOUT 40)
+set_tests_properties(game_bridge npc session_bridge_contract PROPERTIES TIMEOUT 40)

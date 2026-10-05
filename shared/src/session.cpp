@@ -18,10 +18,11 @@ EntityId entityOf(const Payload& payload) {
 bool hostOnly(PacketType t) {
     return t == PacketType::PlayerState || t == PacketType::VehicleState
         || t == PacketType::DamageApplied || t == PacketType::EntitySpawn
-        || t == PacketType::EntityDespawn || t == PacketType::WorldState;
+        || t == PacketType::EntityDespawn || t == PacketType::WorldState
+        || t == PacketType::NpcAdopt || t == PacketType::NpcDespawn || t == PacketType::NpcState;
 }
 void eraseEntity(Session& s, EntityId id) {
-    s.entities.erase(id);
+    s.entities.erase(id); s.npcs.erase(id);
     for (auto& [unused, m] : s.members) {
         (void)unused;
         std::erase_if(m.sequences, [id](const auto& entry) { return entry.first.second == id; });
@@ -29,7 +30,7 @@ void eraseEntity(Session& s, EntityId id) {
 }
 } // namespace
 SessionRegistry::SessionRegistry(SessionLimits limits) : limits_(limits) {
-    if (!limits.maxSessions || !limits.maxMembers || limits.maxEntities < limits.maxMembers || !limits.timeoutMs)
+    if (!limits.maxSessions || !limits.maxMembers || limits.maxEntities < limits.maxMembers || !limits.timeoutMs || !limits.maxNpcs)
         throw std::invalid_argument("Invalid session limits");
 }
 bool SessionRegistry::ConnectionUsed(ConnectionId connection) const {
@@ -95,9 +96,11 @@ SessionError SessionRegistry::MarkSynchronized(SessionId id, PlayerId player, st
     return SessionError::None;
 }
 ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& packet, std::uint64_t now) {
-    const auto fail = [](SessionError e) { return ReceiveResult{e, Route::None, {}, {}}; };
+    const auto fail = [](SessionError e) { return ReceiveResult{e, Route::None, {}, {}, {}, false}; };
     if (!Validate(packet)) return fail(SessionError::Invalid);
     if (TypeOf(packet.payload) >= PacketType::Hello && TypeOf(packet.payload) <= PacketType::SessionReady) return fail(SessionError::Invalid); // Admission is transport policy, not gameplay.
+    if (TypeOf(packet.payload)==PacketType::NpcSpawn || TypeOf(packet.payload)==PacketType::NpcRemoved ||
+        TypeOf(packet.payload)==PacketType::NpcSnapshotEnd || TypeOf(packet.payload)==PacketType::NpcDenied) return fail(SessionError::Invalid);
     auto it = sessions_.find(packet.header.session);
     if (it == sessions_.end()) return fail(SessionError::MissingSession);
     auto& s = it->second;
@@ -130,6 +133,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
         return fail(SessionError::Kind);
     if (type == PacketType::WorldState && entity->second.kind != EntityKind::World) return fail(SessionError::Kind);
     if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
+        if (spawn->entity>=kNpcEntityBase) return fail(SessionError::Kind);
         if (spawn->entity <= s.lastEntity) return fail(SessionError::EntityReuse);
         if (s.entities.size() >= limits_.maxEntities) return fail(SessionError::Capacity);
         if (spawn->owner && !s.members.contains(spawn->owner)) return fail(SessionError::Ownership);
@@ -150,6 +154,22 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
         if (type == PacketType::HitRequest && (a->second.owner != m.id || a->second.kind != EntityKind::Player))
             return fail(SessionError::Ownership);
     }
+    if (type==PacketType::NpcState || type==PacketType::NpcDespawn) {
+        if(entity->second.kind!=EntityKind::NPC) return fail(SessionError::Kind);
+    }
+    if(const auto* state=std::get_if<NpcState>(&packet.payload)) {
+        if(state->sampleTimeMs<=s.npcs.at(id).sampleTimeMs) return fail(SessionError::Stale);
+    }
+    bool npcDenied=false;
+    if(const auto* adopt=std::get_if<NpcAdopt>(&packet.payload)) {
+        const auto prior=s.npcAdoptions.find(adopt->adoption);
+        if(prior!=s.npcAdoptions.end()) {
+            const auto npc=s.npcs.find(prior->second);
+            if(npc==s.npcs.end()) return fail(SessionError::EntityReuse);
+            if(npc->second.record!=adopt->record) return fail(SessionError::Identity);
+        } else if(s.npcs.size()>=limits_.maxNpcs || s.entities.size()>=limits_.maxEntities ||
+            s.npcAdoptions.size()>=limits_.maxEntities || s.lastNpc==std::numeric_limits<EntityId>::max()) npcDenied=true;
+    }
     const auto stream = std::pair{type, id};
     // Ack is not sequenced: a transport may acknowledge the same event repeatedly.
     if (!reliable && type != PacketType::Ack) {
@@ -168,7 +188,21 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
                 && (result.route == Route::Peers || peer.role == Role::Host)) result.recipients.push_back(peerId);
         }
     }
-    if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
+    if (const auto* adopt=std::get_if<NpcAdopt>(&packet.payload)) {
+        if(npcDenied) { result.npcDenied=true; return result; } // Command consumed; bounded capacity denial is not an event gap.
+        auto prior=s.npcAdoptions.find(adopt->adoption);
+        EntityId npc=prior==s.npcAdoptions.end()?++s.lastNpc:prior->second;
+        if(prior==s.npcAdoptions.end()) {
+            s.npcAdoptions.emplace(adopt->adoption,npc);
+            s.npcs.emplace(npc,NpcSpawn{npc,adopt->adoption,adopt->record,adopt->transform,0,0});
+            s.entities.emplace(npc,Entity{EntityKind::NPC,s.host,adopt->transform});
+        }
+        result.adopted=s.npcs.at(npc);
+    } else if (type==PacketType::NpcDespawn) { eraseEntity(s,id);
+    } else if (const auto* state=std::get_if<NpcState>(&packet.payload)) {
+        auto& npc=s.npcs.at(id); npc.transform=state->transform; npc.sequence=packet.header.sequence; npc.sampleTimeMs=state->sampleTimeMs;
+        entity->second.transform=state->transform;
+    } else if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
         s.entities.emplace(id, Entity{spawn->kind, spawn->owner, spawn->transform});
         s.lastEntity = id;
     } else if (type == PacketType::EntityDespawn) {
@@ -228,7 +262,7 @@ SessionError SessionRegistry::ResetWorld(ConnectionId connection) {
             if (m.role != Role::Host) return SessionError::Authority;
             if (s.epoch == std::numeric_limits<std::uint32_t>::max()) return SessionError::Capacity;
             ++s.epoch;
-            s.entities.clear(); s.lastEntity = 0;
+            s.entities.clear(); s.lastEntity = 0; s.npcs.clear(); s.npcAdoptions.clear(); s.lastNpc=kNpcEntityBase-1;
             for (auto& [peerId, peer] : s.members) {
                 (void)peerId;
                 peer.sequences.clear(); peer.lastEvent = 0;

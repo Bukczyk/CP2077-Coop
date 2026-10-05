@@ -8,7 +8,8 @@ struct ClientConfig {
     net::Endpoint server{"127.0.0.1",11779};
     std::string accessKey, sessionName="first-test";
     bool host=false, automaticSnapshots=true;
-    unsigned playerSnapshotRate=60, vehicleSnapshotRate=60;
+    unsigned playerSnapshotRate=60, vehicleSnapshotRate=60, npcSnapshotRate=20;
+    std::size_t maxNpcs=128;
     InterpolationConfig interpolation{};
     std::uint64_t timeoutMs=10000;
 };
@@ -18,6 +19,11 @@ struct RemotePlayer {
     std::uint64_t sourceTime=0, receivedTime=0;
     bool initialized=false;
     explicit RemotePlayer(InterpolationConfig config = {}) : snapshots(config) {}
+};
+struct RemoteNpc {
+    NpcSpawn descriptor;
+    SnapshotBuffer snapshots;
+    RemoteNpc(NpcSpawn value,InterpolationConfig config):descriptor(value),snapshots(config) {}
 };
 struct ClientStats { std::uint64_t sent=0, received=0, stale=0, rejected=0; };
 class SessionClient {
@@ -29,6 +35,10 @@ public:
     void SetLocal(Transform value) { local_=value; }
     // Engine snapshots have explicit sequence/time. Automatic Tick uses the configured rate.
     bool SendLocalSnapshot(Transform value, std::uint32_t sequence, std::uint64_t sourceTime);
+    bool AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform);
+    bool DespawnNpc(EntityId entity);
+    bool SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time);
+    const std::unordered_map<EntityId,RemoteNpc>& Npcs() const { return npcs_; }
     ClientPhase Phase() const { return phase_; }
     const Membership& Member() const { return member_; }
     PlayerId Host() const { return host_; }
@@ -54,7 +64,11 @@ private:
     std::uint64_t lastReceive_=0, nextHeartbeat_=0;
     double nextSnapshot_=0;
     std::uint32_t sequence_=0, heartbeat_=0;
-    bool readySent_=false;
+    bool readySent_=false, npcSnapshotReady_=false;
+    std::uint64_t npcEvent_=0;
+    std::unordered_map<EntityId,RemoteNpc> npcs_;
+    std::unordered_map<std::uint64_t,NpcAdopt> npcRequests_;
+    std::unordered_set<EntityId> npcReleasing_;
     ClientStats stats_;
 };
 } // namespace coop
