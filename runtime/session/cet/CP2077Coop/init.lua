@@ -140,11 +140,18 @@ local function update(delta)
                 }
             end
         end
-        if #npcs > 0 and not population.available() and not npcWarning then
+        if #npcs > 0 and not npcWarning then
             npcWarning = true
-            print("[CP2077Session] NPC_PROJECTION_BLOCKED: reversible population/AI hooks are not verified")
+            local ready, reason = population.available()
+            if ready then
+                print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
+            else
+                print("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
+            end
         end
-        npcProjection:step(generation, bubble, npcs)
+        if not npcProjection:step(generation, bubble, npcs) and #npcs > 0 then
+            print("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
+        end
     end
     for id, entry in pairs(proxies) do
         if not seen[id] then system:DeleteTagged(entry.tag); proxies[id] = nil end

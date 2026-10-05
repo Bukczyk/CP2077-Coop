@@ -145,3 +145,11 @@ Exact changed files relative to 6f328c3:
 - tests/npc_population_tests.lua
 - tests/npc_tests.cpp
 - tests/protocol_tests.cpp
+
+
+## JOINER NPC projection creation — 2026-10-05
+The JOINER CET adapter now creates an adapter-owned Codeware DynamicEntitySpec from the received TweakDBID, keeps the EntityID returned by DynamicEntitySystem.CreateEntity while streaming completes, and binds only after DynamicEntitySystem.GetEntity(id).GetEntityID() matches exactly. Catalog/bubble removal, session epoch change, disconnect and reconnect unbind and delete only those owned IDs. Projection movement uses the existing CET TeleportationFacility path. The network/session core is unchanged.
+
+Verified against installed Codeware declarations and upstream source: DynamicEntitySpec.recordID/position/orientation/persistState/persistSpawn/alwaysSpawned/spawnInView/active/tags; DynamicEntitySystem.IsReady/CreateEntity/IsSpawning/IsSpawned/GetEntity/DeleteEntity; Entity.GetEntityID. Installed CET scripts confirm TweakDB:GetRecord, TweakDBID.new, Quaternion.new, Vector4.new and the TeleportationFacility:Teleport form. No REDscript source was changed or compiled in this Lua-only step.
+
+Validation: Windows Release plugin/core/server build succeeded; focused npc_population CTest passed with mocked asynchronous creation, exact SessionEntityId binding, duplicate frames, catalog removal, epoch reset and reconnect. Engine execution was not tested. Autonomous AI and local ambient population suppression remain unimplemented; projection creation is not yet safe for a controlled shared-world gameplay test.
