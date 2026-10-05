@@ -7,7 +7,7 @@ assert(loadfile(root .. "/runtime/session/cet/CP2077Coop/init.lua"))
 local log, visible, hidden, mapped = {}, {}, {}, {}
 local ambient = { a={x=1,y=0,z=0}, b={x=500,y=0,z=0} }
 local bubble = {radius=20,centers={{x=0,y=0,z=0}},exclusions={"player-proxy"}}
-local enabled, failAcquire, failRemove, nextId = false, false, false, 0
+local enabled, failAcquire, failRemove, failSpawn, nextId = false, false, false, false, 0
 local adapter = {
     available=function() return enabled end,
     acquire=function(boundary, exclusions)
@@ -18,6 +18,7 @@ local adapter = {
     end,
     release=function() log[#log+1]="restore"; hidden={}; return true end,
     spawn=function(npc)
+        if failSpawn then return nil end
         assert(hidden.a or hidden.b)
         nextId=nextId+1; local localId="projection-"..nextId
         visible[localId]=npc.entity; log[#log+1]="spawn"; return localId
@@ -63,5 +64,8 @@ assert(controller:step("session3:epoch1",bubble,{second}))
 local moved={radius=20,centers={{x=500,y=0,z=0}},exclusions={"player-proxy"}}
 assert(not controller:step("session3:epoch1",moved,{second}))
 assert(next(visible)==nil and next(hidden)==nil) -- leave bubble restores original population
+failSpawn=true
+assert(not controller:step("session4:epoch1",bubble,{second}))
+assert(next(visible)==nil and next(hidden)==nil) -- failed asset creation cannot leave an empty suppressed bubble
 assert(not Runtime.contains(bubble,{x=0/0,y=0,z=0}))
 print("Session Bubble identity, suppression gating, recovery and projection lifecycle tests passed")

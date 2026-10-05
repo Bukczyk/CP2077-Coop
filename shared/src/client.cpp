@@ -148,6 +148,9 @@ bool SessionClient::AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transfo
     if(!control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,npcEvent_+1},request})) return false;
     ++npcEvent_; npcRequests_.emplace(adoption,request); return true;
 }
+void SessionClient::ForgetDeniedNpc(std::uint64_t adoption) {
+    if(npcDenied_.erase(adoption)) npcRequests_.erase(adoption);
+}
 bool SessionClient::DespawnNpc(EntityId entity) {
     if(!config_.host || phase_!=ClientPhase::Active || !npcs_.contains(entity)) return false;
     if(npcReleasing_.contains(entity)) return true;

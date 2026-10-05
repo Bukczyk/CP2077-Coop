@@ -1,4 +1,6 @@
-# Protocol v1 core contract
+Current implementation uses protocol **v3**. The v1 section below is historical; current NPC additions are specified at the end. The v2 session handshake and timestamped player/vehicle states remain in v3; v1/v2 peers are rejected rather than mixed with v3.
+
+# Historical protocol v1 core contract
 
 Status: implemented foundation, not connected to the legacy plugin or UDP relay. A transport must authenticate members before calling SessionRegistry. Pre-admission handshake, token exchange, retransmission scheduling and snapshot transfer are not implemented in this milestone. No public listener consumes v1 yet.
 
@@ -59,3 +61,18 @@ Receive requires a monotonic millisecond clock and rejects expired members/HOST 
 Tests run without Cyberpunk: fixed golden bytes, all payload round trips, every truncated prefix, unknown fields, NaN/Infinity, deterministic malformed inputs, role/ownership/identity rejection, foreign sessions, sequence wrap, reliable gaps/duplicates, bounded registries, expiry, rejoin and epoch reset. Byte hashes protect imported game scripts from unintended changes.
 
 Next transport stage must add authenticated admission, bounded rate limits and retries, acknowledgment identity, snapshot chunking/baseline revisions, event history/recovery and POSIX/Winsock networking. Vehicle seat transitions and full world/quest state are not represented by these minimal payloads. Do not expose this foundation as a complete or secured multiplayer server.
+
+## v3 NPC extension
+NPC IDs are server-issued u64 values starting at 2^32, separate from PlayerId. All fields are encoded in network byte order; T remains 24 bytes. Records are canonical nonzero 40-bit TweakDB names stored in u64, with local database offsets removed. NPC authority is always the authenticated session HOST.
+
+| Type | Value | Bytes | Payload in order | Path |
+| --- | --- | --- | --- | --- |
+| NpcAdopt | 0x500 | 40 | adoption u64, record u64, T | HOST TCP, ordered event |
+| NpcSpawn | 0x501 | 60 | entity u64, adoption u64, record u64, T, sequence u32, sampleTimeMs u64 | Server TCP catalog/ack |
+| NpcDespawn | 0x502 | 8 | entity u64 | HOST TCP, ordered event |
+| NpcRemoved | 0x503 | 8 | entity u64 | Server TCP |
+| NpcState | 0x504 | 40 | entity u64, T, sampleTimeMs u64 | HOST UDP, sequenced |
+| NpcSnapshotEnd | 0x505 | 0 | none | Server TCP catalog boundary |
+| NpcDenied | 0x506 | 8 | adoption u64 | Server TCP capacity response |
+
+Server controls use sender/sequence/event zero in the header. NpcState uses the HOST sender and stream sequence; stale sequence or source time and foreign epochs are rejected. NpcAdopt/Despawn use contiguous event IDs over TCP. Capacity denial consumes the valid command event but creates no entity. Adoption tokens are HOST request identities, not engine pointers or positional matches; retired tokens remain bounded tombstones for the epoch. JOINER sends Ready only after both player baseline and NPC catalog completion. NPC lifecycle outboxes and client catalogs are bounded; overload fails explicitly. High-frequency NPC routing uses observer distance and configured NPC rates.

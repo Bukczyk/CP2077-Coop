@@ -57,6 +57,7 @@ function M.new(adapter)
             local projection = self.owned[id]
             if not projection then
                 local localId = self.adapter.spawn(npc)
+                if localId == nil then self:reset(); return false end
                 if localId ~= nil then
                     projection = { entity = npc.entity, localId = localId }
                     self.owned[id] = projection

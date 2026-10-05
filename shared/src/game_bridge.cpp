@@ -131,7 +131,9 @@ void SessionBridge::Run(std::stop_token stop) {
                         if(found!=accepted.end()) state.entity=found->second;
                         if(npc.releasing) {
                             if(found!=accepted.end()) client.DespawnNpc(found->second);
-                            else if(!state.submitted || state.entity || client.NpcDeniedByServer(npc.adoption)) retired.push_back(engineId);
+                            else if(!state.submitted || state.entity || client.NpcDeniedByServer(npc.adoption)) {
+                                client.ForgetDeniedNpc(npc.adoption); retired.push_back(engineId);
+                            }
                         } else if(found!=accepted.end()) {
                             if(sample) client.SendNpcSnapshot(found->second,npc.transform,++state.sequence,now);
                         } else if(!state.submitted) state.submitted=client.AdoptNpc(npc.adoption,npc.record,npc.transform);

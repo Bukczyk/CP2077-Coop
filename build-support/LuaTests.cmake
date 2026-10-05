@@ -1,4 +1,7 @@
 # Interpreter is test-only, never linked into the game plugin.
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
 include(FetchContent)
 enable_language(C)
 FetchContent_Declare(coop_lua_source

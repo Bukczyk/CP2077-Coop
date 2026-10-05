@@ -38,6 +38,7 @@ public:
     bool AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform);
     bool DespawnNpc(EntityId entity);
     bool SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time);
+    void ForgetDeniedNpc(std::uint64_t adoption);
     bool NpcDeniedByServer(std::uint64_t adoption) const { return npcDenied_.contains(adoption); }
     const std::unordered_map<EntityId,RemoteNpc>& Npcs() const { return npcs_; }
     ClientPhase Phase() const { return phase_; }

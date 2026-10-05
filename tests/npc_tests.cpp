@@ -115,4 +115,36 @@ void Sockets() {
     CHECK(joiner.Npcs().begin()->first!=id);
     host.Disconnect(); until([&]{return joiner.Phase()==ClientPhase::Failed;}); CHECK(joiner.Npcs().empty());
 }
-int main() { return Run([]{Codec();Policy();Sockets();}); }
+void CatalogAndInterest() {
+    ServerConfig sc; sc.port=0; sc.accessKey=std::string(64,'a'); SessionServer server(sc);
+    ClientConfig hc; hc.host=true; hc.server.port=server.Port(); hc.accessKey=sc.accessKey;
+    ClientConfig jc=hc; jc.host=false;
+    SessionClient host(hc),joiner(jc); host.SetLocal({}); joiner.SetLocal({}); CHECK(host.Connect());
+    auto until=[&](auto done) {
+        const auto deadline=net::NowMs()+8000;
+        while(!done()) {
+            CHECK(net::NowMs()<deadline); auto now=net::NowMs(); server.Tick(now); host.Tick(now); joiner.Tick(now);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    };
+    until([&]{return host.Phase()==ClientPhase::Active;});
+    for(unsigned i=1;i<=48;++i) until([&]{return host.AdoptNpc(i,123,{{1000,0,0},{}});});
+    until([&]{return host.Npcs().size()==48;});
+    CHECK(joiner.Connect()); until([&]{return joiner.Phase()==ClientPhase::Active;});
+    CHECK(joiner.Npcs().size()==48); // catalog exceeds a single control batch
+    const auto id=host.Npcs().begin()->first;
+    CHECK(host.SendNpcSnapshot(id,{{1000,0,0},{}},1,100));
+    const auto stop=net::NowMs()+200;
+    until([&]{return net::NowMs()>=stop;});
+    CHECK(joiner.Npcs().at(id).descriptor.sequence==0 && server.Stats().filtered>0);
+    joiner.SetLocal({{1000,0,0},{}});
+    until([&]{return joiner.Npcs().at(id).descriptor.sequence==1;});
+    const auto old=joiner.Member().player;
+    joiner.Disconnect(); until([&]{return !host.Remotes().contains(old);}); CHECK(joiner.Connect());
+    until([&]{return joiner.Phase()==ClientPhase::Active;}); CHECK(joiner.Npcs().size()==48);
+    CHECK(joiner.Npcs().at(id).descriptor.sequence==1);
+    std::vector<EntityId> ids; for(const auto& [entity,npc]:host.Npcs()) { (void)npc; ids.push_back(entity); }
+    for(auto entity:ids) until([&]{return host.DespawnNpc(entity);});
+    until([&]{return host.Npcs().empty() && joiner.Npcs().empty();});
+}
+int main() { return Run([]{Codec();Policy();Sockets();CatalogAndInterest();}); }
