@@ -112,3 +112,36 @@ Local full Windows build and 11/11 CTest suites passed, including worker/socket 
 ## NPC milestone final hardening checkpoint
 Added a 48-NPC real-socket catalog/reconnect/despawn test, NPC distance-filter/re-entry test and failed projection-creation lease recovery test. Denied adoption bookkeeping is released when the game retires a source. Full local Windows plugin/server build and 11/11 tests passed; packages generated at artifacts/session-20261005-161639-867 without installation. Stage f8d6f52 passed Windows, Debian and ASan/UBSan CI (37322816746). Final hardening CI follows this commit.
 The transport/policy/registry/bubble foundation is complete for this scope. Actual JOINER engine NPC spawning is still gated, not a completed gameplay milestone: verified reversible ambient suppression and passive AI-disabled projection hooks are missing. Already-attached NPC enumeration and live world-reset signaling are also not implemented. Exact remaining hooks are in runtime/session/README.md. Next required task is to validate/implement these adapters and isolated REDscript compilation, NOT combat or stimuli.
+
+## NPC milestone validation and handoff - 2026-10-05
+Final code a0ae81e: full local Windows Release plugin/server build and 11/11 CTest suites passed. CI run 37329564027 passed Windows build/test steps, Debian bookworm and ASan/UBSan tests, including the actual socket tests and Lua population-boundary tests. No game/save/VPS changes were made. Plugin: build/windows/CoopPlugin/Release/CP2077Coop.dll; matched packages: artifacts/session-20261005-161639-867. Packages remain uninstalled.
+No partial source edits or pending local builds. Transport and adapter-policy foundation is tested; actual engine NPC projection remains unavailable until reversible population suppression and passive projection creation are verified. Therefore the next task should resolve those hooks and REDscript validation, not PlayerFire/WorldStimulus/HitRequest/DamageApplied/EntityDeath. No in-game test is requested.
+
+Exact changed files relative to 6f328c3:
+- CoopPlugin/src/main.cpp
+- MIGRATION_PLAN.md
+- SessionServer/main.cpp
+- build-support/LuaTests.cmake
+- deploy/debian/server.ini
+- docs/PROTOCOL.md
+- runtime/session/README.md
+- runtime/session/cet/CP2077Coop/init.lua
+- runtime/session/cet/CP2077Coop/npc_population.lua
+- runtime/session/cet/CP2077Coop/npc_runtime.lua
+- runtime/session/redscript/CP2077Coop/natives.reds
+- scripts/package-session.ps1
+- shared/include/coop/client.hpp
+- shared/include/coop/game_bridge.hpp
+- shared/include/coop/protocol.hpp
+- shared/include/coop/server.hpp
+- shared/include/coop/session.hpp
+- shared/src/client.cpp
+- shared/src/game_bridge.cpp
+- shared/src/protocol.cpp
+- shared/src/server.cpp
+- shared/src/session.cpp
+- tests/CMakeLists.txt
+- tests/game_bridge_tests.cpp
+- tests/npc_population_tests.lua
+- tests/npc_tests.cpp
+- tests/protocol_tests.cpp
