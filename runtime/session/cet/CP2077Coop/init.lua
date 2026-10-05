@@ -1,7 +1,18 @@
 -- Matched typed-session bridge. No combat/world side effects or legacy native calls.
 local NpcRuntime = require("npc_runtime")
 local population = require("npc_population")
-local npcProjection = NpcRuntime.new(population)
+local staticPopulation = require("npc_static_population")
+local npcProjection = nil
+local staticProjectionEnabled = false
+local activePopulation = population
+local function ensureNpcProjection()
+    if npcProjection ~= nil then return end
+    local ok, enabled = pcall(function() return Game.CP2077Session_ExperimentalStaticNpcProjection() end)
+    staticProjectionEnabled = ok and enabled == true
+    activePopulation = staticProjectionEnabled and staticPopulation or population
+    npcProjection = NpcRuntime.new(activePopulation)
+    if staticProjectionEnabled then print("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION enabled; requires imported asset base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent") end
+end
 local pendingNpcs, hostNpcs = {}, {}
 local npcLimit, npcWarning = 128, false
 Observe("NPCPuppet", "OnGameAttached", function(npc)
@@ -12,6 +23,7 @@ local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
 local function clear()
+    ensureNpcProjection()
     npcProjection:reset()
     local system = Game.GetDynamicEntitySystem()
     if system ~= nil and system:IsReady() then
@@ -142,9 +154,13 @@ local function update(delta)
         end
         if #npcs > 0 and not npcWarning then
             npcWarning = true
-            local ready, reason = population.available()
+            local ready, reason = activePopulation.available()
             if ready then
-                print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
+                if staticProjectionEnabled then
+                    print("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION_ACTIVE: render-only prototype; not a gameplay NPC")
+                else
+                    print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
+                end
             else
                 print("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
             end

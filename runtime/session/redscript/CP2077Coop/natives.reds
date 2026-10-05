@@ -24,6 +24,7 @@ public native func CP2077Session_Resolve(local: EntityID) -> Uint64;
 public native func CP2077Session_Epoch() -> Uint32;
 public native func CP2077Session_NpcCapacity() -> Uint32;
 public native func CP2077Session_BubbleRadius() -> Float;
+public native func CP2077Session_ExperimentalStaticNpcProjection() -> Bool;
 public native func CP2077Session_NpcCount() -> Uint32;
 public native func CP2077Session_NpcEntity() -> Uint64;
 public native func CP2077Session_NpcRecord() -> TweakDBID;

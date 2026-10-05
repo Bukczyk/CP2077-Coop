@@ -15,6 +15,7 @@ g::Frame frame;
 std::size_t selected=0, selectedNpc=0;
 std::uint32_t npcCapacity=128;
 float bubbleRadius=100;
+bool experimentalStaticNpcProjection=false;
 std::unordered_set<coop::EntityId> projections;
 std::ofstream logfile;
 void Log(const std::string& s) { logfile<<s<<std::endl; }
@@ -46,6 +47,10 @@ coop::ClientConfig Config(const std::filesystem::path& directory) {
         else if(key=="player_snapshot_rate") c.playerSnapshotRate=Number(value);
         else if(key=="vehicle_snapshot_rate") c.vehicleSnapshotRate=Number(value);
         else if(key=="npc_snapshot_rate") c.npcSnapshotRate=Number(value);
+        else if(key=="experimental_static_npc_projection") {
+            if(value!="0" && value!="1") throw std::runtime_error("Invalid experimental_static_npc_projection flag");
+            experimentalStaticNpcProjection=value=="1";
+        }
         else if(key=="max_npcs") c.maxNpcs=Number(value);
         else if(key=="bubble_radius") { auto radius=Number(value); if(!radius || radius>500) throw std::runtime_error("Invalid bubble radius"); bubbleRadius=static_cast<float>(radius); }
         else if(key=="interpolation_ms") c.interpolation.delayMs=Number(value);
@@ -131,6 +136,7 @@ NATIVE(Resolve,std::uint64_t) { RED4ext::ent::EntityID local{}; RED4ext::GetPara
 NATIVE(Epoch,std::uint32_t) { ++f->code; *out=frame.member.epoch; }
 NATIVE(NpcCapacity,std::uint32_t) { ++f->code; *out=npcCapacity; }
 NATIVE(BubbleRadius,float) { ++f->code; *out=bubbleRadius; }
+NATIVE(ExperimentalStaticNpcProjection,bool) { ++f->code; *out=experimentalStaticNpcProjection; }
 NATIVE(NpcCount,std::uint32_t) { ++f->code; *out=static_cast<std::uint32_t>(frame.npcs.size()); }
 NATIVE(NpcEntity,std::uint64_t) { ++f->code; *out=CurrentNpc()?CurrentNpc()->descriptor.entity:0; }
 NATIVE(NpcRecord,RED4ext::TweakDBID) { ++f->code; *out=RED4ext::TweakDBID{CurrentNpc()?CurrentNpc()->descriptor.record:std::uint64_t{0}}; }
@@ -181,6 +187,10 @@ void RegisterFunctions() {
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_BubbleRadius","CP2077Session_BubbleRadius",&BubbleRadius);
       fn->flags={.isNative=true,.isStatic=true};
       fn->SetReturnType("Float");
+      rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_ExperimentalStaticNpcProjection","CP2077Session_ExperimentalStaticNpcProjection",&ExperimentalStaticNpcProjection);
+      fn->flags={.isNative=true,.isStatic=true};
+      fn->SetReturnType("Bool");
       rtti->RegisterFunction(fn); }
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcCount","CP2077Session_NpcCount",&NpcCount);
       fn->flags={.isNative=true,.isStatic=true};

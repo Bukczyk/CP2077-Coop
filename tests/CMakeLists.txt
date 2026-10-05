@@ -19,4 +19,6 @@ set_tests_properties(game_bridge npc session_bridge_contract PROPERTIES TIMEOUT 
 
 include("${PROJECT_SOURCE_DIR}/build-support/LuaTests.cmake")
 add_test(NAME npc_population COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_population_tests.lua" "${PROJECT_SOURCE_DIR}")
-set_tests_properties(npc_population PROPERTIES TIMEOUT 15)
+add_test(NAME npc_static_population COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_static_population_tests.lua" "${PROJECT_SOURCE_DIR}")
+add_test(NAME npc_projection_asset_contract COMMAND "${CMAKE_COMMAND}" -DROOT=${PROJECT_SOURCE_DIR} -P "${PROJECT_SOURCE_DIR}/build-support/VerifyNpcProjectionAsset.cmake")
+set_tests_properties(npc_population npc_static_population npc_projection_asset_contract PROPERTIES TIMEOUT 15)
