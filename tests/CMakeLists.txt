@@ -7,3 +7,8 @@ add_test(NAME runtime_import COMMAND "${CMAKE_COMMAND}" -DROOT=${PROJECT_SOURCE_
     -P "${PROJECT_SOURCE_DIR}/build-support/VerifyRuntime.cmake")
 
 set_tests_properties(protocol session net interpolation network_e2e runtime_import PROPERTIES TIMEOUT 40)
+
+if(COOP_BUILD_SESSION_SERVER)
+    add_test(NAME server_smoke COMMAND CP2077SessionServer --config "${CMAKE_CURRENT_SOURCE_DIR}/server.ini" --run-for-ms 50)
+    set_tests_properties(server_smoke PROPERTIES TIMEOUT 10 PASS_REGULAR_EXPRESSION "STOP accepted_states=0")
+endif()

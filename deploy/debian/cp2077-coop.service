@@ -1,0 +1,18 @@
+[Unit]
+Description=CP2077 Coop Session Server
+After=network.target
+
+[Service]
+Type=simple
+User=cp2077-coop
+Group=cp2077-coop
+ExecStart=/usr/local/bin/CP2077SessionServer --config /etc/cp2077-coop/server.ini
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
