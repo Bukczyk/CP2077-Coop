@@ -63,6 +63,21 @@ void CodecCases() {
     CHECK(!IsNewer(7, 7));
     CHECK(!IsNewer(0x80000000u, 0));
 }
+void Handshake() {
+    const std::vector<Packet> packets{
+        {{},Hello{std::string(64,'a')}},{{},HelloOk{}},{{},CreateSession{"first-test"}},{{},JoinSession{"first-test"}},
+        {{1,1,0,0,0},SessionAccepted{1,1,{}}},{{},Reject{RejectReason::Full}},
+        {{1,1,0,0,0},MemberJoined{2}},{{1,1,0,0,0},MemberLeft{2}},
+        {{1,1,0,0,0},SessionClosed{}},{{1,1,2,0,0},Ready{}},{{1,1,0,0,0},SessionReady{}}};
+    for (const auto& p:packets) {
+        const auto bytes=Encode(p); CHECK(bytes); CHECK(Decode(*bytes).packet.value()==p);
+        for(std::size_t i=0;i<bytes->size();++i) CHECK(!Decode(std::span<const std::uint8_t>(*bytes).first(i)));
+    }
+    CHECK(!Encode(Packet{{},Hello{"short"}})); CHECK(!Encode(Packet{{},CreateSession{"has space"}}));
+    CHECK(!Encode(Packet{{1,1,0,0,0},Ready{}}));
+    auto invalid=Encode(Packet{{},JoinSession{"x"}}).value(); invalid[42]='z';
+    CHECK(!Decode(invalid)); // noncanonical text after a NUL
+}
 void FuzzSmoke() {
     std::uint32_t seed = 0x2077;
     auto next = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed; };
@@ -81,4 +96,4 @@ void FuzzSmoke() {
         }
     }
 }
-int main() { return Run([] { Golden(); CodecCases(); FuzzSmoke(); }); }
+int main() { return Run([] { Golden(); CodecCases(); Handshake(); FuzzSmoke(); }); }

@@ -68,7 +68,7 @@ struct SessionLimits {
 };
 class SessionRegistry {
 public:
-    explicit SessionRegistry(SessionLimits limits = {}) : limits_(limits) {}
+    explicit SessionRegistry(SessionLimits limits = {});
     Admission Create(ConnectionId connection, std::uint64_t now);
     Admission Join(SessionId session, ConnectionId connection, std::uint64_t now);
     // Trusted adapter calls this only after complete snapshot acknowledgment.

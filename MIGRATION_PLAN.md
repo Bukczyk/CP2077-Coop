@@ -61,3 +61,8 @@ The implemented foundation is detailed in docs/PROTOCOL.md. Session creation/adm
 - Linux GCC 13.3 with ASan/UBSan: build and 3/3 CTest suites.
 
 Local Windows MSVC 19.51 Release also passed all three suites. Final read-only verification matched all five game source files and repository copies to import-manifest.json. No installation, game file edits or gameplay tests were performed. This evidence completes the stage 2 foundation checks; it does not certify the future network service or v0.1.0 gameplay release.
+
+## Checkpoint continuation — 2026-10-05
+Starting point is 20eb125 (preserved), based on stable 0341790. The checkpoint already contained TCP/UDP socket wrappers, v2 admission packets/timestamps, configurable member limits and interpolation. It contained no running session server/client or headless session networking test.
+Foundation stabilization now adds transport/handshake/interpolation tests, validates interpolation/session configuration, rejects stale source timestamps in interpolation, and fixes UDP socket setup plus POSIX select bounds. Local portable-core CTest: 5/5 passed. Linux verification runs in CI after this push.
+Next: implement server/client session orchestration over the existing real TCP/UDP layer and a CTest headless E2E. RED4ext/CET integration is gated on that test. No game files were changed.

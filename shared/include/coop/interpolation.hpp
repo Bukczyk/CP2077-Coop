@@ -8,13 +8,13 @@ struct InterpolationConfig {
 };
 class SnapshotBuffer {
 public:
-    explicit SnapshotBuffer(InterpolationConfig config = {}) : config_(config) {}
-    bool Push(std::uint32_t sequence, double timeMs, Transform value);
+    explicit SnapshotBuffer(InterpolationConfig config = {});
+    bool Push(std::uint32_t sequence, double timeMs, Transform value, std::uint64_t sourceTimeMs = 0);
     std::optional<Transform> Sample(double nowMs) const;
     void Clear() { samples_.clear(); }
     std::size_t Size() const { return samples_.size(); }
 private:
-    struct SamplePoint { std::uint32_t sequence; double timeMs; Transform value; };
+    struct SamplePoint { std::uint32_t sequence; double timeMs; std::uint64_t sourceTimeMs; Transform value; };
     InterpolationConfig config_;
     std::deque<SamplePoint> samples_;
 };

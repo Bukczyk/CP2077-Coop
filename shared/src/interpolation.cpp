@@ -1,6 +1,7 @@
 #include "coop/interpolation.hpp"
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 namespace coop {
 namespace {
 float distance(Vec3 a, Vec3 b) {
@@ -13,14 +14,22 @@ Transform mix(const Transform& a, const Transform& b, float t) {
         {angle(a.rotation.x,b.rotation.x,t),angle(a.rotation.y,b.rotation.y,t),angle(a.rotation.z,b.rotation.z,t)}};
 }
 }
-bool SnapshotBuffer::Push(std::uint32_t seq, double time, Transform value) {
+SnapshotBuffer::SnapshotBuffer(InterpolationConfig config) : config_(config) {
+    if (!std::isfinite(config.delayMs) || config.delayMs < 0 || config.delayMs > 2000
+        || !std::isfinite(config.extrapolationMs) || config.extrapolationMs < 0 || config.extrapolationMs > 1000
+        || !std::isfinite(config.snapDistance) || config.snapDistance <= 0
+        || !std::isfinite(config.maxExtrapolationSpeed) || config.maxExtrapolationSpeed <= 0)
+        throw std::invalid_argument("Invalid interpolation config");
+}
+bool SnapshotBuffer::Push(std::uint32_t seq, double time, Transform value, std::uint64_t sourceTime) {
     if (!std::isfinite(time) || !Validate(Packet{{1,1,1,seq,0},PlayerState{1,value}})) return false;
     if (!samples_.empty()) {
-        if (!IsNewer(seq,samples_.back().sequence) || time < samples_.back().timeMs) return false;
+        if (!IsNewer(seq,samples_.back().sequence) || time < samples_.back().timeMs
+            || (sourceTime && sourceTime <= samples_.back().sourceTimeMs)) return false;
         if (distance(value.position,samples_.back().value.position) > config_.snapDistance) samples_.clear();
-        else if (time == samples_.back().timeMs) { samples_.back() = {seq,time,value}; return true; }
+        else if (time == samples_.back().timeMs) { samples_.back() = {seq,time,sourceTime,value}; return true; }
     }
-    samples_.push_back({seq,time,value});
+    samples_.push_back({seq,time,sourceTime,value});
     if (samples_.size() > 128) samples_.pop_front();
     return true;
 }

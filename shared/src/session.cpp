@@ -1,6 +1,7 @@
 #include "coop/session.hpp"
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 #include <type_traits>
 
 namespace coop {
@@ -27,6 +28,10 @@ void eraseEntity(Session& s, EntityId id) {
     }
 }
 } // namespace
+SessionRegistry::SessionRegistry(SessionLimits limits) : limits_(limits) {
+    if (!limits.maxSessions || !limits.maxMembers || limits.maxEntities < limits.maxMembers || !limits.timeoutMs)
+        throw std::invalid_argument("Invalid session limits");
+}
 bool SessionRegistry::ConnectionUsed(ConnectionId connection) const {
     for (const auto& [unused, s] : sessions_) {
         (void)unused;
@@ -92,7 +97,7 @@ SessionError SessionRegistry::MarkSynchronized(SessionId id, PlayerId player, st
 ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& packet, std::uint64_t now) {
     const auto fail = [](SessionError e) { return ReceiveResult{e, Route::None, {}, {}}; };
     if (!Validate(packet)) return fail(SessionError::Invalid);
-    if (packet.payload.index() >= 12) return fail(SessionError::Invalid); // Admission is transport policy, not gameplay.
+    if (TypeOf(packet.payload) >= PacketType::Hello && TypeOf(packet.payload) <= PacketType::SessionReady) return fail(SessionError::Invalid); // Admission is transport policy, not gameplay.
     auto it = sessions_.find(packet.header.session);
     if (it == sessions_.end()) return fail(SessionError::MissingSession);
     auto& s = it->second;

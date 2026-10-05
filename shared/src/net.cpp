@@ -40,7 +40,7 @@ int error() { return errno; }
 bool pending(int e) { return e == EAGAIN || e == EWOULDBLOCK || e == EINPROGRESS || e == EINTR; }
 #endif
 Native native(const Socket& s) { return static_cast<Native>(s.Handle()); }
-bool configure(Socket& s) {
+bool configure(Socket& s, bool stream = true) {
 #ifdef _WIN32
     u_long enabled = 1;
     if (ioctlsocket(native(s),FIONBIO,&enabled)) return false;
@@ -48,6 +48,7 @@ bool configure(Socket& s) {
     const int flags = fcntl(native(s),F_GETFL,0);
     if (flags < 0 || fcntl(native(s),F_SETFL,flags | O_NONBLOCK) < 0) return false;
 #endif
+    if (!stream) return true;
     int yes = 1;
     setsockopt(native(s),IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&yes),sizeof(yes));
     return true;
@@ -113,7 +114,7 @@ Socket BindUdp(const std::string& ip, std::uint16_t port) {
     if (raw < 0) return {};
 #endif
     Socket s{static_cast<std::intptr_t>(raw)}; sockaddr_in a{};
-    if (!configure(s) || !address(ip,port,a) || bind(native(s),reinterpret_cast<sockaddr*>(&a),sizeof(a))) return {};
+    if (!configure(s,false) || !address(ip,port,a) || bind(native(s),reinterpret_cast<sockaddr*>(&a),sizeof(a))) return {};
     return s;
 }
 bool SendUdp(const Socket& s, const Endpoint& target, const ConnectionToken& token, const Packet& packet) {
@@ -157,6 +158,9 @@ Socket Connect(const std::string& ip, std::uint16_t port, unsigned timeoutMs) {
     if (!s || !address(ip,port,a)) return {};
     if (connect(native(s),reinterpret_cast<sockaddr*>(&a),sizeof(a)) == 0) return s;
     if (!pending(error())) return {};
+#ifndef _WIN32
+    if (native(s) >= FD_SETSIZE) return {};
+#endif
     fd_set writes, errors; FD_ZERO(&writes); FD_ZERO(&errors);
     FD_SET(native(s),&writes); FD_SET(native(s),&errors);
     timeval timeout{static_cast<long>(timeoutMs / 1000),static_cast<long>((timeoutMs % 1000) * 1000)};
