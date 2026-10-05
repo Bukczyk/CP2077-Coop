@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(CP2077CoopSession VERSION 0.1.0 LANGUAGES CXX)
 
-option(COOP_BUILD_PLUGIN "Build the Windows RED4ext legacy plugin" OFF)
+option(COOP_BUILD_PLUGIN "Build the Windows RED4ext session plugin" OFF)
 option(COOP_BUILD_LEGACY_SERVER "Build the frozen Windows relay" ${WIN32})
 option(COOP_SANITIZE "Enable Address/Undefined sanitizers on GCC/Clang" OFF)
 set(CMAKE_CXX_STANDARD 20)
