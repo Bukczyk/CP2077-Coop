@@ -18,6 +18,7 @@ local function fixture(role, experimental)
         attached=true, pregame=false, hasPlayer=true, hash=uint64(1),
         activations={}, bindings={}, logs={}, observations=0, cleared=0,
         npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false,
+        remotes={}, bodies={}, unbindings={}, frameGeneration=1,
     }
     local events, hotkeys = {}, {}
     Game, Observe, CName = nil, nil, nil
@@ -42,7 +43,7 @@ local function fixture(role, experimental)
     local system = {}
     function system:IsReady() return true end
     function system:DeleteTagged() state.cleared=state.cleared+1 end
-    function system:GetTagged() return {} end
+    function system:GetTagged(tag) return state.bodies[tag] and {state.bodies[tag]} or {} end
     function system:IsTagged() return false end
     function system:CreateEntity() state.npcSpawns=state.npcSpawns+1; error("unexpected NPC creation") end
     local player = {}
@@ -62,8 +63,16 @@ local function fixture(role, experimental)
             state.activations[#state.activations+1]=value
         end,
         CP2077Session_PushLocal=function() state.pushes=state.pushes+1 end,
-        CP2077Session_BeginFrame=function() return 0 end,
-        CP2077Session_Generation=function() return 1 end,
+        CP2077Session_BeginFrame=function() return #state.remotes end,
+        CP2077Session_Generation=function() return state.frameGeneration end,
+        CP2077Session_Select=function(index) state.selected=state.remotes[index+1]; return state.selected~=nil end,
+        CP2077Session_Player=function() return state.selected.id end,
+        CP2077Session_Entity=function() return state.selected.entity end,
+        CP2077Session_X=function() return state.selected.x end,
+        CP2077Session_Y=function() return 2 end,
+        CP2077Session_Z=function() return 3 end,
+        CP2077Session_Yaw=function() return 0 end,
+        CP2077Session_Unbind=function(id) state.unbindings[#state.unbindings+1]=id; return true end,
         CP2077Session_Session=function() return uint64(1) end,
         CP2077Session_Epoch=function() return 1 end,
         CP2077Session_Phase=function() return 4 end,
@@ -154,6 +163,33 @@ for _, role in ipairs({"HOST","JOINER"}) do
     s.tick()
     assert(s.npcReads == 0 and s.npcOffers == 0 and s.npcSpawns == 0)
 end
+-- Real entrypoint: independent motors, exact body replacement and cleanup.
+local made, stopped={},{}
+package.loaded.player_motor={new=function(actor)
+    made[#made+1]=actor
+    return {step=function(self,target) self.target=target end,
+        stop=function() stopped[#stopped+1]=actor end}
+end}
+local s=fixture("HOST",false)
+local function body(hash) return {GetEntityID=function() return {hash=hash} end} end
+local first,second,replacement=body(uint64(1)),body(uint64(2)),body("replacementULL")
+s.remotes={{id=2,entity=uint64(1),x=10},{id=3,entity=uint64(2),x=20}}
+s.bodies["CP2077Session.Projection.2"]=first
+s.bodies["CP2077Session.Projection.3"]=second
+s.init(); s.tick(10)
+assert(#made==2 and #stopped==0,"one motor per exact remote body")
+s.bodies["CP2077Session.Projection.2"]=replacement
+s.tick()
+assert(#made==3 and stopped[1]==first,"replacement stops the old command owner")
+s.remotes={s.remotes[2]}
+s.tick()
+assert(stopped[2]==replacement,"departure stops only that player's motor")
+s.reconnect()
+assert(stopped[3]==second,"reconnect cancels remaining motor")
+s.tick()
+assert(#made==4 and made[4]==second,"new generation creates a fresh motor")
+s.shutdown()
+package.loaded.player_motor=nil
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

@@ -244,3 +244,14 @@ registerHotkey("cp2077_session_reconnect", "Reconnect coop session", function()
     pcall(stop)
     failed = false
 end)
+
+-- Value-only diagnostics for local test tooling. No engine handles or setters.
+return { playerDiagnostics = function()
+    local result = {}
+    for id, entry in pairs(proxies) do
+        local m=entry.motor
+        if m then result[tostring(id)]={error=m.error,speed=m.speed,gait=m.gait,
+            commands=m.commands,snaps=m.snaps,state=m.commandState} end
+    end
+    return result
+end }

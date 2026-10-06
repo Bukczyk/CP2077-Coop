@@ -66,16 +66,19 @@ function Motor:step(target,delta)
     -- Keep the current gait around thresholds instead of restarting every frame.
     if self.gait=="Sprint" and pace>4.0 then gait="Sprint"
     elseif self.gait=="Run" and pace>1.4 and pace<4.8 then gait="Run" end
-    if self.command and gait==self.gait then
-        local state=self.actor:CP2077Session_RetargetMove(self.command,target.x,target.y,target.z)
+    local gaitValue=({Walk=0,Run=1,Sprint=2})[gait]
+    if self.command then
+        local state=self.actor:CP2077Session_RetargetMove(self.command,target.x,target.y,target.z,gaitValue)
+        self.commandState=state
         if state==2 then
+            self.gait=gait
             self.nextCommand=self.clock+0.08
             return
         end
         if (state==0 or state==1) and self.clock-self.issued<1 then return end
     end
     self:stop()
-    self.command=self.actor:CP2077Session_StartMove(target.x,target.y,target.z,({Walk=0,Run=1,Sprint=2})[gait])
+    self.command=self.actor:CP2077Session_StartMove(target.x,target.y,target.z,gaitValue)
     self.gait,self.issued=gait,self.clock
     self.nextCommand=self.clock+0.25
     self.commands=self.commands+1
