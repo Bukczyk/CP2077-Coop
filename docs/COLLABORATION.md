@@ -2,6 +2,8 @@
 
 Prepared 2026-10-05. **Approved by KyleBuildsAI for publication; proposed for Bukczyk's review.** Publication does not establish mutual acceptance, completed feature transfers or a runtime migration. Once accepted, maintain this guide in the shared repository; local knowledge bases should link here and identify their revision.
 
+Start with [Shared goals and work split](SHARED_GOALS.md) for the plain-English goals, each person's part and the tests to run together.
+
 ## Project direction
 
 KyleBuildsAI and Bukczyk are developing one shared Cyberpunk 2077 multiplayer project in **Bukczyk/CP2077-Coop**.
