@@ -18,6 +18,9 @@ struct ServerStats {
 };
 // One owner thread. TCP controls and UDP snapshots share authenticated membership.
 class SessionServer {
+#ifdef COOP_TESTING
+    friend struct SessionServerTestAccess;
+#endif
 public:
     explicit SessionServer(ServerConfig config, LogSink log = {});
     void Tick(std::uint64_t now);
