@@ -59,7 +59,7 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
         }
         gameplayIntents_.push_back(packet); lastReceive_=now; return;
     }
-    if(const auto* result=std::get_if<GameplayResult>(&packet.payload)) {
+    if(std::holds_alternative<GameplayResult>(packet.payload)) {
         if(phase_!=ClientPhase::Active || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch
             || packet.header.sender!=host_) {
             ++stats_.rejected; return;
