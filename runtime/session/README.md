@@ -1,5 +1,21 @@
 # Typed game integration foundation (not a gameplay release)
 
+## CET startup and player session lifecycle
+
+The NPC observer registers during `onInit`, when CET exposes `Observe`. Player
+load/replacement checks compare the exact `EntityID.hash` Uint64 value; a fresh
+CET wrapper for the same player must not restart the session.
+
+`cet/CP2077Coop/config.lua` defaults `experimentalNpcReplication` to `false`.
+Player sessions and player proxies remain enabled. HOST NPC discovery/offers and
+JOINER NPC projection updates require explicit opt-in on both clients. This is a
+development gate while passive AI and exact live NPC behavior remain unverified;
+enabling it does not make shared NPC simulation safe. Edit it with games closed
+and restart both clients for a controlled NPC experiment.
+
+See [lifecycle validation](../../docs/validation/CET_SESSION_LIFECYCLE.md) for the
+focused test record. Player proxy movement remains a separate unresolved issue.
+
 Default plugin: build/windows/CoopPlugin/Release/CP2077Coop.dll. Matching files are in this directory only. Generate role-specific, non-installed packages with `./scripts/package-session.ps1 -Server <IPv4> -Session <name> [-AccessKeyFile <path>]`; it creates HOST/JOINER profiles, matched scripts, Debian config/key and hashes under ignored artifacts/. Rates default to 60 Hz; interpolation is sampled on every CET update. No save or installation writes occur.
 
 The native frame is coherent from BeginFrame until the next BeginFrame. SetActive(false) invalidates it; workers own SessionClient and never access REDengine. SessionEntityId/engine EntityID remain exact 64-bit values. Game-thread EntityRegistry holds Player/NPC/Vehicle/World projections and rejects foreign epochs, authorities and duplicate local bindings. Player IDs currently correspond to server-registered player EntityIds. NPC adoption/state/release use the bounded SessionBridge NPC interface and protocol v3. Other world-action contracts remain Unsupported; no combat or stimuli are enabled.
