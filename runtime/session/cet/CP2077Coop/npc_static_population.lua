@@ -54,6 +54,9 @@ end
 function M.bind(sessionEntity, localId)
     local entry = bySessionEntity[key(sessionEntity)]
     if entry == nil or key(entry.id) ~= key(localId) then return false end
+    -- Codeware can still return a handle after accepting asynchronous despawn.
+    -- Its existence is not permission to revive or drive a retiring entity.
+    if entry.removing then return false, "removing" end
     if entry.bound then return true end
     local s = system()
     if s == nil then return false end
@@ -77,7 +80,7 @@ function M.bind(sessionEntity, localId)
 end
 function M.move(localId, npc)
     local entry = byLocalEntity[key(localId)]
-    if entry == nil or not entry.bound or entry.entity == nil then return false end
+    if entry == nil or entry.removing or not entry.bound or entry.entity == nil then return false end
     local x, y, z, yaw = transform(npc)
     if not x then return false end
     local ok = pcall(function()
