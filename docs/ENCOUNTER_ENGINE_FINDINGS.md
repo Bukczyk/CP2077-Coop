@@ -20,11 +20,15 @@ That probe ran on one Windows PC with two clients from `01:52` to `02:03 UTC`. T
 
 The first probe's REDscript `local=` text was unstable because of its `EntityID.ToHash` diagnostic call path. Exclude that field from the first run's identity evidence; CET `.hash` and exact resolver results remained stable. The direct-field source correction compiled successfully, SHA256 `8e2cfb3140b1965cd08bdb733cda930be2a5180c5c952805c363e5ddd8f4a61a`, and was installed at `02:06:39Z` for a second run. All 1,692 engine log entries then reported HOST local `10713017`, matching CET `.hash` across approximately 180 seconds, with zero mismatches; the accepted session entity was `4294967296`. The diagnostic correction therefore has live evidence; it does not retroactively make the first run's bad text valid.
 
-The second run also tested archive SHA256 `139952bee5243c64c766744a350ab1ae1f4269aa427d20954467311e450b10b3`, containing a minimal idle animation graph. The operator observed an idle pose in place of the earlier T-pose. This establishes an improved rendered pose; continuous playback is not yet quantified, and no HOST animation, hit reaction or death animation is replicated. JOINER recreation changed local `10712978 -> 10713025` while retaining session entity `4294967296`. Natural pistol firing remains unverified after further attempted input without ammunition use.
+The second run also tested archive SHA256 `139952bee5243c64c766744a350ab1ae1f4269aa427d20954467311e450b10b3`, containing a minimal idle animation graph. The operator observed an idle pose in place of the earlier T-pose. JOINER recreation changed local `10712978 -> 10713025` while retaining session entity `4294967296`. Natural pistol firing remains unverified after further attempted input without ammunition use.
 
-Both HOST and JOINER position coordinates stayed constant throughout that second run. Its zero placement error therefore proves stationary placement only, not moving-projection quality, interpolation or latency. The idle archive still needs a movement trial. Both clients ended with zero network NPCs and an empty JOINER projection inventory; automatic timed cleanup may have preceded the operator's cleanup key.
+Both HOST and JOINER position coordinates stayed constant throughout that second run. Its zero placement error therefore proves stationary placement only, not moving-projection quality, interpolation or latency. Both clients ended with zero network NPCs and an empty JOINER projection inventory; automatic timed cleanup may have preceded the operator's cleanup key.
 
 The first run did contain actual position changes after HOST stimulus/hit reactions, followed by JOINER transform changes. The two HOST lives spanned approximately `0.220/2.353/0.030m` and `2.270/4.298/0.030m` on X/Y/Z; the corresponding JOINER spans were `0.220/2.353/0.030m` and `2.270/4.292/0.030m`. Neither life moved during the initial scripted teleport interval. Do not describe that fixture as a successful scripted out-and-back, or these asynchronous ranges as latency/trajectory accuracy.
+
+**Third run, same corrected probe and idle archive:** four frames from `02:19:54.248Z` to `02:19:58.005Z` showed head/arm pose progression, confirmed by the operator and an independent reviewer. This verifies sampled local idle playback, not replication of HOST actions or a quantified full-loop test. Three additional synthetic hits produced Health `221.400757 -> 112.747452 -> 0.617901 -> 0`; all immediate duplicates were rejected. Persistent death was again observed after `OnDied`.
+
+The HOST stayed stationary after the directed stimulus and first two hits, then its root moved during the lethal reaction at `02:22:11Z`. HOST X/Y/Z spans were `2.215/1.079/0.742m`; JOINER spans were `2.208/1.079/0.719m` while its idle continued. This qualifies limited root-transform following with the idle archive, not locomotion or matching death animation. All 1,700 engine local IDs matched CET `10713012`; all 1,663 bound JOINER samples matched session entity `4294967296`. Automatic cleanup preceded the later reconnect attempt, so dead-entity reconnect was not tested.
 
 The probe only records explicitly enabled NPCs managed by Codeware and tagged `CP2077Coop.ControlledEncounter`. Every wrapper calls the original method, preserving its return value where applicable. A session, epoch or local-generation change invalidates scope. There is no production encounter route, automatic ambient-NPC instrumentation or protection removal.
 
@@ -42,7 +46,7 @@ The earlier `ProcessLocalizedDamage` wrapper is unsuitable as proof of final dam
 
 **Proposed first action:** one supported single-shot ranged action against the registered controlled NPC. Beyond the target identity, action kind and finite observed origin/direction are candidate evidence to evaluate. Their final shape, optional impact data and HOST geometry validation are not fixed by this document. A HOST shot/raycast path may be necessary if the passive entity cannot generate a valid native hit. The current probe's synthetic HOST hit does not validate JOINER aim or collision.
 
-**Live evidence:** all three synthetic HOST hits entered `candidate_before_preprocess -> after_preprocess -> after_deal_await_readback`, followed by a later Health change. Their callbacks had a defined instigator and weapon, `Ranged(10)`, finite hit XYZ and one synthetic hit shape. These values were constructed by the HOST fixture. Availability/trustworthiness for a natural JOINER shot, miss or passive hit is still unverified. Attempted pistol clicks did not establish a fired shot; ammunition stayed unchanged.
+**Live evidence:** all six synthetic HOST hits across the first and third runs entered `candidate_before_preprocess -> after_preprocess -> after_deal_await_readback`, followed by a later Health change. Their callbacks had a defined instigator and weapon, `Ranged(10)`, finite hit XYZ and one synthetic hit shape. These values were constructed by the HOST fixture. Availability/trustworthiness for a natural JOINER shot, miss or passive hit is still unverified. Attempted pistol clicks did not establish a fired shot; ammunition stayed unchanged.
 
 **Backend requirement:** keep authenticated source player, target session identity, session/epoch and deduplication identity separate from optional observed geometry. Resolve and authorize the target/source on HOST, reject stale or unsupported requests before mutation, and never trust client-proposed damage. The game adapter can validate a tracked exact NPC reference today; production JOINER aim-to-HOST-hit validation remains a game-side gate. This is semantic guidance, not a new payload schema.
 
@@ -69,6 +73,8 @@ For a real JOINER request, authenticate the source player and resolve its actual
 Exactly-once invocation requires reservation/deduplication before game mutation. Engine calls alone cannot supply that guarantee. Reserve output capacity and revalidate scope when executing. Result semantics should include observed resulting health/life and causal correlation when established. Final units, revision rules and payload fields require joint review. Keep defeat distinct from death, and preserve zero-effect/blocked outcomes rather than inventing damage.
 
 **Live evidence:** request 2 changed Health `221.400757 -> 157.567032`. On a fresh controlled NPC, requests 3 and 4 produced `221.400757 -> 101.900208 -> 0.221401 -> 0`. Each immediate duplicate was rejected, with exactly three corresponding pipeline entries in the trace. Every `after_deal` callback still read the pre-hit Health; later readback supplied the actual pool change. This directly demonstrates why computed damage and call return are insufficient as final outcomes. Other causes of Health change are not generally excluded by the probe. Zero-effect, invulnerable, unsupported and concurrent external-damage cases remain untested. No network exactly-once or shared combat claim is made.
+
+The third run repeated the pipeline/readback and immediate-duplicate tests with three further hits (`221.400757 -> 112.747452 -> 0.617901 -> 0`). This supports repeatability of the local fixture on the same controlled record, not arbitrary target compatibility.
 
 **Backend requirement:** reserve one request before entering the game thread, keep it pending until an observed outcome or explicit unresolved failure, and replay the stored result for a duplicate. Do not retry an uncertain mutation under a fresh request identity. Provide a correlation token to the adapter, while allowing spontaneous HOST changes that have no client request. Health here is read as points (`percentage=false`); confirm the wire representation jointly rather than interpreting it as percent.
 
@@ -112,25 +118,26 @@ Spontaneous vanilla HOST damage/death can occur without our request admission. W
 
 JOINER may play its own local shot effects immediately. Shared damage/death/rewards await HOST outcomes. Unsupported/rejected requests clear pending presentation; delayed requests may show a rate-limited busy indication. No local-damage fallback or automatic new request ID for retries. PR8 can handle independent request bookkeeping while these engine semantics are qualified.
 
-**Live evidence:** three immediate duplicate fixture calls were rejected and did not create additional pipeline entries. Busy, overflow, unsupported, queue load, disconnect during a pending operation and replay/resynchronization have not been exercised. The probe's one-in-flight operation guard is a fixture constraint, not a production throughput limit.
+**Live evidence:** six immediate duplicate fixture calls across the first and third runs were rejected and did not create additional pipeline entries. Busy, overflow, unsupported, queue load, disconnect during a pending operation and replay/resynchronization have not been exercised. The probe's one-in-flight operation guard is a fixture constraint, not a production throughput limit.
 
 **Backend requirement:** expose explicit accepted/pending/observed/rejected/unresolved outcomes with no silent replacement of committed work. Keep retained authoritative state available for resynchronization, including spontaneous vanilla outcomes. Implementing PR8's generic reservation/outcome ledger does not depend on choosing an arbitrary engine messages-per-second limit; measure the adapter's drain behavior before setting a supported rate/capacity.
 
 ## Live acceptance record
 
-First run: one PC, two clients, two explicitly spawned NPC lives. Second run: the corrected logging probe and idle-pose candidate, on the same local topology. Installed hashes and separate evidence limits are recorded above. Remaining gates must be completed separately before claiming the shared-encounter milestone.
+Three runs on one PC with two clients. First run: two explicitly spawned NPC lives. Second: corrected logging and idle pose. Third: sampled idle playback, repeated damage/death and root-transform following during lethal reaction. Installed hashes and separate evidence limits are recorded above. Remaining gates must be completed separately before claiming the shared-encounter milestone.
 
 | Check | Result |
 | --- | --- |
-| Passive entity visible, movable and free of autonomous AI | First run had a Judy T-pose. Second run produced an idle pose but stayed stationary. Movement with the idle archive, continuous animation and general passive-behavior qualification remain separate. |
+| Passive entity visible, movable and free of autonomous AI | Judy projection visibly plays a local idle and follows root changes during HOST lethal reaction. General locomotion, matching HOST animations and broad passive-behavior qualification remain separate. |
 | Ordinary weapon hit against passive projection | UNVERIFIED; passive native hit-target path unresolved. |
 | Exact identity and confirmed cleanup/reconnect | Exact binding and reconnect recreation observed; independent engine destruction audit remains separate. |
 | REDscript local-ID diagnostic | First-run ToHash text invalid; all 1,692 corrected direct-field entries matched CET ID over approximately 180 seconds in the second run. |
 | Physical shot candidate and post-pipeline observations | UNVERIFIED; attempted clicks did not establish a fired shot. |
-| HOST synthetic pipeline hit and later Health readback | OBSERVED, three fixtures; constructed geometry, not a physical shot. |
+| HOST synthetic pipeline hit and later Health readback | OBSERVED, six fixtures across two runs; constructed geometry, not a physical shot. |
 | Directed gunshot receipt and actual AI reaction | OBSERVED receipt then HOST Relaxed -> Combat before damage; no matching JOINER reaction. |
 | Death versus defeat and persistent-dead readback | Persistent HOST death observed with callback ordering; defeat untested; JOINER remained standing. |
-| Duplicate/busy/unsupported fixture behavior | Three immediate duplicates rejected; other cases pending. |
+| Duplicate/busy/unsupported fixture behavior | Six immediate duplicates rejected; other cases pending. |
+| Reconnect while authoritative NPC is dead | NOT TESTED; third-run reconnect attempt happened after automatic cleanup. |
 | JOINER action -> HOST result -> matching JOINER outcome | PENDING; backend connection required |
 | Separate-PC encounter qualification | PENDING |
 

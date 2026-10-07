@@ -97,9 +97,47 @@ The known appearance mismatch, missing hit target and missing shared
 reaction/death presentation remain. A fixed idle pose is useful progress but
 does not pass the complete shared-NPC milestone.
 
+## Final trial and cleanup: 2026-10-07 02:19-02:24 UTC
+
+The same archive and corrected probe were retested in launch
+`20261007-021551-631272`. Four stationary-camera frames captured between
+`02:19:54.248Z` and `02:19:58.005Z` showed small head and arm pose changes.
+This establishes short visible local idle progression. It does not measure a
+playback rate, prove a complete 4.9-second loop or synchronize HOST actions.
+
+The directed stimulus again caused HOST combat state, and three constructed
+weapon hits reduced health `221.400757 -> 112.747452 -> 0.617901 -> 0` with
+persistent death. Source position stayed fixed until the lethal reaction.
+That reaction changed the HOST root position by meters; the same JOINER local
+entity `10712992` continued resolving to session entity `4294967296` and applied
+the changed received transforms. This validates movement of the revised asset
+over that limited reaction trajectory, not a walking route or interpolation
+quality. The JOINER retained its idle pose after HOST death, which remains a
+failed shared-life/presentation gate.
+
+Timed source removal emptied the JOINER catalog and projection inventory.
+The final reconnect key occurred after cleanup, so it does not qualify a
+dead-entity reconnect or death-tombstone baseline.
+
+Both games and the test server are closed. The original typed movement-preview
+runtime, bindings and server were restored byte-for-byte from this session's
+backups at `02:24:12Z`. The launcher restored graphics; all 167 current save files
+were unchanged by restoration. Gameplay-created saves were preserved, not
+rolled back. Experimental files and logs remain recoverable in the evidence
+archive. The complete public v0.0.37 / alpha.5 package remains unchanged, with
+all 69 payload hashes and its ZIP verified.
+
+The asset-contract test initially failed because it required the old general
+humanoid graph. Its updated assertions retain the no-NPC/no-AI constraints and
+validate the new graph, clip binding and disabled root motion/events. All 16
+local CTests then passed; Windows, Debian and sanitizers passed at source
+`949c9e91df32e31e2ef4c3ccfb2479d14fadb865`. Later documentation commits change
+no tested runtime bytes.
+
 ## Remaining acceptance gates
 
-- Quantified animation playback, then accepted HOST-driven action/death poses.
+- Sustained/multiple-entity animation qualification and accepted HOST-driven
+  movement/action/death poses.
 - A supported hit representation and real JOINER intent capture for the plain entity.
 - Arbitrary HOST appearance matching; the fixed Judy asset is only a visual fixture.
 - Bukczyk's reviewed encounter message implementation and game-thread delivery.

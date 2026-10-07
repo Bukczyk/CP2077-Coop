@@ -17,15 +17,17 @@ No vanilla clip, mesh, or skeleton binary is bundled. There are no added AI,
 NPCPuppet, navigation, hit, or damage components. Root motion, animation events,
 gameplay animation variables, and animation commands are disabled.
 
-This is a fixed local idle presentation. It does not select the HOST NPC's
+This is local idle presentation from one selected clip. It does not select the HOST NPC's
 appearance or replicate its movement animations, aim, hits, reactions, or death.
 
 ## Current evidence
 
 On 2026-10-07, the candidate rendered a non-T-pose skeletal idle pose in a local
-HOST/JOINER test. Visible animation progression is not yet established by this
-asset record. Looping is configured in the graph; configuration alone is not
-proof that animation time advances in the live engine. See the full test record
+HOST/JOINER test. Four saved frames from 02:19:54.248Z to 02:19:58.005Z show small
+head and bent-arm pose changes while the projection position and camera remain
+visually stationary. This supports visible local idle playback for one entity
+over this short sequence. It does not establish a playback rate, completion of
+the 4.9-second loop, or animation synchronized with the HOST. See the full test record
 in [passive humanoid validation](../../../docs/validation/PASSIVE_NETWORK_HUMANOID.md).
 
 Offline checks converted both JSON resources with WolvenKit 9.0.1, serialized
@@ -85,13 +87,13 @@ The JSON hashes describe the Windows source files used for this trial. Git line
 ending conversion can change those text-file hashes without changing their
 contents or the generated resource bytes. The binary hashes are exact.
 
-## Playback checks still needed
+## Playback limits and follow-up
 
-Keep the camera and projection transform stationary and inspect the head, wrists,
-and torso across several uneven intervals shorter than the 4.9-second cycle.
-If the pose stays frozen, investigate engine animation ticking/visibility with
-this same passive entity before introducing another component. Do not add an
-NPCPuppet or gameplay controller merely to make the mesh animate.
+The short sequence establishes visible pose progression, not sustained playback
+or a complete loop. Check cycle wrap and continued animation over a longer
+stationary recording, with multiple projections, after reconnect, and after
+leaving and returning to view. Movement and action animation replication still
+require their own implementation and tests.
 
 Schema references: [SkAnim node](https://github.com/WolvenKit/WolvenKit/blob/9.0.1/WolvenKit.RED4/Types/Classes/animAnimNode_SkAnim.cs),
 [graph playback fields](https://github.com/WolvenKit/WolvenKit/blob/9.0.1/WolvenKit.RED4/Types/Classes/animAnimGraph.cs),
