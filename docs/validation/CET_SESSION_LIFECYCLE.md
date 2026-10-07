@@ -7,6 +7,35 @@ Base: `7e3826d1c313595a4784f1b232e10cec222b6ca3`.
 Tested code: `89d619ee8f06c8f9c6695dbfa574c7a840cdfa00`.
 Status: fixes tested and proposed for Bukczyk review; not merged or released.
 
+## Latest-main refresh - 2026-10-07 UTC
+
+Updated this branch with upstream main
+`d3670d94d96c40fe4f24e6e983d343a09f50d38f` at merge commit
+`813922c217e7c97f4c5e6feb5e074930a45d84d5`. The merge completed without a
+conflict. `tests/CMakeLists.txt` retains both main's `network_impairment` suite
+and this PR's `session_lifecycle` suite. No additional gameplay change was made.
+
+The existing commits were retained instead of rebased because draft PR #5 is
+stacked on this branch. Its branch and code were not changed by this refresh.
+
+Fresh Windows x64 MSVC Release configuration/build passed for the plugin,
+portable session server, frozen relay and core. All 13 CTests passed, including
+the lifecycle regression, network impairment, real-socket and NPC adapter
+tests. Commands, run from an isolated checkout:
+
+```powershell
+cmake -S . -B build/pr4-main-refresh -A x64 -DCOOP_BUILD_PLUGIN=ON
+cmake --build build/pr4-main-refresh --config Release --parallel
+ctest --test-dir build/pr4-main-refresh -C Release --output-on-failure
+```
+
+Private build/test logs are in
+`D:/Downloads/syncfix/bench-artifacts/20261006-pr4-main-refresh` (folder date is
+the local work day). Hosted checks are recorded on PR #4. No game installation,
+live test, REDscript compilation or LuaJIT-specific rerun was performed for
+this refresh; the earlier evidence below remains dated historical evidence.
+The existing runtime, script and lifecycle-test source blobs are unchanged.
+
 ## What changed
 
 - Register the NPC observer during CET `onInit`. Before this fix, a fresh game
