@@ -1,4 +1,4 @@
-foreach(suite protocol session net interpolation network_e2e network_impairment game_bridge npc)
+foreach(suite protocol session net interpolation network_e2e network_impairment request_ledger game_bridge npc)
     add_executable(${suite}_tests ${suite}_tests.cpp)
     target_link_libraries(${suite}_tests PRIVATE coop::core)
     add_test(NAME ${suite} COMMAND ${suite}_tests)
