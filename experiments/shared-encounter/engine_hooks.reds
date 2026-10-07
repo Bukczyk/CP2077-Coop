@@ -81,9 +81,12 @@ public func CP2077Encounter_Log(kind: String, detail: String) -> Void {
         this.CPEncounterDropped += 1u;
         return;
     }
+    // Read Codeware's native Uint64 field directly. The script_ref ToHash helper
+    // produced unstable diagnostic values in the first live probe.
+    let localId: EntityID = this.GetEntityID();
     ArrayPush(this.CPEncounterLines, "encounter seq=" + ToString(this.CPEncounterSequence)
         + " kind=" + kind + " sim=" + ToString(EngineTime.ToDouble(GameInstance.GetSimTime(this.GetGame())))
-        + " local=" + ToString(EntityID.ToHash(this.GetEntityID()))
+        + " local=" + ToString(localId.hash)
         + " session=" + ToString(this.CPEncounterSession) + " epoch=" + ToString(this.CPEncounterEpoch)
         + " entity=" + ToString(CP2077Session_Resolve(this.GetEntityID()))
         + " self=" + ToString(CP2077Session_Self()) + " host=" + ToString(CP2077Session_Host())
@@ -337,10 +340,11 @@ public func CP2077Encounter_RecordGunshot(radius: Float, propagationChange: Bool
         return;
     }
     let p = this.GetWorldPosition();
+    let localId: EntityID = this.GetEntityID();
     ArrayPush(this.CPEncounterGunshotLines, "gunshot_capture sim="
         + ToString(EngineTime.ToDouble(GameInstance.GetSimTime(this.GetGame())))
         + " session=" + ToString(CP2077Session_Session()) + " epoch=" + ToString(CP2077Session_Epoch())
-        + " player=" + ToString(CP2077Session_Self()) + " local=" + ToString(EntityID.ToHash(this.GetEntityID()))
+        + " player=" + ToString(CP2077Session_Self()) + " local=" + ToString(localId.hash)
         + " x=" + ToString(p.X) + " y=" + ToString(p.Y) + " z=" + ToString(p.Z)
         + " radius=" + ToString(radius) + " propagationChange=" + ToString(propagationChange)
         + " semanticShotCount=unverified");

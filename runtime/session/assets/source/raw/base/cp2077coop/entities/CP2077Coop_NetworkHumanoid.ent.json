@@ -38,8 +38,22 @@
               "animations": {
                 "$type": "animAnimSetup",
                 "cinematics": [],
-                "gameplay": [],
-                "hash": "1099511628211"
+                "gameplay": [
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_locomotion_combat.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": []
+                  }
+                ],
+                "hash": "0"
               },
               "animParameters": [],
               "animTags": {
@@ -67,7 +81,7 @@
                 "DepotPath": {
                   "$type": "ResourcePath",
                   "$storage": "string",
-                  "$value": "base\\gameplay\\anim_graphs\\humanoid.animgraph"
+                  "$value": "base\\cp2077coop\\animations\\networkhumanoid_idle.animgraph"
                 },
                 "Flags": "Obligatory"
               },
@@ -275,8 +289,22 @@
           "animations": {
             "$type": "animAnimSetup",
             "cinematics": [],
-            "gameplay": [],
-            "hash": "1099511628211"
+            "gameplay": [
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_locomotion_combat.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": []
+              }
+            ],
+            "hash": "0"
           },
           "animParameters": [],
           "animTags": {
@@ -304,7 +332,7 @@
             "DepotPath": {
               "$type": "ResourcePath",
               "$storage": "string",
-              "$value": "base\\gameplay\\anim_graphs\\humanoid.animgraph"
+              "$value": "base\\cp2077coop\\animations\\networkhumanoid_idle.animgraph"
             },
             "Flags": "Obligatory"
           },
@@ -461,6 +489,22 @@
             "$type": "ResourcePath",
             "$storage": "string",
             "$value": "base\\characters\\appearances\\main_npc\\proxy\\judy_default\\judy_default.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\cp2077coop\\animations\\networkhumanoid_idle.animgraph"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_locomotion_combat.anims"
           },
           "Flags": "Soft"
         }
