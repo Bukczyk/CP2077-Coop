@@ -121,7 +121,7 @@ local function update(delta)
                 if npc ~= nil and npc:IsAttached() then
                     local localId = npc:GetEntityID()
                     if not system:IsTagged(localId, CName.new(commonTag)) and countNpc < npcLimit then
-                        local key = tostring(localId)
+                        local key = tostring(localId.hash)
                         if not hostNpcs[key] then
                             hostNpcs[key] = { object = npc, localId = localId, adopted = false }
                             countNpc = countNpc + 1

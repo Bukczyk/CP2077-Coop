@@ -4,7 +4,11 @@ local M = {}
 local assetPath = "base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent"
 local commonTag = "CP2077Coop.ExperimentalStaticNpc"
 local bySessionEntity, byLocalEntity = {}, {}
-local function key(value) return tostring(value) end
+local function key(value)
+    -- CET creates new EntityID wrappers. Only their opaque Uint64 hash is identity.
+    local ok, hash = pcall(function() return value.hash end)
+    return tostring(ok and hash ~= nil and hash or value)
+end
 local function system()
     if Game == nil or Game.GetStaticEntitySystem == nil then return nil end
     local ok, result = pcall(function()
@@ -17,7 +21,9 @@ local function system()
 end
 local function transform(npc)
     local x, y, z, yaw = tonumber(npc.x), tonumber(npc.y), tonumber(npc.z), tonumber(npc.yaw)
-    if not x or not y or not z or not yaw or x ~= x or y ~= y or z ~= z or yaw ~= yaw then return nil end
+    for _, value in ipairs({x or false, y or false, z or false, yaw or false}) do
+        if not value or value ~= value or math.abs(value) == math.huge then return nil end
+    end
     return x, y, z, yaw
 end
 function M.available()
@@ -40,7 +46,7 @@ function M.spawn(npc)
         spec.tags = { CName.new(commonTag), tag }
         return s:SpawnEntity(spec)
     end)
-    if not ok or id == nil or key(id) == "0" then return nil end
+    if not ok or id == nil or key(id):match("^0[uUlL]*$") then return nil end
     local entry = { id = id, session = sid, entity = nil, bound = false }
     bySessionEntity[sid], byLocalEntity[key(id)] = entry, entry
     return id
@@ -86,8 +92,17 @@ function M.remove(localId)
     if entry.bound then return false end
     local s = system()
     if s == nil then return false end
-    local ok, removed = pcall(function() return s:DespawnEntity(entry.id) end)
-    if not ok or not removed then return false end
+    if not entry.removing then
+        local ok, removed = pcall(function() return s:DespawnEntity(entry.id) end)
+        if not ok or not removed then return false end
+        entry.removing = true
+    end
+    -- A queued despawn is not observed disappearance. Retain ownership for retry.
+    local observed, gone = pcall(function()
+        return not s:IsManaged(entry.id) and not s:IsSpawning(entry.id)
+            and not s:IsSpawned(entry.id) and s:GetEntity(entry.id) == nil
+    end)
+    if not observed or not gone then return false end
     byLocalEntity[key(entry.id)] = nil
     if bySessionEntity[entry.session] == entry then bySessionEntity[entry.session] = nil end
     return true

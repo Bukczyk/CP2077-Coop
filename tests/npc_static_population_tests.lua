@@ -5,16 +5,17 @@ local nextId, specs, spawned, removed, mapped, positioned, reverse = 0, {}, {}, 
 local denyBind = false
 local system = {}
 function system:IsReady() return true end
+function system:IsManaged(id) return specs[id] ~= nil and not removed[id] end
 function system:SpawnEntity(spec)
     nextId = nextId + 1
     local id = "static-entity-" .. nextId
     specs[id], spawned[id] = spec, false
     return id
 end
-function system:IsSpawning(id) return not spawned[id] end
-function system:IsSpawned(id) return spawned[id] == true end
+function system:IsSpawning(id) return not removed[id] and not spawned[id] end
+function system:IsSpawned(id) return not removed[id] and spawned[id] == true end
 function system:GetEntity(id)
-    if not spawned[id] then return nil end
+    if removed[id] or not spawned[id] then return nil end
     return {
         GetEntityID=function() return id end,
         SetWorldTransform=function(_, world) positioned[id]=world end
@@ -82,4 +83,5 @@ assert(not controller:step("session:epoch-2",bubble,{denied}))
 denyBind=false
 assert(removed["static-entity-3"] and next(mapped)==nil)
 assert(not adapter.spawn({entity="bad",x=0/0,y=0,z=0,yaw=0}) and nextId==3)
+assert(not adapter.spawn({entity="infinite",x=math.huge,y=0,z=0,yaw=0}) and nextId==3)
 print("Experimental StaticEntitySystem projection create, exact binding, move, bubble cleanup and epoch reset passed")
