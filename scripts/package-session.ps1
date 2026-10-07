@@ -4,6 +4,7 @@ param(
     [ValidatePattern('^[a-zA-Z0-9_-]{1,31}$')][string]$Session = 'first-test',
     [string]$AccessKeyFile = '',
     [ValidateRange(1,60)][int]$SnapshotRate = 60,
+    [switch]$ExperimentalStaticNpcProjection,
     [string]$BuildDirectory = 'build/windows'
 )
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,8 @@ $dll = Join-Path $root "$BuildDirectory/CoopPlugin/Release/CP2077Coop.dll"
 if (-not (Test-Path -LiteralPath $dll)) { throw 'Build the typed Release plugin first' }
 $cache = Get-Content -LiteralPath (Join-Path $root "$BuildDirectory/CMakeCache.txt") -Raw
 if ($cache -notmatch 'COOP_LEGACY_PLUGIN:BOOL=OFF') { throw 'Packaging requires a verified typed plugin build directory' }
+$experimentalArchive = Join-Path $root 'runtime/session/assets/CP2077Coop_Experimental.archive'
+if ($ExperimentalStaticNpcProjection -and -not (Test-Path -LiteralPath $experimentalArchive)) { throw 'Build runtime/session/assets/CP2077Coop_Experimental.archive before enabling the experimental projection' }
 if ($AccessKeyFile) { $key = (Get-Content -LiteralPath $AccessKeyFile -Raw).Trim() }
 else {
     $bytes = New-Object byte[] 32
@@ -31,6 +34,11 @@ foreach ($role in @('HOST','JOINER')) {
     $cet = Join-Path $base 'bin/x64/plugins/cyber_engine_tweaks/mods/CP2077Coop'
     $reds = Join-Path $base 'r6/scripts/CP2077Coop'
     New-Item -ItemType Directory -Path $plugin,$cet,$reds -Force | Out-Null
+    if ($ExperimentalStaticNpcProjection) {
+        $modArchive = Join-Path $base 'archive/pc/mod'
+        New-Item -ItemType Directory -Path $modArchive -Force | Out-Null
+        Copy-Item -LiteralPath $experimentalArchive -Destination $modArchive
+    }
     Copy-Item -LiteralPath $dll -Destination $plugin
     Get-ChildItem -LiteralPath "$root/runtime/session/cet/CP2077Coop" -Filter '*.lua' -File | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $cet
@@ -48,6 +56,7 @@ access_key_file=access.key
 player_snapshot_rate=$SnapshotRate
 vehicle_snapshot_rate=$SnapshotRate
 npc_snapshot_rate=20
+experimental_static_npc_projection=$(if ($ExperimentalStaticNpcProjection) { 1 } else { 0 })
 max_npcs=128
 bubble_radius=100
 interpolation_ms=100
@@ -69,6 +78,7 @@ foreach ($name in @('server.ini','install.sh','cp2077-coop.service')) {
 Foundation package only. No installation performed and no in-game milestone certified.
 Requires matched RED4ext, CET, REDscript and Codeware. REDscript compilation/engine behavior is unverified.
 HOST and JOINER contain the same protocol build with role-specific configuration.
+Experimental StaticEntitySystem projection is opt-in; its archive is included only when requested.
 The Debian directory contains deployment inputs and a private generated key, not a Linux executable.
 Build the executable on Debian with bash scripts/build.sh. Use a private trusted network.
 Do not mix old combat.reds/natives.reds/init.lua with this DLL. Save the complete old mod package before any future cutover.
