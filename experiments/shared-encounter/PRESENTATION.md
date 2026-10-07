@@ -7,8 +7,12 @@ local trial visibly demonstrated a held reaction pose, return to idle, and death
 preserved through two local recreations with fresh exact IDs. The earlier crashes
 remain recorded below. Trial nine also recorded three real firing callbacks
 whose geometric rays hit the exact corrected capsule, including after local
-recreation, and an upward-shot miss. Timed reaction playback, native bullet
-damage and the complete shared-combat path remain open.
+recreation, and an upward-shot miss. Trial eleven separately observed native
+HOST damage/death. Its presentation retest selected the old idle-only template
+through a private installer mistake, so it did not test this graph. Trial twelve
+corrected that selection and visibly passed held reaction, idle, death and
+recreation on the current combined asset. Timed reaction measurement and the
+shared-combat path remain open.
 
 ## Design
 
@@ -194,8 +198,8 @@ a recorded call boundary locating the new failure among attachment, first
 bind/move and first trace-target setup. The tag-membership change and collider
 are hypotheses, not established causes. Clearing a null weak trace target had
 already run throughout the preceding empty-NPC frames. The fourth trial does
-not qualify recreation, collision or presentation stability. Crash analysis and
-the next isolated live check remain with the active test owner.
+not qualify recreation, collision or presentation stability. The exact faulting
+call remains unresolved; subsequent isolated checks are recorded below.
 
 The next candidate materializes the static tagged-entity collection and checks
 exact IDs in a bounded loop, avoiding the nested `GetTags`/`ArrayContains` call.
@@ -213,7 +217,7 @@ at `03:59:53Z` with 32 hashed files. JOINER's trace is final; HOST remained open
 as PID 58332, so its snapshot is partial. Trial five restarted only JOINER with
 the mitigation and diagnostic call boundaries while retaining the HOST/server.
 This was a mixed diagnostic setup, not a matched complete-feature qualification.
-Final process/restoration records remain with the test owner.
+The final process/restoration record is in the checkpoint's final handoff section.
 
 ## Fifth trial: local presentation and recreation observed
 
@@ -265,11 +269,79 @@ This qualifies the local firing-to-geometric-query path. No native damage or
 network event triggered a reaction/death, so shared combat remains unfinished.
 The presentation graph/archive are unchanged.
 
-Evidence: `live-presentation-recreate-pass/SUMMARY.md`, `metrics.json`,
+## Trial eleven: wrong private template, presentation check invalid
+
+The matched installer copied the production `npc_static_population.lua` directly
+into the private `zz_EncounterProbe` folder. Its template remained
+`base\cp2077coop\entities\cp2077coop_networkhumanoid.ent`, the original idle-only
+asset. Prior passing private runs selected `cp2077coop_networkhumanoid_hittable.ent`.
+Both encounter archives were installed with their correct hashes, but installing
+an archive does not select its entity template.
+
+The local held pose at `05:11:35Z` and terminal death requested at `05:12:04Z`
+therefore queued against an entity without the encounter graph/controller. It
+remained upright at `05:12:14Z`. `matched-ten-install.json` records the private
+adapter hash `0d4155fb2cce59823776fd2e662a7045e552fa9d2c8e363976daa779fcce0019`,
+which matches the inspected idle-template source. This is an invalid candidate
+test caused by deployment selection, not proof of a presentation regression.
+
+The narrow correction restores the private fixture's `_hittable.ent` selection
+and asserts it during deployment; production's default stays unchanged. Retest
+after a fresh load/spawn, because editing a loaded Lua module does not change an
+existing entity. Build 04 versus build 06 comparison found no animation, mesh or
+controller change outside serialization handle numbering; only collision-filter
+fields changed. Trial twelve below verifies the corrected selection. Trial five's
+earlier visual results remain limited to that exact run.
+
+Trial eleven's genuine HOST hit, health loss and persistent death are separately
+recorded in [the checkpoint](PHYSICAL_ENCOUNTER_CHECKPOINT.md). They have no
+accepted-result delivery to JOINER yet and must not be described as synchronized
+presentation. Its archive is `live-host-physical-native`, with a final JOINER
+trace and partial continuing HOST snapshot.
+
+## Trial twelve: current combined asset passed local pose and recreation checks
+
+The corrected private template selection was installed at `05:16:41Z`, with
+the normal production adapter unchanged. The restarted JOINER used the same
+presentation build 03 and NPC Hitbox build 06 archives. Its first lifetime
+overlapped HOST fixture expiry, so the `05:19:57Z` empty reset is excluded from
+recreation evidence.
+
+For the next exact life, local `10719874` / session `4294967298`, the operator
+observed a distinct held reaction and return to idle at release `05:21:02Z`.
+Death was staged at `05:21:07Z`, serial 2, and the corpse was visually observed
+at `05:21:14Z`. Reset at `05:21:20Z` waited 0.109347 s for removal before a fresh
+local `10719913` bound at `05:21:21Z`. Its first pose was terminal dead, progress
+1, serial 2, and the operator confirmed the retained corpse at `05:21:28Z`.
+
+This passes these local visible checks on the current combined candidate. It
+does not reproduce the HOST's exact bones/ragdoll, prove timed-reaction cadence,
+or deliver HOST outcomes through the network. The final archive
+`live-final-presentation-pass` contains 44 hashed inputs and both final role
+traces. All 1,893 bound frames passed exact tag/mapping, including 137 held-pose
+frames from `05:20:46Z` through release. Three body inspections confirmed the
+current NPC Hitbox query masks 0/2 and zero simulation masks. Both roles logged
+zero probe errors; JOINER fired no physical shots in this final trial.
+Implementation `63b7098` also passed Windows, Debian and sanitizer CI in
+[run 37574659468](https://github.com/Bukczyk/CP2077-Coop/actions/runs/37574659468);
+those offline jobs do not replace the distinct visual evidence.
+
+Earlier trial-five evidence: `live-presentation-recreate-pass/SUMMARY.md`, `metrics.json`,
 `snapshot.json`, final JOINER trace, installed-script hashes and partial HOST
 trace. The snapshot marks JOINER closed
 and HOST still running. The visual observations above are the test operator's
 separate observations, not conclusions inferred from successful queue calls.
+Final trial-twelve evidence is `live-final-presentation-pass/SUMMARY.md`,
+`metrics.json` and `snapshot.json`; its `native-host-metrics.json` retains the
+full, separate native HOST damage/death observations.
+
+Both games and the test server were closed. The launcher restored graphics and
+settings at `05:23:06.523483Z`; hash-verified restoration of the original typed
+runtime, bindings, input XML and server completed at `05:23:55.0108458Z` in
+`runtime-restore-20261007T0523537922296Z.json`. All 167 checked current save files
+were preserved, with no save rollback. The existing v0.0.37 / alpha5 public
+package was verified unchanged. See [the final checkpoint](PHYSICAL_ENCOUNTER_CHECKPOINT.md)
+for the package hash and remaining shared-combat gates.
 
 | Candidate | SHA256 |
 | --- | --- |

@@ -357,8 +357,94 @@ That folder retains exact copied HOST/JOINER probes, input hashes, raw traces,
 later capsule or trace code without their separate live evidence.
 
 The later physical trace and W-canonicalization code passed isolated compilation
-at 2026-10-07T03:35:14Z. A genuine local-player hit against the tagged HOST NPC
-and resulting authoritative damage remain unproven. The ninth trial separately
-qualifies three real firing-to-passive-target queries, as detailed above. Pose
-fixtures, scripted rays and other-NPC native hits do not satisfy the native
-damage or synchronized-reaction gates.
+at 2026-10-07T03:35:14Z. The ninth trial separately qualifies three real
+firing-to-passive-target queries, as detailed above. Neither pose fixtures nor
+scripted rays qualify native damage or synchronized reactions.
+
+## Matched HOST native hit and death evidence
+
+The eleventh launch installed current probes on both roles. At 05:07:14Z, a
+genuine HOST shot from local player `1`, weapon `10718342`, reduced magazine
+6 -> 5. The exact controlled NPC `10718591` / session entity `4294967296`
+received native PreProcess and DealDamages callbacks with matching instigator
+and weapon, `syntheticFixture=false`, `projectionPipeline=false` and fixture
+request 0. Subsequent readback confirmed health 221.400757 -> 110.067528.
+Five later shots missed the moving NPC; no additional health loss was inferred.
+
+At 05:10:44Z, genuine shot sequence 7 hit a fresh controlled NPC `10718799` /
+session entity `4294967297`, initially at its full 221.400757 health. After a
+normal reload, readbacks and the shot recorded magazine 6 -> 5 and total
+ammunition 568 -> 567. The callback's `ammoDecreasedSincePreviousObservation`
+was false because the previous firing observation was an empty magazine;
+that field alone cannot account for intervening reloads.
+
+The native event order is significant:
+
+| Simulation time | Observation |
+| --- | --- |
+| 216022.478734 | Genuine firing notification, sequence 7. |
+| 216022.503892 | PreProcess and DealDamages callbacks, matching local attacker/weapon; health still reads 221.400757. Final computed value is 399.499512. |
+| 216022.530476 | `death_callback`: health 0, persistent-death flag still false. |
+| 216022.530476 | `on_died_after_vanilla`: health 0, persistent-death flag true. |
+| 216022.588446 | Subsequent readback confirms health 0 and persistent death. |
+
+No synthetic attack or raw-health fixture ran. This proves local HOST native
+hit, actual damage and persistent-death observation. It also shows why a future
+engine adapter must await observed health/death after application; neither
+computed damage nor the first OnDeath callback is a complete result. The
+UI firing vector differs slightly from the final native attack vector/origin,
+reinforcing that the UI ray is not a complete bullet-trajectory contract.
+
+These are separate local and HOST gates. The experiment still has no reliable
+JOINER intent -> HOST validation/application -> authoritative result transport,
+nor automatic shared reaction/death presentation. Broader collision and
+gameplay qualification remain open. Native evidence and a reproducible analyzer
+are archived at
+`D:\Downloads\syncfix\bench-artifacts\20261007-passive-encounter-engine\live-host-physical-native`.
+That earlier archive contains final eleventh JOINER evidence and a partial
+snapshot of HOST before the separate JOINER restart. The full final HOST trace
+is retained in the twelfth-trial archive below.
+
+The eleventh JOINER incorrectly used the original idle-only template: its
+private installer copied the production adapter without restoring the
+experimental `_networkhumanoid_hittable.ent` selection. Queued local pose
+commands therefore did not prove visible pose application. Exact copied
+adapter bytes preserve the mistake. Build 04 versus build 06 contains no
+animation/controller changes, only collider filters and serialization details.
+The twelfth private restart corrected template selection and passed the final
+local presentation checks. No production default or asset-source change was
+needed for this fixture error.
+
+## Final corrected-template and restoration check
+
+The twelfth JOINER produced no physical shots. It independently confirmed three
+enabled queryable bodies with the intended `NPC Hitbox` masks 0/2 and zero
+simulation masks, plus 1,893 exact tag/session-bound frames and no probe errors.
+Root directly observed the held reaction pose, return to idle, death pose and
+death pose after local recreation; queued feature values alone are not the
+visual proof.
+
+The fresh second lifetime, session entity `4294967298`, is the qualified final
+fixture: local `10719874` held the reaction pose from 05:20:46Z to 05:21:02Z,
+returned to idle, and staged the local death fixture at 05:21:07Z. The corpse
+was visible at 05:21:14Z. Recreation at 05:21:20Z completed across two updates
+0.109347 seconds apart. Replacement local `10719913` first bound at 05:21:21Z
+already dead, progress 1 and serial 2; the preserved corpse was visible at
+05:21:28Z. A first-lifetime recreation overlapping HOST fixture expiry is
+excluded. These are local presentation fixtures, not receipt of HOST death.
+
+Final evidence is in
+`D:\Downloads\syncfix\bench-artifacts\20261007-passive-encounter-engine\live-final-presentation-pass`.
+`analyze.py` verifies presentation/lifecycle evidence, while
+`analyze_native_host.py` verifies the full continuing HOST's genuine native hit,
+actual health loss and persistent death. The ninth trial remains the separate
+evidence for three genuine JOINER firing-to-proxy query hits and a real sky miss.
+
+Both games and the test server closed, with launcher settings restored at
+05:23:06.523483Z. Private experimental installs were then restored around
+05:23:55Z; the restoration manifest is
+`D:\Downloads\syncfix\bench-artifacts\20261007-passive-encounter-engine\runtime-restore-20261007T0523537922296Z.json`.
+Graphics and all 167 checked save files were preserved. No production package
+or runtime cutover was promoted by these experiments. Remaining integration is
+reliable intent/result delivery and automatic shared reactions/death, followed
+by broader physics and gameplay qualification.

@@ -1,12 +1,16 @@
 # Physical encounter engine checkpoint
 
-Status: **working draft, LOCAL_FIRING_TO_QUERY_AND_PRESENTATION_PASSED_SHARED_COMBAT_PENDING**.
-Updated by KyleBuildsAI's game-side work session at `2026-10-07T04:56Z`. Trial five
+Status: **LOCAL_FIRING_TO_QUERY_AND_PRESENTATION_PASSED_SHARED_COMBAT_PENDING**.
+Final local-test record after restoration at `2026-10-07T05:23:55.0108458Z`. Trial five
 visibly preserved death through two recreations. Trial nine recorded three real
 firing callbacks whose local rays hit the exact passive target, including after
-recreation, plus a real firing miss. Native bullet damage, HOST-approved outcomes
-and network combat remain unfinished. Earlier failures and crashes are preserved
-below. This is not a playable shared-combat or release claim.
+recreation, plus a real firing miss. Trial eleven observed genuine local HOST
+hit, health loss and persistent death. JOINER intent delivery, HOST validation of
+that remote intent, and accepted-result presentation are still unconnected.
+Trial eleven's local presentation check selected the wrong idle-only template;
+trial twelve corrected it and visibly passed held reaction, idle, death and
+terminal-pose recreation on the combined build 06 asset. This is not a playable
+shared-combat release claim.
 
 ## Goal, ownership and source
 
@@ -21,7 +25,12 @@ split of maintainer responsibility.
 - Branch: `feat/passive-encounter-engine`.
 - Starting source: `b0cdce98fc6cb81516e09ef1cd5f70b128499a90`, from [PR9](https://github.com/Bukczyk/CP2077-Coop/pull/9).
 - Worktree: `D:\Downloads\syncfix\collaboration\passive-humanoid-validation`.
-- At this draft, changes are uncommitted; final source and PR status are pending.
+- Implementation source: `63b70987c249860097bfc460a3406fcea5bf2837`.
+  This documentation was finalized after the implementation commit; exact
+  documentation revisions are in the PR history.
+  [PR10](https://github.com/Bukczyk/CP2077-Coop/pull/10) is open as a draft, not merged.
+- The verified engine answers were published on
+  [PR7](https://github.com/Bukczyk/CP2077-Coop/pull/7#issuecomment-6031592494).
 - No ownership transfer to Bukczyk is implied by publishing the engine experiment.
 
 KyleBuildsAI retains these exact task files:
@@ -107,8 +116,8 @@ qualifies those tested sequences, not every possible engine lifecycle.
 | Pending-retirement regressions | PASS for same-epoch reset, bind/move rejection, rejected unbind and relevance returning during removal. Old runtime and old adapter each fail the corresponding new case. |
 | Complete local CTest | 19/19 PASS on `2026-10-07`, from `04:31Z` to `04:32Z`, including the nine current collider cases, both presentation suites and static identity; retained in `final-19-tests.log`. These are offline checks. |
 | Native Release build | PASS at `2026-10-07T04:19Z`, recorded by the test owner. No subsequent native source change is part of these asset/script revisions. |
-| Hosted CI | Pending final source/PR; do not reuse PR9's old results as proof for new source. |
-| Two-PC or larger live group | Not run in the completed trials or the current ninth trial. |
+| Hosted CI | Windows, Debian and sanitizer jobs all PASS for implementation `63b7098` in [run 37574659468](https://github.com/Bukczyk/CP2077-Coop/actions/runs/37574659468), completed `05:10:51Z`. Final documentation-head checks are separate. |
+| Two-PC or larger live group | Not run in these completed local trials. |
 
 The presentation candidate archive SHA256 is
 `ace72cf1514f4564023f7c2e974ac036cba93975736b3e9c561f29128514cfff`.
@@ -169,7 +178,8 @@ The source correction is `NewObject("entAnimInputSetterFloat")`. A regression
 test rejects the former alias and validates the native name and failure path.
 The correction was installed at `2026-10-07T03:37:53Z`, together with refreshed
 probe scripts. Constructor correction and queue tests alone do not establish that
-the graph consumes events. The next trial must supply that evidence.
+the graph consumes events. The subsequent trials below supply separate visual
+evidence.
 
 ## Trial 3: local death observed, physical target hit unproved, recreation crashed
 
@@ -226,12 +236,13 @@ contains the first new projection, local ID `10714234`, with `bound=false` and
 saw the proxy render. No reaction, death, hold or recreation input had run.
 This is not the third trial's same-ID recreation sequence.
 
-The failure is not yet localized between asynchronous attachment, first
+The failure was not localized between asynchronous attachment, first
 bind/move and the first non-null trace-target call. Null target clearing had
 already run throughout preceding empty-NPC frames. The new tag-membership call
 is a hypothesis requiring isolation, not a demonstrated destructor or array
-failure. Crash analysis and a narrower test remain in progress. The fourth
-trial does not qualify the retirement fix, collision or stable presentation.
+failure. Its exact cause remains unresolved; subsequent narrower tests are
+recorded below. The fourth trial does not qualify the retirement fix, collision
+or stable presentation.
 
 The next mitigation restores the previously used DynamicEntitySystem tag check
 for HOST and materializes StaticEntitySystem's tagged-entity collection for
@@ -290,7 +301,7 @@ query mask2=4 and trace-gate status diagnostics, without backend integration.
 The archive `live-presentation-recreate-pass/snapshot.json` preserves final
 JOINER inputs/traces and marks the continuing HOST snapshot as nonfinal. Visual
 pose confirmations are separate operator observations; queue logs alone do not
-establish them. Final process/settings/restoration status remains pending.
+establish them. The final restoration record below covers the completed session.
 
 ## Trial 6: target rejection isolated to a chained ID read
 
@@ -407,9 +418,99 @@ These are real shots followed by custom geometric queries. The passive entity
 still receives no native damage, and no network intent/result delivery or
 synchronized reaction is implemented. The ray uses UI direction without verified
 spread, penetration or projectile travel. Nearer wall, vehicle, NPC, self-occlusion
-and moving-target cases remain open. HOST `58332` still uses the older probe, so
-current HOST damage remains unqualified. The ninth trial is still open and its
-final archive/process/restoration record is pending.
+and moving-target cases remain open. HOST `58332` used the older probe, so its
+trace does not qualify HOST damage. The ninth archive is now final:
+`live-query-filter-pass/snapshot.json` hashes 39 files, with JOINER
+`04:34:52Z-04:57:12Z` and HOST `03:50:44Z-04:57:40Z`. All 7,094 bound JOINER
+frames passed exact mapping and tag membership. Both games/server closed, and
+the launcher reported settings restored at `04:57:52.635Z`. Subsequent matched
+tests are separate runs; their final cleanup is recorded below.
+
+## Trial 11: genuine HOST hit, damage and death observed
+
+Both roles received the current source probes from commit `63b7098` through the
+matched deployment recorded at `05:02:05Z`. In this run the HOST's native observer
+was scoped. At `05:07:14Z`, a genuine shot from weapon `10718342` correlated with
+PreProcess and DealDamages observations on controlled local NPC `10718591`,
+session entity `4294967296`. The instigator was local player `1`, the callback
+weapon matched, `syntheticFixture=false`, `projectionPipeline=false`, and
+`fixtureRequest=0`. Subsequent health readback fell from 221.400757 to
+110.067528. This is observed health loss, not inferred computed damage.
+
+At `05:10:44Z`, genuine shot sequence 7 hit controlled local `10718799`, session
+entity `4294967297`, with the same player/weapon attribution and no synthetic
+fixture. Ammunition changed 6 to 5 after reload, total 568 to 567. The engine
+ordering matters for the eventual authoritative result:
+
+| Simulation time | Observed point | Health / death evidence |
+| --- | --- | --- |
+| `216022.478734` | Genuine firing notification | Health still 221.400757. |
+| `216022.503892` | PreProcess / DealDamages observation | Computed damage became 399.499512, but observed health was still 221.400757. |
+| `216022.530476` | `death_callback` | Health 0; persistent dead flag still false. |
+| `216022.530476` | `on_died_after_vanilla` | Health 0; persistent dead flag now true. |
+| `216022.588446` | Independent readback | Health 0 and persistent death confirmed. |
+
+This passes the tested local native hit/damage/death observer path. A computed
+damage value, an early callback or a queued action alone must not be published
+as completed damage/death. The run does not implement JOINER intent submission,
+HOST validation/apply of that intent, or delivery of accepted outcomes.
+
+The JOINER remained idle after HOST death, as expected with no combat-result
+delivery. A separate local presentation check also failed visually: held pose
+at `05:11:35Z` and death at `05:12:04Z` queued, but the proxy was still upright at
+`05:12:14Z`. Investigation found a concrete private deployment error:
+`install_matched_ten.py` copied the production default adapter into the private
+probe without restoring its `_hittable.ent` template override. The manifest and
+installed private adapter hash `0d4155fb2cce59823776fd2e662a7045e552fa9d2c8e363976daa779fcce0019`
+select the original `cp2077coop_networkhumanoid.ent`, whose graph is idle-only.
+
+The encounter/hittable archives still had the correct hashes, but that spawned
+template did not use them. The build 04 to build 06 entity comparison shows only
+collider-filter changes and serialization handle renumbering, not altered
+presentation components. This invalidates trial eleven as a test of the
+encounter presentation graph; it does not establish a graph regression or erase
+trial five's qualified visual evidence. The narrow correction belongs in the
+private installer, preserving the production default. Correct template selection
+and a fresh projection must be verified before the next presentation check.
+
+## Trial 12: combined asset's local presentation and recreation passed
+
+The private JOINER adapter's `_hittable.ent` override was restored at
+`05:16:41Z`, recorded in `joiner-twelve-install.json`. The normal production
+adapter stayed unchanged. JOINER restarted with the same build 06 collider and
+build 03 presentation archives; HOST continued its current trial-eleven process.
+Trial eleven is preserved in `live-host-physical-native`: final JOINER trace,
+partial continuing HOST snapshot, 43 input hashes and reproducible native-hit
+and death-order assertions.
+
+The first JOINER lifetime, local `10719099` / session `4294967297`, overlapped
+the HOST fixture's automatic expiry. The `05:19:57Z` F10 reset occurred after
+that life was already removed and is excluded as recreation evidence.
+
+The next lifetime used local `10719874` / session entity `4294967298`. The
+operator observed a visibly different held reaction pose, then idle restored
+after release at `05:21:02Z`. Local death was staged at `05:21:07Z`, serial 2;
+the operator observed the corpse at `05:21:14Z`.
+
+At `05:21:20Z`, F10 reset returned false/pending and then true 0.109347 s later.
+Fresh local `10719913` first bound at `05:21:21Z` to the same session entity.
+Its first bound presentation state was terminal dead, progress 1, serial 2.
+The operator visually confirmed the preserved corpse at `05:21:28Z`. This
+qualifies held reaction, idle restoration, local death and terminal-pose
+recreation with the current combined candidate. It is not timed-animation,
+network-reconnect or accepted-HOST-result delivery evidence.
+
+The final archive `live-final-presentation-pass` preserves both final role traces
+and 44 hashed inputs. All 1,893 bound JOINER frames passed exact tag/mapping;
+137 frames held the reaction midpoint from `05:20:46Z` to `05:21:02Z`. Three
+body inspections confirmed query masks 0/2 and simulation masks 0/0. Neither
+role logged a probe error. JOINER fired no shots in this final trial, so the
+ninth trial remains the physical-shot-to-query evidence.
+
+The verified HOST death and JOINER local poses remain separate tests. No combat
+network message triggered the JOINER transition. Both games/server closed, and
+the launcher reported graphics/settings restored at `05:23:06.523483Z`. The
+subsequent hash-verified runtime restoration is recorded below.
 
 ## Shared interface and next complete-feature test
 
@@ -435,7 +536,7 @@ targets, capacity failure and dead-state recovery on reconnect. Local serial
 rejection and local projection recreation do not prove network recovery. Repeat
 on two PCs before claiming the internet gameplay path is qualified.
 
-## Evidence and unfinished handoff fields
+## Evidence and final handoff
 
 Private evidence root:
 `D:\Downloads\syncfix\bench-artifacts\20261007-passive-encounter-engine`.
@@ -448,15 +549,32 @@ Private evidence root:
 - `live-tag-id-diagnostic/SUMMARY.md`, reproducible `metrics.json` and exact sixth-trial inputs.
 - `live-query-mask-failure/SUMMARY.md`, reproducible `metrics.json`, four shot/ray records and collider readbacks.
 - `live-startup-crash/SUMMARY.md`, crash metrics/dump and provenance for the stale prior trace.
+- `live-query-filter-pass/SUMMARY.md`, reproducible `metrics.json`, final ninth traces and 39-file hash manifest.
+- `live-host-physical-native/SUMMARY.md`, reproducible native-hit/death metrics, final trial-eleven JOINER and partial continuing HOST snapshot.
+- `live-final-presentation-pass/SUMMARY.md`, `analyze.py`, `metrics.json`, `analyze_native_host.py`, `native-host-metrics.json` and the 44-file hash manifest preserve the final twelfth JOINER and full eleventh HOST traces.
 - `presentation/build-03/manifest.json`, `builder-link-validation.json`.
 - `presentation/retiring-regression/results.json` and the local `build/windows/Testing/Temporary/LastTest.log`.
 - `physical-shots/hittable-build-04/manifest.json`, `physical-shots/hittable-build-05/manifest.json`, `physical-shots/hittable-build-06/manifest.json` and `physical-shots/result.json`.
 - `final-19-tests.log` records the latest complete local CTest run.
-- `candidate-install.json`, `candidate-refresh.json`, `retiring-fix-install.json`, `joiner-five-install.json`, `joiner-six-install.json`, `joiner-seven-install.json`, `joiner-eight-install.json` and `joiner-nine-retry.json` identify installed inputs and the unchanged retry.
+- `candidate-install.json`, `candidate-refresh.json`, `retiring-fix-install.json`, `joiner-five-install.json`, `joiner-six-install.json`, `joiner-seven-install.json`, `joiner-eight-install.json`, `joiner-nine-retry.json`, `matched-ten-install.json` and `joiner-twelve-install.json` identify installed inputs, unchanged retry and private-template correction.
 
-Final source commit, PR, full check results, process state, installed/restored
-files, graphics restoration, current-save preservation and package verification
-are **pending root's final handoff**. The prior task's `02:24Z` restoration does
-not cover this task. Do not restore old saves or call this a new v0.0.37 package.
-The existing public complete package remains a separate tested release; no release
-completion is asserted by this draft.
+Restoration manifest `runtime-restore-20261007T0523537922296Z.json` reports
+**complete** at `2026-10-07T05:23:55.0108458Z`. It verifies the original typed
+HOST/JOINER runtime, bindings, input XML and server bytes. Experimental installed
+files were archived separately. Graphics/settings were restored, and no game or
+test server was left running. All **167 current save files** checked before and
+after restoration were unchanged; no old saves were restored.
+
+`public-package-verified.json`, recorded at `2026-10-07T04:29:40.9078660Z`,
+verified all **70 SHA entries** (69 payload files plus the manifest). The existing
+complete package in `D:\Downloads\syncfix\MP=Jakub\game-files\latest` remains
+**v0.0.37 / alpha5**, unchanged. Its ZIP SHA256 is
+`4205990ab92d0a9754232067e2082ba170df7850acc30bcb97a5153d45032ddc`.
+This source experiment did not create a new playable package or replace that
+public release. The restored typed test installs and the public package are
+separate baselines.
+
+The remaining complete-feature work is agreed network intent/result delivery,
+game-side HOST validation and observed application of remote intent, accepted
+JOINER presentation, then duplicate/stale/reconnect and two-PC qualification.
+Local component passes do not mark those shared-combat gates complete.
