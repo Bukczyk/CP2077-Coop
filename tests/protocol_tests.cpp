@@ -7,7 +7,7 @@ using namespace coop;
 void Golden() {
     const Packet packet{{0x0102030405060708ULL, 9, 10, 11, 0}, Heartbeat{}};
     const std::vector<std::uint8_t> golden{
-        0x43,0x50,0x53,0x31, 0,3, 0,1, 0,0,0,0,
+        0x43,0x50,0x53,0x31, 0,4, 0,1, 0,0,0,0,
         1,2,3,4,5,6,7,8, 0,0,0,9, 0,0,0,10, 0,0,0,11,
         0,0,0,0,0,0,0,0};
     CHECK(Encode(packet).value() == golden);
@@ -24,7 +24,7 @@ void CodecCases() {
     const std::vector<Payload> payloads{Heartbeat{}, Leave{}, Ack{9}, PlayerPose{1,t},
         PlayerState{1,t}, VehicleInput{2,0.5f,-0.5f,1}, VehicleState{2,t},
         HitRequest{1,3,42}, DamageApplied{1,3,42,1}, EntitySpawn{3,EntityKind::World,0,t},
-        EntityDespawn{3}, WorldState{3,t}};
+        EntityDespawn{3}, WorldState{3,t}, GameplayIntent{1,{1,2,3}}, GameplayResult{4,7,2,GameplayDisposition::Unsupported,9,{4,5}}};
     for (const auto& payload : payloads) {
         const bool reliable = IsReliable(TypeOf(payload));
         Packet packet{{123,2,4,reliable ? 0u : 0xffffffffu,reliable ? 1u : 0u}, payload};
@@ -40,7 +40,7 @@ void CodecCases() {
     }
     auto bad = Encode(Packet{{1,1,1,1,0}, Heartbeat{}}).value();
     bad[0] = 0; CHECK(Decode(bad).error == CodecError::Magic); bad[0] = 0x43;
-    bad[5] = 2; CHECK(Decode(bad).error == CodecError::Version); bad[5] = 3;
+    bad[5] = 2; CHECK(Decode(bad).error == CodecError::Version); bad[5] = 4;
     bad[7] = 255; CHECK(Decode(bad).error == CodecError::Type); bad[7] = 1;
     bad[11] = 1; CHECK(Decode(bad).error == CodecError::Length);
     CHECK(Decode(std::vector<std::uint8_t>(1201)).error == CodecError::Size);
@@ -68,7 +68,7 @@ void Handshake() {
         {{},Hello{std::string(64,'a')}},{{},HelloOk{}},{{},CreateSession{"first-test"}},{{},JoinSession{"first-test"}},
         {{1,1,0,0,0},SessionAccepted{1,1,{}}},{{},Reject{RejectReason::Full}},
         {{1,1,0,0,0},MemberJoined{2}},{{1,1,0,0,0},MemberLeft{2}},
-        {{1,1,0,0,0},SessionClosed{}},{{1,1,2,0,0},Ready{}},{{1,1,0,0,0},SessionReady{}}};
+        {{1,1,0,0,0},SessionClosed{}},{{1,1,2,0,0},Ready{}},{{1,1,0,0,0},SessionReady{}},{{1,1,0,0,0},GameplayStatus{17,GameplayDisposition::Full,5,true}}};
     for (const auto& p:packets) {
         const auto bytes=Encode(p); CHECK(bytes); CHECK(Decode(*bytes).packet.value()==p);
         for(std::size_t i=0;i<bytes->size();++i) CHECK(!Decode(std::span<const std::uint8_t>(*bytes).first(i)));

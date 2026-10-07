@@ -58,10 +58,22 @@ void ReconnectUsesNewPlayerIdentity() {
     CHECK(ledger.RemoveMember(7));
     CHECK(ledger.AddMember(7) == RequestMemberResult::Retired);
     CHECK(ledger.AddMember(9) == RequestMemberResult::Added);
-    CHECK(ledger.Begin(oldKey).result == RequestLedgerResult::NotMember);
+    const auto duplicate = ledger.Begin(oldKey);
+    CHECK(duplicate.result == RequestLedgerResult::DuplicateCommitted);
+    CHECK(duplicate.replay && duplicate.replay->value.value == 1);
+    CHECK(ledger.Begin(Key(41, 3, 7, 2)).result == RequestLedgerResult::NotMember);
     CHECK(ledger.Begin(Key(41, 3, 9, 1)).result == RequestLedgerResult::New);
 }
 
+void CancelPendingAllowsSafeRetry() {
+    Ledger ledger({41, 3}, 2);
+    CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
+    const auto key = Key(41, 3, 7, 1);
+    CHECK(ledger.Begin(key).result == RequestLedgerResult::New);
+    CHECK(ledger.CancelPending(key) == RequestLedgerResult::Cancelled);
+    CHECK(ledger.Size() == 0);
+    CHECK(ledger.Begin(key).result == RequestLedgerResult::New);
+}
 void CapacityNeverEvictsOutcomes() {
     Ledger ledger({41, 3}, 1, 2);
     CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
@@ -110,6 +122,7 @@ int main() {
         RejectStaleIdentityAndMembership();
         ReconnectUsesNewPlayerIdentity();
         CapacityNeverEvictsOutcomes();
+        CancelPendingAllowsSafeRetry();
         EpochResetClearsScopedState();
     });
 }

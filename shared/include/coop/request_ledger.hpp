@@ -43,7 +43,8 @@ struct GameplayRequestScope {
 enum class GameplayRequestStatus {
     Accepted,
     Rejected,
-    Unsupported
+    Unsupported,
+    Full
 };
 
 enum class RequestMemberResult {
@@ -64,7 +65,8 @@ enum class RequestLedgerResult {
     NotMember,
     InvalidKey,
     Capacity,
-    MissingRequest
+    MissingRequest,
+    Cancelled
 };
 
 template<class Outcome>
@@ -129,14 +131,15 @@ public:
             return {RequestLedgerResult::StaleEpoch, {}};
         if (!key.sender || !key.event)
             return {RequestLedgerResult::InvalidKey, {}};
-        if (!members_.contains(key.sender))
-            return {RequestLedgerResult::NotMember, {}};
-
+        // Existing request keys retain their correlation after the requester
+        // retires. Only a new request requires current membership.
         if (const auto it = entries_.find(key); it != entries_.end()) {
             if (it->second.outcome)
                 return {RequestLedgerResult::DuplicateCommitted, it->second.outcome};
             return {RequestLedgerResult::DuplicatePending, {}};
         }
+        if (!members_.contains(key.sender))
+            return {RequestLedgerResult::NotMember, {}};
         if (entries_.size() >= capacity_)
             return {RequestLedgerResult::Capacity, {}};
         entries_.emplace(key, Entry{});
@@ -157,6 +160,18 @@ public:
         return RequestLedgerResult::Committed;
     }
 
+    // Undo only a not-yet-committed reservation when a later policy check
+    // rejects the request before it can be routed or executed.
+    RequestLedgerResult CancelPending(const GameplayRequestKey& key) {
+        std::lock_guard lock(mutex_);
+        if (key.session != scope_.session) return RequestLedgerResult::StaleSession;
+        if (key.epoch != scope_.epoch) return RequestLedgerResult::StaleEpoch;
+        const auto it = entries_.find(key);
+        if (it == entries_.end()) return RequestLedgerResult::MissingRequest;
+        if (it->second.outcome) return RequestLedgerResult::DuplicateCommitted;
+        entries_.erase(it);
+        return RequestLedgerResult::Cancelled;
+    }
     // Reset is explicit and starts a new identity generation. Within one
     // session the epoch must strictly advance, preventing rollback to old keys.
     bool Reset(GameplayRequestScope next) {
