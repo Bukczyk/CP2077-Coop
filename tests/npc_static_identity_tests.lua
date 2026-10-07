@@ -139,6 +139,12 @@ do
     f.despawnMode = "queued"
     assert(not a.remove(entityId(hash)) and f.despawnCalls == 3,
         "a queued request must not be acknowledged as disappearance")
+    local binds, moves = f.bindCalls, f.moves
+    local bound, reason = a.bind(source.entity, entityId(hash))
+    assert(bound == false and reason == "removing" and f.bindCalls == binds,
+        "a still-visible handle pending removal must never rebind")
+    assert(not a.move(entityId(hash), source) and f.moves == moves,
+        "a retiring entity must not receive a transform")
     local entry = f.entries[hash]
     local function stillOwned()
         assert(not a.remove(entityId(hash)))
@@ -257,6 +263,78 @@ do
     assert(not a.remove(id), "a rejected native unbind must retain ownership")
     f.denyUnbind = false
     assert(a.unbind(source.entity) and f.unbindCalls == 2)
+end
+
+-- Explicit reset within the SAME epoch used to rebind the old visible handle
+-- on the next step because only identity changes forced cleanup to resume.
+do
+    local first, second = "9007199254740993ULL", "9007199254740994ULL"
+    local f = fixture({first, second})
+    local attempts = 0
+    local bind = f.adapter.bind
+    f.adapter.bind = function(...)
+        attempts = attempts + 1
+        return bind(...)
+    end
+    local controller = require("npc_runtime").new(f.adapter)
+    local source = npc("18014398509481985ULL")
+    local bubble = {radius = 20, centers = {{x=0,y=0,z=0}}}
+    assert(controller:step("same-epoch", bubble, {source}))
+    assert(attempts == 1 and f.moves == 1 and f.mapped[source.entity] == first)
+    assert(not controller:reset() and controller.resetting)
+    assert(controller.owned[source.entity].retiring and not controller.owned[source.entity].bound)
+    for _ = 1, 3 do
+        assert(not controller:step("same-epoch", bubble, {source}))
+        assert(controller.resetting and f.spawnCalls == 1 and attempts == 1 and f.moves == 1,
+            "same-epoch pending reset accessed a retiring projection")
+        assert(f.despawnCalls == 1 and f.mapped[source.entity] == nil)
+    end
+    local old = f.entries[first]
+    old.managed, old.spawning, old.spawned, old.visibleHandle = false, false, false, false
+    assert(controller:step("same-epoch", bubble, {source}))
+    assert(not controller.resetting and f.spawnCalls == 2 and attempts == 2)
+    assert(f.mapped[source.entity] == second and not controller.owned[source.entity].retiring,
+        "confirmed removal must allow a fresh exact ID in the same epoch")
+end
+
+-- Failed unbind still marks the old projection retiring, and each next step
+-- makes at most one cleanup attempt without further binding or movement.
+do
+    local f = fixture({"9007199254740993ULL"})
+    local controller = require("npc_runtime").new(f.adapter)
+    local source = npc("18014398509481985ULL")
+    local bubble = {radius = 20, centers = {{x=0,y=0,z=0}}}
+    assert(controller:step("same-epoch", bubble, {source}))
+    f.denyUnbind = true
+    assert(not controller:reset() and controller.resetting)
+    assert(controller.owned[source.entity].retiring)
+    for attempt = 2, 4 do
+        assert(not controller:step("same-epoch", bubble, {source}))
+        assert(f.unbindCalls == attempt and f.bindCalls == 1 and f.moves == 1)
+        assert(f.despawnCalls == 0, "despawn must wait for confirmed unbind")
+    end
+end
+
+-- Relevance can return while a prior bubble-exit despawn is still pending.
+-- Retirement must finish even though that entity is desired again.
+do
+    local first, second, third = "9007199254740993ULL", "9007199254740994ULL", "9007199254740995ULL"
+    local f = fixture({first, second, third})
+    local controller = require("npc_runtime").new(f.adapter)
+    local source = npc("18014398509481985ULL")
+    local other = npc("18014398509481986ULL")
+    local bubble = {radius = 20, centers = {{x=0,y=0,z=0}}}
+    assert(controller:step("same-epoch", bubble, {source, other}))
+    local retiringHash, survivingHash = f.mapped[source.entity], f.mapped[other.entity]
+    assert(not controller:step("same-epoch", bubble, {other}))
+    assert(controller.owned[source.entity].retiring and not controller.resetting)
+    local binds, moves = f.bindCalls, f.moves
+    assert(not controller:step("same-epoch", bubble, {source, other}))
+    assert(f.bindCalls == binds and f.moves == moves and f.despawnCalls == 1)
+    local old = f.entries[retiringHash]
+    old.managed, old.spawning, old.spawned, old.visibleHandle = false, false, false, false
+    assert(controller:step("same-epoch", bubble, {source, other}))
+    assert(f.mapped[source.entity] == third and f.mapped[other.entity] == survivingHash)
 end
 
 for _, zero in ipairs({"0", "0ULL", "0ull"}) do

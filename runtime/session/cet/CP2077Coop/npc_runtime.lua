@@ -10,8 +10,11 @@ function M.contains(bubble, p)
     return false
 end
 function M.new(adapter)
-    local self = { adapter = adapter, owned = {}, identity = nil }
+    local self = { adapter = adapter, owned = {}, identity = nil, resetting = false }
     local function cleanup(projection)
+        -- Retirement is irreversible for this local ID. A returning catalog
+        -- entry must wait for observed removal and receive a new projection.
+        projection.retiring = true
         if projection.bound then
             if not adapter.unbind(projection.entity) then return false end
             projection.bound = false
@@ -19,6 +22,7 @@ function M.new(adapter)
         return adapter.remove(projection.localId)
     end
     function self:reset()
+        self.resetting = true
         local complete = true
         for id, projection in pairs(self.owned) do
             if cleanup(projection) then
@@ -27,11 +31,13 @@ function M.new(adapter)
                 complete = false
             end
         end
-        if complete then self.identity = nil end
+        if complete then self.identity, self.resetting = nil, false end
         return complete
     end
     function self:step(identity, bubble, npcs)
-        if self.identity ~= identity then
+        -- An explicit reset can outlive the current frame without an epoch
+        -- change. Never bind/move retained IDs while that reset is pending.
+        if self.resetting or self.identity ~= identity then
             if not self:reset() then return false end
             self.identity = identity
         end
@@ -45,7 +51,7 @@ function M.new(adapter)
         end
         if not any or not self.adapter.available() then return self:reset() and false end
         for id, projection in pairs(self.owned) do
-            if not desired[id] then
+            if projection.retiring or not desired[id] then
                 if not cleanup(projection) then return false end
                 self.owned[id] = nil
             end
