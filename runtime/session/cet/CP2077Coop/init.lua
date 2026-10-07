@@ -1,12 +1,11 @@
 -- Matched typed-session bridge. No combat/world side effects or legacy native calls.
 local NpcRuntime = require("npc_runtime")
 local population = require("npc_population")
+local config = require("config")
 local npcProjection = NpcRuntime.new(population)
 local pendingNpcs, hostNpcs = {}, {}
 local npcLimit, npcWarning = 128, false
-Observe("NPCPuppet", "OnGameAttached", function(npc)
-    if #pendingNpcs < npcLimit then pendingNpcs[#pendingNpcs+1] = npc end
-end)
+local initialized = false
 local proxies = {} -- PlayerId -> { tag, SessionEntityId (opaque Uint64), nextSpawn }
 local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
@@ -35,7 +34,9 @@ local function update(delta)
         if active then stop() end
         return
     end
-    local currentEntity = tostring(player:GetEntityID())
+    -- CET returns a fresh EntityID wrapper. Compare its exact Uint64 value,
+    -- not the wrapper's address, and never round it through a Lua number.
+    local currentEntity = tostring(player:GetEntityID().hash)
     if active and currentEntity ~= localEntity then stop() end
     if not active then
         clear()
@@ -99,66 +100,78 @@ local function update(delta)
             end
         end
     end
-    npcLimit = Game.CP2077Session_NpcCapacity()
-    if Game.CP2077Session_Self() == Game.CP2077Session_Host() then
-        local countNpc = 0
-        for _ in pairs(hostNpcs) do countNpc = countNpc + 1 end
-        for _, npc in ipairs(pendingNpcs) do
-            if npc ~= nil and npc:IsAttached() then
-                local localId = npc:GetEntityID()
-                if not system:IsTagged(localId, CName.new(commonTag)) and countNpc < npcLimit then
-                    local key = tostring(localId)
-                    if not hostNpcs[key] then
-                        hostNpcs[key] = { object = npc, localId = localId, adopted = false }
-                        countNpc = countNpc + 1
+    if config.experimentalNpcReplication then
+        npcLimit = Game.CP2077Session_NpcCapacity()
+        if Game.CP2077Session_Self() == Game.CP2077Session_Host() then
+            local countNpc = 0
+            for _ in pairs(hostNpcs) do countNpc = countNpc + 1 end
+            for _, npc in ipairs(pendingNpcs) do
+                if npc ~= nil and npc:IsAttached() then
+                    local localId = npc:GetEntityID()
+                    if not system:IsTagged(localId, CName.new(commonTag)) and countNpc < npcLimit then
+                        local key = tostring(localId)
+                        if not hostNpcs[key] then
+                            hostNpcs[key] = { object = npc, localId = localId, adopted = false }
+                            countNpc = countNpc + 1
+                        end
                     end
                 end
             end
-        end
-        pendingNpcs = {}
-        for key, entry in pairs(hostNpcs) do
-            local npc = entry.object
-            if npc == nil or not npc:IsAttached() then
-                Game.CP2077Session_NpcForget(entry.localId)
-                hostNpcs[key] = nil
-            else
-                local p = npc:GetWorldPosition()
-                if entry.adopted or NpcRuntime.contains(bubble, p) then
-                    local yaw = math.rad(npc:GetWorldOrientation():ToEulerAngles().yaw)
-                    if Game.CP2077Session_NpcOffer(entry.localId, npc:GetRecordID(), p.x, p.y, p.z, yaw) then entry.adopted = true end
+            pendingNpcs = {}
+            for key, entry in pairs(hostNpcs) do
+                local npc = entry.object
+                if npc == nil or not npc:IsAttached() then
+                    Game.CP2077Session_NpcForget(entry.localId)
+                    hostNpcs[key] = nil
+                else
+                    local p = npc:GetWorldPosition()
+                    if entry.adopted or NpcRuntime.contains(bubble, p) then
+                        local yaw = math.rad(npc:GetWorldOrientation():ToEulerAngles().yaw)
+                        if Game.CP2077Session_NpcOffer(entry.localId, npc:GetRecordID(), p.x, p.y, p.z, yaw) then entry.adopted = true end
+                    end
                 end
             end
-        end
-    else
-        pendingNpcs, hostNpcs = {}, {}
-        local npcs = {}
-        for index = 0, Game.CP2077Session_NpcCount()-1 do
-            if Game.CP2077Session_NpcSelect(index) then
-                npcs[#npcs+1] = {
-                    entity = Game.CP2077Session_NpcEntity(), record = Game.CP2077Session_NpcRecord(),
-                    x = Game.CP2077Session_NpcX(), y = Game.CP2077Session_NpcY(), z = Game.CP2077Session_NpcZ(), yaw = Game.CP2077Session_NpcYaw()
-                }
+        else
+            pendingNpcs, hostNpcs = {}, {}
+            local npcs = {}
+            for index = 0, Game.CP2077Session_NpcCount()-1 do
+                if Game.CP2077Session_NpcSelect(index) then
+                    npcs[#npcs+1] = {
+                        entity = Game.CP2077Session_NpcEntity(), record = Game.CP2077Session_NpcRecord(),
+                        x = Game.CP2077Session_NpcX(), y = Game.CP2077Session_NpcY(), z = Game.CP2077Session_NpcZ(), yaw = Game.CP2077Session_NpcYaw()
+                    }
+                end
+            end
+            if #npcs > 0 and not npcWarning then
+                npcWarning = true
+                local ready, reason = population.available()
+                if ready then
+                    print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
+                else
+                    print("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
+                end
+            end
+            if not npcProjection:step(generation, bubble, npcs) and #npcs > 0 then
+                print("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
             end
         end
-        if #npcs > 0 and not npcWarning then
-            npcWarning = true
-            local ready, reason = population.available()
-            if ready then
-                print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
-            else
-                print("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
-            end
-        end
-        if not npcProjection:step(generation, bubble, npcs) and #npcs > 0 then
-            print("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
-        end
-    end
+    end -- experimentalNpcReplication; player cleanup always runs
     for id, entry in pairs(proxies) do
         if not seen[id] then system:DeleteTagged(entry.tag); proxies[id] = nil end
     end
 end
+registerForEvent("onInit", function()
+    -- Engine observation is unavailable while CET loads the module.
+    Observe("NPCPuppet", "OnGameAttached", function(npc)
+        if config.experimentalNpcReplication and #pendingNpcs < npcLimit then
+            pendingNpcs[#pendingNpcs+1] = npc
+        end
+    end)
+    initialized = true
+    print("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication))
+end)
 registerForEvent("onUpdate", function(delta)
-    if failed then return end
+    if not initialized or failed then return end
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
@@ -166,8 +179,9 @@ registerForEvent("onUpdate", function(delta)
         print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason))
     end
 end)
-registerForEvent("onShutdown", function() pcall(stop) end)
+registerForEvent("onShutdown", function() if initialized then pcall(stop) end end)
 registerHotkey("cp2077_session_reconnect", "Reconnect coop session", function()
+    if not initialized then return end
     pcall(stop)
     failed = false
 end)
