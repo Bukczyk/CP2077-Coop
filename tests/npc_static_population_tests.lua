@@ -37,9 +37,13 @@ Game = {
     end,
     CP2077Session_Unbind=function(sessionId)
         local id = mapped[sessionId]
+        if not id then return false end
         if id then reverse[id] = nil end
         mapped[sessionId] = nil
         return true
+    end,
+    CP2077Session_Resolve=function(localId)
+        return reverse[localId] or "0ULL"
     end
 }
 StaticEntitySpec = {new=function() return {} end}

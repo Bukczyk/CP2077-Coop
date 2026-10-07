@@ -57,12 +57,15 @@ function M.bind(sessionEntity, localId)
     if entry.bound then return true end
     local s = system()
     if s == nil then return false end
-    local ok, entity, spawning, spawned = pcall(function()
-        return s:GetEntity(entry.id), s:IsSpawning(entry.id), s:IsSpawned(entry.id)
+    local ok, entity, spawning, spawned, managed = pcall(function()
+        return s:GetEntity(entry.id), s:IsSpawning(entry.id), s:IsSpawned(entry.id), s:IsManaged(entry.id)
     end)
     if not ok then return false end
     if entity == nil then
-        if spawning or not spawned then return nil, "pending" end
+        -- Codeware removes failed/aborted spawn tokens. Only an actual managed
+        -- or in-flight entity is pending; an absent ID cannot complete later.
+        -- Reads can straddle the asynchronous token-to-entity transition.
+        if managed or spawning or spawned then return nil, "pending" end
         return false
     end
     local readOk, actual = pcall(function() return entity:GetEntityID() end)
@@ -92,16 +95,23 @@ function M.remove(localId)
     if entry.bound then return false end
     local s = system()
     if s == nil then return false end
-    if not entry.removing then
-        local ok, removed = pcall(function() return s:DespawnEntity(entry.id) end)
-        if not ok or not removed then return false end
-        entry.removing = true
-    end
-    -- A queued despawn is not observed disappearance. Retain ownership for retry.
-    local observed, gone = pcall(function()
+    local function isGone()
         return not s:IsManaged(entry.id) and not s:IsSpawning(entry.id)
             and not s:IsSpawned(entry.id) and s:GetEntity(entry.id) == nil
-    end)
+    end
+    -- Failed creation, a world reset or another completed removal may already
+    -- have retired the owned ID. DespawnEntity then legitimately returns false.
+    local observed, gone = pcall(isGone)
+    if not observed then return false end
+    if not gone then
+        if not entry.removing then
+            local ok, removed = pcall(function() return s:DespawnEntity(entry.id) end)
+            if not ok or not removed then return false end
+            entry.removing = true
+        end
+        -- A queued despawn is not observed disappearance. Retain ownership for retry.
+        observed, gone = pcall(isGone)
+    end
     if not observed or not gone then return false end
     byLocalEntity[key(entry.id)] = nil
     if bySessionEntity[entry.session] == entry then bySessionEntity[entry.session] = nil end
@@ -111,8 +121,18 @@ function M.unbind(sessionEntity)
     local entry = bySessionEntity[key(sessionEntity)]
     if entry == nil then return true end
     if entry.bound then
-        local ok, unbound = pcall(function() return Game.CP2077Session_Unbind(sessionEntity) end)
-        if not ok or not unbound then return false end
+        -- BeginFrame and SetActive(false) can retire the native mapping before
+        -- Lua observes catalog removal or a new generation. Missing is already
+        -- unbound; a different exact mapping must never be removed on our behalf.
+        local resolvedOk, resolved = pcall(function() return Game.CP2077Session_Resolve(entry.id) end)
+        if not resolvedOk or resolved == nil then return false end
+        local resolvedKey = key(resolved)
+        if resolvedKey == key(sessionEntity) then
+            local ok, unbound = pcall(function() return Game.CP2077Session_Unbind(sessionEntity) end)
+            if not ok or not unbound then return false end
+        elseif not resolvedKey:match("^0[uUlL]*$") then
+            return false
+        end
     end
     entry.bound, entry.entity = false, nil
     return true

@@ -21,7 +21,7 @@ local function npc(session, overrides)
 end
 
 local function fixture(hashes)
-    local f = {spawnCalls = 0, bindCalls = 0, despawnCalls = 0, moves = 0,
+    local f = {spawnCalls = 0, bindCalls = 0, unbindCalls = 0, despawnCalls = 0, moves = 0,
         entries = {}, mapped = {}, despawnMode = "queued", observationError = false}
     local system = {}
     function system:IsReady() return true end
@@ -65,8 +65,17 @@ local function fixture(hashes)
             return true
         end,
         CP2077Session_Unbind = function(session)
+            f.unbindCalls = f.unbindCalls + 1
+            if not f.mapped[session] or f.denyUnbind then return false end
             f.mapped[session] = nil
             return true
+        end,
+        CP2077Session_Resolve = function(localId)
+            if f.resolveError then error("native registry observation unavailable") end
+            for session, hash in pairs(f.mapped) do
+                if hash == hashOf(localId) then return session end
+            end
+            return "0ULL"
         end
     }
     StaticEntitySpec = {new = function() return {} end}
@@ -170,6 +179,84 @@ do
         end
     end
     assert(f.moves == 0, "non-finite move reached the engine")
+end
+
+do
+    local first, second = "9007199254740993ULL", "9007199254740994ULL"
+    local f = fixture({first, second})
+    local a, source = f.adapter, npc("18014398509481985ULL")
+    local id = assert(a.spawn(source))
+    local entry = f.entries[first]
+    entry.managed, entry.spawning, entry.spawned, entry.visibleHandle = true, true, false, false
+    local bound, reason = a.bind(source.entity, id)
+    assert(bound == nil and reason == "pending", "an in-flight token must remain pending")
+    entry.spawning = false
+    bound, reason = a.bind(source.entity, id)
+    assert(bound == nil and reason == "pending", "a managed token transition must remain pending")
+    entry.managed = false -- failed/aborted callback retired the token
+    assert(a.bind(source.entity, id) == false, "a cancelled creation must not wait forever")
+    f.despawnMode = "error"
+    assert(a.remove(id) and f.despawnCalls == 0,
+        "an already-absent creation must retire without another despawn")
+    assert(a.spawn(source) ~= id and f.spawnCalls == 2)
+end
+
+do
+    local hash = "9007199254740993ULL"
+    local f = fixture({hash})
+    local a, source = f.adapter, npc("18014398509481985ULL")
+    local id = assert(a.spawn(source))
+    assert(a.bind(source.entity, id))
+    f.mapped = {} -- registry and engine were cleared before Lua cleanup
+    local entry = f.entries[hash]
+    entry.managed, entry.spawning, entry.spawned, entry.visibleHandle = false, false, false, false
+    f.despawnMode = "rejected"
+    assert(a.unbind(source.entity) and a.remove(id))
+    assert(f.unbindCalls == 0 and f.despawnCalls == 0,
+        "observed prior cleanup must not depend on repeated native calls succeeding")
+end
+
+do
+    local first, second = "9007199254740993ULL", "9007199254740994ULL"
+    local f = fixture({first, second})
+    local controller = require("npc_runtime").new(f.adapter)
+    local source = npc("18014398509481985ULL")
+    local bubble = {radius = 20, centers = {{x=0,y=0,z=0}}}
+    assert(controller:step("generation-1", bubble, {source}))
+    assert(f.mapped[source.entity] == first)
+    -- The real native BeginFrame/SetActive path clears or removes registry
+    -- records before Lua asks the old projection to clean up.
+    f.mapped = {}
+    assert(not controller:step("generation-2", bubble, {source}))
+    assert(f.unbindCalls == 0 and f.despawnCalls == 1 and f.spawnCalls == 1,
+        "a retired native mapping must allow despawn but still await disappearance")
+    local entry = f.entries[first]
+    entry.managed, entry.spawning, entry.spawned, entry.visibleHandle = false, false, false, false
+    assert(controller:step("generation-2", bubble, {source}))
+    assert(f.spawnCalls == 2 and f.mapped[source.entity] == second,
+        "confirmed cleanup must allow a new-generation projection")
+end
+
+do
+    local hash = "9007199254740993ULL"
+    local f = fixture({hash})
+    local a, source = f.adapter, npc("18014398509481985ULL")
+    local id = assert(a.spawn(source))
+    assert(a.bind(source.entity, id))
+    f.resolveError = true
+    assert(not a.unbind(source.entity) and f.unbindCalls == 0)
+    assert(not a.remove(id), "failed lookup must retain bound ownership")
+    f.resolveError = false
+    f.mapped[source.entity], f.mapped["18014398509481986ULL"] = nil, hash
+    assert(not a.unbind(source.entity) and f.unbindCalls == 0,
+        "a different exact session mapping must not be unbound")
+    assert(not a.remove(id) and f.despawnCalls == 0)
+    f.mapped["18014398509481986ULL"], f.mapped[source.entity] = nil, hash
+    f.denyUnbind = true
+    assert(not a.unbind(source.entity) and f.unbindCalls == 1)
+    assert(not a.remove(id), "a rejected native unbind must retain ownership")
+    f.denyUnbind = false
+    assert(a.unbind(source.entity) and f.unbindCalls == 2)
 end
 
 for _, zero in ipairs({"0", "0ULL", "0ull"}) do
