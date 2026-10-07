@@ -88,7 +88,7 @@ private:
     std::optional<std::uint64_t> blockedGameplayResult_;
     std::deque<Packet> gameplayIntents_, gameplayOutcomes_;
     std::deque<GameplayStatus> gameplayStatuses_;
-    std::unordered_set<std::uint64_t> seenGameplayResults_;
+    std::uint64_t lastGameplayResultEvent_=0;
     std::unordered_map<std::uint64_t,Packet> outboundGameplayResults_;
     ClientStats stats_;
 };

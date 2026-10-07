@@ -28,8 +28,8 @@ struct SessionClientTestAccess {
             GameplayResult{requester, requestEvent, 1, GameplayDisposition::Rejected, 7, {}}};
         return Validate(packet) && client.control_.CanQueue() && client.control_.Queue(packet);
     }
-    static void ForgetSeenResult(SessionClient& client, std::uint64_t hostEvent) {
-        client.seenGameplayResults_.erase(hostEvent);
+    static void DeliverDuplicateResult(SessionClient& client, const Packet& packet) {
+        client.Control(packet,net::NowMs());
     }
 };
 } // namespace coop
@@ -118,14 +118,11 @@ void ResultRoutesOnlyToActiveSameSessionMembers() {
     CHECK(!otherMember.PopGameplayOutcome());
     CHECK(!otherHost.PopGameplayOutcome());
 
-    SessionClientTestAccess::ForgetSeenResult(requester,*hostEvent);
     CHECK(requester.RetryGameplayIntent(*request,7,body));
-    std::optional<Packet> replay;
-    n.Until([&]{if(!replay) replay=requester.PopGameplayOutcome(); return replay.has_value();});
-    CHECK(std::get<GameplayResult>(replay->payload).disposition==GameplayDisposition::Accepted);
-    std::size_t executions=1;
-    if(host.PopGameplayIntent()) ++executions;
-    CHECK(executions==1);
+    for(int i=0;i<20;++i) n.Step();
+    CHECK(!requester.PopGameplayOutcome());
+    CHECK(requester.Phase()==ClientPhase::Active);
+    CHECK(!host.PopGameplayIntent());
     CHECK(!peer.PopGameplayOutcome());
     CHECK(!otherMember.PopGameplayOutcome());
     CHECK(!host.RetryGameplayResult(*hostEvent));
@@ -226,10 +223,79 @@ void RequestCapacityIsExplicitAndBounded() {
             if(next->correlationEvent==*full) {status=*next; break;}
         return status.has_value();
     });
-    CHECK(status->disposition==GameplayDisposition::Full && !status->committed);
+    CHECK(status->disposition==GameplayDisposition::Full && status->committed);
     CHECK(!host.PopGameplayIntent());
 }
 
+void DrainedGameplayResultsUseMonotonicDedup() {
+    Network n;
+    auto& host=n.Add(true);
+    n.Active(host);
+    auto& joiner=n.Add(false,"routing-session",2);
+    n.Active(joiner);
+    std::optional<Packet> oldest,latest;
+    for(std::uint64_t i=0;i<6;++i) {
+        const auto request=joiner.SendGameplayIntent(11,{static_cast<std::uint8_t>(i)});
+        CHECK(request);
+        std::optional<Packet> intent;
+        n.Until([&]{if(!intent) intent=host.PopGameplayIntent(); return intent.has_value();});
+        CHECK(std::get<GameplayIntent>(intent->payload).body==std::vector<std::uint8_t>{static_cast<std::uint8_t>(i)});
+        const auto result=host.SendGameplayResult(joiner.Member().player,*request,11,
+            GameplayDisposition::Accepted,0,{static_cast<std::uint8_t>(i)});
+        CHECK(result);
+        std::optional<Packet> outcome;
+        std::optional<GameplayStatus> hostAck;
+        n.Until([&]{
+            if(!outcome) outcome=joiner.PopGameplayOutcome();
+            while(joiner.PopGameplayStatus()) {}
+            if(!hostAck) hostAck=host.PopGameplayStatus();
+            return outcome && hostAck;
+        });
+        CHECK(std::get<GameplayResult>(outcome->payload).requestEvent==*request);
+        CHECK(joiner.Phase()==ClientPhase::Active);
+        if(i==0) oldest=*outcome;
+        latest=*outcome;
+    }
+    CHECK(oldest && latest);
+    CHECK(joiner.Phase()==ClientPhase::Active);
+    SessionClientTestAccess::DeliverDuplicateResult(joiner,*oldest);
+    CHECK(joiner.Phase()==ClientPhase::Active);
+    CHECK(!joiner.PopGameplayOutcome());
+}
+
+void PendingRequestCanFinalizeAfterRequesterDisconnects() {
+    Network n;
+    auto& host=n.Add(true); n.Active(host);
+    auto& requester=n.Add(false); n.Active(requester);
+    auto& remaining=n.Add(false); n.Active(remaining);
+    const auto retired=requester.Member().player;
+    const auto request=requester.SendGameplayIntent(12,{0x31});
+    CHECK(request);
+    std::optional<Packet> intent;
+    n.Until([&]{if(!intent) intent=host.PopGameplayIntent(); return intent.has_value();});
+    CHECK(intent->header.sender==retired);
+    requester.Disconnect();
+    n.Until([&]{return !host.Remotes().contains(retired) && !remaining.Remotes().contains(retired);});
+    const auto hostEvent=host.SendGameplayResult(retired,*request,12,
+        GameplayDisposition::Accepted,0,{0x55});
+    CHECK(hostEvent);
+    std::optional<Packet> outcome;
+    std::optional<GameplayStatus> hostAck;
+    n.Until([&]{
+        if(!outcome) outcome=remaining.PopGameplayOutcome();
+        if(!hostAck) hostAck=host.PopGameplayStatus();
+        return outcome && hostAck;
+    });
+    const auto& result=std::get<GameplayResult>(outcome->payload);
+    CHECK(result.requester==retired && result.requestEvent==*request);
+    CHECK(hostAck->correlationEvent==*hostEvent && hostAck->committed);
+    CHECK(!requester.PopGameplayOutcome());
+    CHECK(requester.Connect()); n.Active(requester);
+    CHECK(requester.Member().player!=retired);
+    CHECK(SessionClientTestAccess::QueueIntentAs(requester,retired,1));
+    n.Until([&]{return requester.Phase()==ClientPhase::Failed;});
+    CHECK(!host.PopGameplayIntent());
+}
 void HostIntentInboxOverflowReturnsFull() {
     Network n;
     auto& host=n.Add(true,"routing-session",1); n.Active(host);
@@ -260,6 +326,8 @@ int main() {
         RetiredPlayerIdCannotSubmitAfterReconnect();
         JoinerCannotSendHostOnlyResult();
         RequestCapacityIsExplicitAndBounded();
+        DrainedGameplayResultsUseMonotonicDedup();
+        PendingRequestCanFinalizeAfterRequesterDisconnects();
         HostIntentInboxOverflowReturnsFull();
     });
 }

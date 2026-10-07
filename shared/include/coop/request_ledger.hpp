@@ -131,14 +131,15 @@ public:
             return {RequestLedgerResult::StaleEpoch, {}};
         if (!key.sender || !key.event)
             return {RequestLedgerResult::InvalidKey, {}};
-        if (!members_.contains(key.sender))
-            return {RequestLedgerResult::NotMember, {}};
-
+        // Existing request keys retain their correlation after the requester
+        // retires. Only a new request requires current membership.
         if (const auto it = entries_.find(key); it != entries_.end()) {
             if (it->second.outcome)
                 return {RequestLedgerResult::DuplicateCommitted, it->second.outcome};
             return {RequestLedgerResult::DuplicatePending, {}};
         }
+        if (!members_.contains(key.sender))
+            return {RequestLedgerResult::NotMember, {}};
         if (entries_.size() >= capacity_)
             return {RequestLedgerResult::Capacity, {}};
         entries_.emplace(key, Entry{});

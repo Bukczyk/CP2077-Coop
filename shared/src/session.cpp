@@ -133,10 +133,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if ((type == PacketType::VehicleInput || type == PacketType::VehicleState) && entity->second.kind != EntityKind::Vehicle)
         return fail(SessionError::Kind);
     if (type == PacketType::WorldState && entity->second.kind != EntityKind::World) return fail(SessionError::Kind);
-    if (const auto* result = std::get_if<GameplayResult>(&packet.payload)) {
-        const auto requester = s.members.find(result->requester);
-        if (requester == s.members.end() || requester->second.phase != Phase::Active) return fail(SessionError::MissingMember);
-    }
+
     if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
         if (spawn->entity>=kNpcEntityBase) return fail(SessionError::Kind);
         if (spawn->entity <= s.lastEntity) return fail(SessionError::EntityReuse);

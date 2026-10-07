@@ -90,7 +90,7 @@ void SessionServer::GameplayIntentMessage(ConnectionId id,Peer& peer,const Packe
         if(!accepted && accepted.error!=SessionError::Duplicate) {
             QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
         }
-        QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full); return;
+        QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full,0,true); return;
     }
     if(admission.result!=RequestLedgerResult::New) {
         QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(admission.result)); return;
