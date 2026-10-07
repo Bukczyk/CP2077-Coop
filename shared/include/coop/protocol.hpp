@@ -13,7 +13,7 @@ using PlayerId = std::uint32_t;
 using EntityId = std::uint64_t;
 using VehicleId = EntityId;
 using ConnectionToken = std::array<std::uint8_t,16>;
-constexpr std::uint16_t kProtocolVersion = 3;
+constexpr std::uint16_t kProtocolVersion = 4;
 constexpr std::size_t kHeaderSize = 40;
 constexpr std::size_t kMaxPacketSize = 1200;
 
@@ -25,7 +25,8 @@ enum class PacketType : std::uint16_t {
     VehicleInput = 0x200, VehicleState = 0x201,
     HitRequest = 0x300, DamageApplied = 0x301,
     EntitySpawn = 0x400, EntityDespawn = 0x401, WorldState = 0x402,
-    NpcAdopt = 0x500, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied
+    NpcAdopt = 0x500, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied,
+    GameplayIntent = 0x600, GameplayResult, GameplayStatus
 };
 enum class EntityKind : std::uint8_t { Player = 1, Vehicle = 2, World = 3, NPC = 4 };
 struct Header {
@@ -140,10 +141,38 @@ struct NpcState {
 };
 struct NpcSnapshotEnd { bool operator==(const NpcSnapshotEnd&) const = default; };
 struct NpcDenied { std::uint64_t adoption=0; bool operator==(const NpcDenied&) const = default; };
+// Opaque reliable gameplay values. Their kind/body schemas are owned by a
+// separately reviewed application adapter; the session backend does not parse them.
+constexpr std::size_t kMaxGameplayBodySize = 1024;
+enum class GameplayDisposition : std::uint8_t { Pending=1, Accepted, Rejected, Unsupported, Full };
+struct GameplayIntent {
+    std::uint16_t kind=0;
+    std::vector<std::uint8_t> body;
+    bool operator==(const GameplayIntent&) const = default;
+};
+struct GameplayResult {
+    PlayerId requester=0;
+    std::uint64_t requestEvent=0;
+    std::uint16_t kind=0;
+    GameplayDisposition disposition=GameplayDisposition::Rejected;
+    std::uint16_t reason=0;
+    std::vector<std::uint8_t> body;
+    bool operator==(const GameplayResult&) const = default;
+};
+// Server-to-requester receipt on the ordered TCP control channel. It has no
+// independent event stream; requestEvent correlates it with the sender's intent.
+struct GameplayStatus {
+    std::uint64_t correlationEvent=0;
+    GameplayDisposition disposition=GameplayDisposition::Pending;
+    std::uint16_t reason=0;
+    bool committed=false;
+    bool operator==(const GameplayStatus&) const = default;
+};
 using Payload = std::variant<Heartbeat, Leave, Ack, PlayerPose, PlayerState,
     VehicleInput, VehicleState, HitRequest, DamageApplied, EntitySpawn, EntityDespawn, WorldState, Hello, HelloOk, CreateSession, JoinSession,
     SessionAccepted, Reject, MemberJoined, MemberLeft, SessionClosed, Ready, SessionReady,
-    NpcAdopt, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied>;
+    NpcAdopt, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied,
+    GameplayIntent, GameplayResult, GameplayStatus>;
 struct Packet {
     Header header{};
     Payload payload{};

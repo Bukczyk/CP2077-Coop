@@ -47,6 +47,8 @@ coop::ServerConfig config(const std::filesystem::path& path) {
         else if(key=="max_sessions") c.limits.maxSessions=static_cast<std::size_t>(number(value,1024));
         else if(key=="max_connections") c.maxConnections=static_cast<std::size_t>(number(value,4096));
         else if(key=="max_npcs") c.limits.maxNpcs=static_cast<std::size_t>(number(value,4096));
+        else if(key=="max_gameplay_requests") c.gameplayRequestCapacity=static_cast<std::size_t>(number(value,1048576));
+        else if(key=="max_gameplay_members") c.gameplayMemberCapacity=static_cast<std::size_t>(number(value,1048576));
         else if(key=="npc_snapshot_rate") c.npcSnapshotRate=static_cast<unsigned>(number(value,20));
         else if(key=="npc_distant_rate") c.npcDistantRate=static_cast<unsigned>(number(value,20));
         else if(key=="snapshot_rate") c.snapshotRate=static_cast<unsigned>(number(value,60));
@@ -65,7 +67,7 @@ int main(int argc,char** argv) {
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--help") {
-                std::cout<<"CP2077SessionServer --config server.ini [--run-for-ms duration]\nTCP reliable control + UDP sequenced state, protocol v3\n"; return 0;
+                std::cout<<"CP2077SessionServer --config server.ini [--run-for-ms duration]\nTCP reliable control + UDP sequenced state, protocol v4\n"; return 0;
             }
             if(i+1>=argc) throw std::runtime_error("Missing argument value");
             if(arg=="--config") path=argv[++i];

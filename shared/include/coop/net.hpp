@@ -34,12 +34,15 @@ std::uint64_t NowMs();
 // TCP length-prefixed CPS1 packets. Bounded buffering; overload disconnects.
 class Channel {
 public:
+    static constexpr std::size_t kMaxQueuedFrames = 128;
     explicit Channel(Socket socket = {}) : socket_(std::move(socket)) {}
     bool Queue(const Packet& packet);
     bool Pump(std::vector<Packet>& received);
     void Close() { socket_.Close(); }
     bool Open() const { return static_cast<bool>(socket_); }
     bool Pending() const { return !out_.empty(); }
+    std::size_t PendingCount() const { return out_.size(); }
+    bool CanQueue(std::size_t additional=1) const { return Open() && additional<=kMaxQueuedFrames-out_.size(); }
 private:
     Socket socket_;
     std::vector<std::uint8_t> input_;

@@ -62,6 +62,15 @@ void ReconnectUsesNewPlayerIdentity() {
     CHECK(ledger.Begin(Key(41, 3, 9, 1)).result == RequestLedgerResult::New);
 }
 
+void CancelPendingAllowsSafeRetry() {
+    Ledger ledger({41, 3}, 2);
+    CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
+    const auto key = Key(41, 3, 7, 1);
+    CHECK(ledger.Begin(key).result == RequestLedgerResult::New);
+    CHECK(ledger.CancelPending(key) == RequestLedgerResult::Cancelled);
+    CHECK(ledger.Size() == 0);
+    CHECK(ledger.Begin(key).result == RequestLedgerResult::New);
+}
 void CapacityNeverEvictsOutcomes() {
     Ledger ledger({41, 3}, 1, 2);
     CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
@@ -110,6 +119,7 @@ int main() {
         RejectStaleIdentityAndMembership();
         ReconnectUsesNewPlayerIdentity();
         CapacityNeverEvictsOutcomes();
+        CancelPendingAllowsSafeRetry();
         EpochResetClearsScopedState();
     });
 }
