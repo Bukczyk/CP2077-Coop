@@ -4,6 +4,10 @@
 Migrate to v0.1.0 Session Architecture. HOST is the world authority, JOINER is a session client, and Debian owns session membership, accepted state storage, and relay. Read ARCHITECTURE.md and MIGRATION_PLAN.md before implementation.
 
 ## Work rules
+- Read [the shared goals](docs/SHARED_GOALS.md) and [the collaboration guide](docs/COLLABORATION.md) before shared work. These documents record KyleBuildsAI's approved proposal for Bukczyk's review; do not infer acceptance from publication alone.
+- Check active tasks, PRs and handoffs before editing. Record the task owner, branch, base commit, exact files and acceptance checks. Use task branches and PRs; never write directly to main.
+- Follow the agreed networking/game-integration boundary. Coordinate shared files and interface changes with the other owner; being offline does not release task ownership.
+- Questions and explanations authorize discussion and inspection only. Implement or publish only when explicitly requested by the directing maintainer; proceed autonomously within that assigned scope.
 - Implement, build, diagnose and commit autonomously within the requested scope. Ask the user only for checks that require a running game or unavailable credentials/access. Never report an unperformed check as passed.
 - Preserve unrelated edits and local game saves. Commit only explicit task files. Do not push or deploy to an unidentified server.
 - Freeze CP1/RP1 and all sentinel encoding (-666/-777/8888/9999). Do not add markers, widen marker predicates or put additional gameplay into movement fields. Existing legacy behavior stays until the complete replacement bridge is ready.
