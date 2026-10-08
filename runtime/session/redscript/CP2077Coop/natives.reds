@@ -32,3 +32,11 @@ public native func CP2077Session_NpcX() -> Float;
 public native func CP2077Session_NpcY() -> Float;
 public native func CP2077Session_NpcZ() -> Float;
 public native func CP2077Session_NpcYaw() -> Float;
+// Generic reliable values only. u64 identities are canonical decimal strings;
+// bodies are at most 1024 bytes encoded as 2048 hex characters. A queued ticket
+// is local admission, not a wire ID or confirmed gameplay success.
+public native func CP2077Session_GameplayScope() -> String;
+public native func CP2077Session_GameplaySubmit(session: String, epoch: Uint32, generation: String, kind: Uint32, bodyHex: String) -> String;
+public native func CP2077Session_GameplayReply(session: String, epoch: Uint32, generation: String, requester: Uint32, requestEvent: String, kind: Uint32, disposition: Uint32, reason: Uint32, bodyHex: String) -> String;
+public native func CP2077Session_GameplayPoll() -> String;
+public native func CP2077Session_GameplayFault() -> String;

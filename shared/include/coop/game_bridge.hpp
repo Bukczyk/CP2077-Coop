@@ -2,6 +2,8 @@
 #include "coop/client.hpp"
 #include <deque>
 #include <mutex>
+#include <map>
+#include <string>
 #include <thread>
 namespace coop::game {
 using SessionEntityId = EntityId;
@@ -77,6 +79,31 @@ struct Frame {
     std::vector<RenderPlayer> players;
     std::vector<RenderNpc> npcs;
 };
+// Game-thread application boundary for the existing opaque reliable route.
+// A scope includes the local activation generation, not just the wire epoch.
+struct GameplayScope {
+    Identity identity{};
+    std::uint64_t generation=0;
+    bool operator==(const GameplayScope&) const = default;
+};
+enum class GameplayAdmission { Queued, Inactive, Stale, Authority, Invalid, Full, Missing };
+struct GameplaySubmission {
+    GameplayAdmission status=GameplayAdmission::Inactive;
+    std::uint64_t ticket=0; // local correlation only, never a wire request/event ID
+};
+enum class GameplayEventType { Intent, Outcome, SentIntent, SentResult, Status };
+struct GameplayEvent {
+    GameplayEventType type=GameplayEventType::Status;
+    GameplayScope scope{};
+    Packet packet{};
+    GameplayStatus status{};
+    std::uint64_t ticket=0, event=0;
+};
+// Strict, bounded textual ABI for Lua. Never convert opaque u64 IDs to doubles.
+std::optional<std::uint64_t> ParseGameplayId(const std::string& value);
+std::optional<std::vector<std::uint8_t>> DecodeGameplayHex(const std::string& value);
+std::string EncodeGameplayEvent(const GameplayEvent& value);
+std::string EncodeGameplaySubmission(GameplaySubmission value);
 // Worker owns SessionClient. Only value snapshots cross the mutex. Render sampling
 // happens in ReadFrame at the caller's frame time, independently of network ticks.
 class SessionBridge {
@@ -91,8 +118,17 @@ public:
     bool OfferNpc(LocalEntityId local,std::uint64_t record,Transform transform);
     void ForgetNpc(LocalEntityId local);
     SubmitResult SubmitWorld(const WorldAction&) { return SubmitResult::Unsupported; }
+    GameplaySubmission SubmitGameplay(GameplayScope scope,std::uint16_t kind,std::vector<std::uint8_t> body);
+    // An ingress intent reserves a result slot before becoming visible to the
+    // caller. Exactly matching repeated completion is idempotent while pending.
+    GameplaySubmission CompleteGameplay(GameplayScope scope,GameplayResult result);
+    std::optional<GameplayEvent> PopGameplay();
+    std::string GameplayFault() const;
 private:
     void Run(std::stop_token stop);
+    GameplayAdmission CheckGameplayScope(GameplayScope scope) const; // mutex held
+    void ClearGameplay(); // mutex held; explicit activation/scope invalidation
+    bool ServiceGameplay(SessionClient& client,std::uint64_t generation,std::uint64_t now); // mutex held
     ClientConfig config_;
     LogSink log_;
     mutable std::mutex mutex_;
@@ -106,6 +142,17 @@ private:
     std::unordered_map<LocalEntityId,DesiredNpc> desiredNpcs_;
     std::unordered_map<EntityId,RemoteNpc> npcSnapshots_;
     std::unordered_map<std::uint64_t,LocalEntityId> npcLocals_;
+    struct GameplayCommand { std::uint64_t ticket; GameplayIntent intent; };
+    struct PendingGameplay {
+        Packet request;
+        std::optional<GameplayResult> result;
+        std::uint64_t ticket=0, hostEvent=0, retryAt=0;
+    };
+    std::deque<GameplayCommand> gameplayCommands_;
+    std::deque<GameplayEvent> gameplayEvents_;
+    std::map<std::pair<PlayerId,std::uint64_t>,PendingGameplay> gameplayPending_;
+    std::uint64_t nextGameplayTicket_=1;
+    std::string gameplayFault_;
     std::jthread worker_;
 };
 } // namespace coop::game
