@@ -1,5 +1,15 @@
 # First contact: current-main integration
 
+## Latest follow-up
+
+The WAN connection and visible remote actor were observed, but JOINER following
+froze with `readback_timeout`. The HOST saw one controlled position change.
+Local scripted pose trials and new diagnostic fields are documented in
+[the follow-up](PLAYER_POSE_FOLLOWUP_2026-10-08.md). The WAN freeze remains
+unresolved; do not read the earlier pre-WAN checkpoint below as current status.
+
+## Earlier integration checkpoint
+
 Owner: KyleBuildsAI. Started 2026-10-08 UTC. PR #5, `feat/player-movement-presentation`.
 Upstream base: `e19ffb3286efec750b8729487220becf6569ab7b` (protocol v5).
 

@@ -34,8 +34,25 @@ function Pose:reset()
     self.failures, self.fault, self.nextSend = 0, nil, 0
     self.submissionLogged, self.observedLogged = false, false
     self.everSubmitted = false
+    self.lastReadback, self.lastFailure = nil, nil
+    self.submissions = 0
+end
+-- Return detached values, never the owned engine command or a mutable target.
+function Pose:diagnostics()
+    local function copy(value)
+        if not value then return nil end
+        local result={}
+        for key,item in pairs(value) do result[key]=item end
+        return result
+    end
+    return {actor=self.key, submissions=self.submissions or 0,
+        failures=self.failures or 0, fault=self.fault,
+        readback=copy(self.lastReadback), failure=copy(self.lastFailure)}
 end
 function Pose:fail(reason, now)
+    -- Preserve the last comparison BEFORE cancellation mutates command state.
+    self.lastFailure={reason=reason,at=now}
+    for key,value in pairs(self.lastReadback or {}) do self.lastFailure[key]=value end
     if not self:release() then return end
     self.failures = self.failures + 1
     self.nextSend = now + 0.1
@@ -71,6 +88,13 @@ function Pose:step(actor, target, now)
     end
     local desired = {x=target.x,y=target.y,z=target.z,yaw=math.deg(target.yaw)}
     if self.command ~= nil then
+        local state=actor:CP2077Session_PoseState(self.command)
+        local dx,dy,dz=actual.x-self.sent.x,actual.y-self.sent.y,actual.z-self.sent.z
+        self.lastReadback={state=state,age=now-self.submittedAt,
+            positionError=math.sqrt(dx*dx+dy*dy+dz*dz),
+            yawError=math.abs((yaw-self.sent.yaw+180)%360-180),
+            actualX=actual.x,actualY=actual.y,actualZ=actual.z,actualYaw=yaw,
+            sentX=self.sent.x,sentY=self.sent.y,sentZ=self.sent.z,sentYaw=self.sent.yaw}
         -- SendCommand/Success only describe scheduling. Read the real transform
         -- against the admitted command, not a newer moving network target.
         if close(actual,yaw,self.sent) then
@@ -78,7 +102,6 @@ function Pose:step(actor, target, now)
             self.failures=0
             if not self.observedLogged then self.log("observed_pose"); self.observedLogged=true end
         else
-            local state=actor:CP2077Session_PoseState(self.command)
             if state == 3 or state == 4 or state == 6 or state < 0 then
                 self:fail("command_state_"..tostring(state),now)
             elseif now >= self.deadline then
@@ -98,6 +121,9 @@ function Pose:step(actor, target, now)
         self:fail("submission_rejected",now); return self.fault and "fault" or "retry"
     end
     self.everSubmitted=true
+    self.submissions=self.submissions+1
+    self.submittedAt=now
+    self.lastReadback=nil
     self.command,self.sent,self.deadline=command,desired,now+1
     self.nextSend=now+0.1
     if not self.submissionLogged then self.log("command_submitted_not_yet_observed"); self.submissionLogged=true end

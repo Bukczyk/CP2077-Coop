@@ -276,6 +276,7 @@ return { playerDiagnostics = function()
             entity=tostring(entry.entity), actor=entry.localKey,
             x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
             mode=m and "motor" or "pose", fault=entry.pose and entry.pose.fault,
+            pose=entry.pose and entry.pose:diagnostics(),
             error=m and m.error, speed=m and m.speed, gait=m and m.gait,
             commands=m and m.commands, snaps=m and m.snaps,
         }

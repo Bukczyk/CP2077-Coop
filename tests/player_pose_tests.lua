@@ -62,7 +62,27 @@ check(p.fault=="placement_timeout" and #a.commands==0,"placement failure is boun
 a,p=actor(),Pose.new()
 for _, now in ipairs({0,1.01,1.2,2.21,2.4,3.41,9}) do p:step(a,target,now) end
 check(#a.commands==3 and p.fault=="readback_timeout","no indefinite teleport flood")
+local diagnosis=p:diagnostics()
+check(diagnosis.submissions==3 and diagnosis.failures==3,"diagnostics count bounded attempts")
+check(diagnosis.failure.reason=="readback_timeout" and diagnosis.failure.state==1,
+    "failure preserves queued state before cancellation changes it")
+check(diagnosis.failure.positionError>30 and diagnosis.failure.yawError==90,
+    "failure separates translation from rotation error")
+diagnosis.failure.state=999
+check(p:diagnostics().failure.state==1,"diagnostics cannot mutate retained failure")
 p:reset(); check(p:step(a,target,10)=="pending","explicit lifecycle reset permits a new diagnostic")
+check(p:diagnostics().failure==nil and p:diagnostics().submissions==1,
+    "new actor lifetime does not inherit old evidence")
+
+-- A moving latest target must not contaminate the admitted-pose comparison.
+a,p=actor(),Pose.new(); p:step(a,target,0)
+a.position={x=target.x,y=target.y,z=target.z}; a.yaw=0
+p:step(a,latest,0.5)
+diagnosis=p:diagnostics()
+check(diagnosis.readback.positionError==0 and diagnosis.readback.yawError==90,
+    "identify rotation-only failure against admitted target")
+check(diagnosis.readback.sentX==10 and diagnosis.readback.age==0.5,
+    "keep admitted coordinates and command age")
 a,p=actor(),Pose.new(); a.accept=false
 for _, now in ipairs({0,1,2}) do p:step(a,target,now) end
 check(p.fault==nil,"initial submission rejection allows bounded AI initialization")
