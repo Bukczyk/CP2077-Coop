@@ -94,6 +94,7 @@ package.loaded.config={experimentalNpcReplication=false}
 a=actor(); local localPlayer=actor("101ULL")
 local remoteVisible,frameGeneration,wireEntity,desiredX=true,1,"2ULL",10
 local deleted,calls=0,0
+local unbound = {}
 local system={}
 function system:IsReady() return true end
 function system:GetTagged() return remoteVisible and {a} or {} end
@@ -109,6 +110,7 @@ Game={
     CP2077Session_Generation=function() return frameGeneration end,
     CP2077Session_Session=function() return "10ULL" end, CP2077Session_Epoch=function() return 1 end,
     CP2077Session_Phase=function() return 4 end, CP2077Session_Bind=function() return true end,
+    CP2077Session_Unbind=function(id) unbound[#unbound+1]=id; return true end,
     CP2077Session_SelfEntity=function() return "1ULL" end,
     CP2077Session_BubbleRadius=function() return 100 end,
     CP2077Session_Select=function() return true end, CP2077Session_Player=function() return 2 end,
@@ -126,6 +128,7 @@ a:complete(a.commands[1]); callbacks.onUpdate(0.2)
 check(#a.commands==2 and a.commands[2].x==13,"entrypoint follows latest native sample")
 remoteVisible=false; callbacks.onUpdate(0.2)
 check(a.stops==2 and deleted>=2,"interest removal retires pending handle before deletion")
+check(unbound[#unbound]=="2ULL", "departure unbinds the exact session entity")
 remoteVisible=true; callbacks.onUpdate(0.2)
 local before=a.stops; frameGeneration=2; callbacks.onUpdate(0.2)
 check(a.stops>before,"session generation reset retires old handle")

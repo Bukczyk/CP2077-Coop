@@ -3,6 +3,8 @@ local NpcRuntime = require("npc_runtime")
 local PlayerPose = assert(require("player_pose"), "player_pose module missing")
 local population = require("npc_population")
 local config = require("config")
+local PlayerMotor = require("player_motor")
+local usePlayerMotor = config.experimentalPlayerMovement == true
 local passivePlayers = nil
 if config.experimentalPassivePlayers == true then
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
@@ -31,7 +33,7 @@ local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
 local function clear()
     if passivePlayers then passivePlayers:reset() end
-    for _, entry in pairs(proxies) do if entry.pose then entry.pose:reset() end end
+    for _, entry in pairs(proxies) do if entry.pose then entry.pose:reset() end; if entry.motor then entry.motor:stop() end end
     ensureNpcProjection()
     npcProjection:reset()
     local system = Game.GetDynamicEntitySystem()
@@ -116,6 +118,8 @@ local function update(delta)
             local entry = proxies[id]
             if entry ~= nil and tostring(entry.entity) ~= tostring(entity) then
                 entry.pose:reset()
+                if entry.motor then entry.motor:stop() end
+                Game.CP2077Session_Unbind(entry.entity)
                 system:DeleteTagged(entry.tag)
                 proxies[id], entry = nil, nil
             end
@@ -126,6 +130,7 @@ local function update(delta)
                 end)
                 proxies[id] = entry
             end
+            entry.target = {x=x,y=y,z=z,yaw=yaw}
             local entities = system:GetTagged(entry.tag)
             local proxy = entities[1]
             if proxy == nil then
@@ -134,13 +139,25 @@ local function update(delta)
                     entry.nextSpawn = time + 1
                 end
             else
+                local localKey = tostring(proxy:GetEntityID().hash)
+                if entry.localKey ~= localKey then
+                    entry.pose:reset()
+                    if entry.motor then entry.motor:stop() end
+                    Game.CP2077Session_Unbind(entry.entity)
+                    entry.localKey = localKey
+                    if usePlayerMotor then entry.motor = PlayerMotor.new(proxy) end
+                end
                 if not Game.CP2077Session_Bind(entry.entity, proxy:GetEntityID()) then
                     error("Remote projection binding rejected for player " .. tostring(id))
                 end
                 bubble.exclusions[#bubble.exclusions+1] = proxy:GetEntityID()
                 -- Keep sampling interpolation while one owned engine command is
                 -- pending. Only actual transform readback confirms placement.
-                entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time)
+                if entry.motor then
+                    entry.motor:step({x=x,y=y,z=z,yaw=yaw}, delta)
+                else
+                    entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time)
+                end
             end
             end -- selected player representation
         end
@@ -210,7 +227,12 @@ local function update(delta)
         end
     end -- experimentalNpcReplication; player cleanup always runs
     for id, entry in pairs(proxies) do
-        if not seen[id] then entry.pose:reset(); system:DeleteTagged(entry.tag); proxies[id] = nil end
+        if not seen[id] then
+            entry.pose:reset()
+            if entry.motor then entry.motor:stop() end
+            Game.CP2077Session_Unbind(entry.entity)
+            system:DeleteTagged(entry.tag); proxies[id] = nil
+        end
     end
 end
 registerForEvent("onInit", function()
@@ -249,9 +271,14 @@ end)
 return { playerDiagnostics = function()
     local result = {}
     for id, entry in pairs(proxies) do
-        local m=entry.motor
-        if m then result[tostring(id)]={error=m.error,speed=m.speed,gait=m.gait,
-            commands=m.commands,snaps=m.snaps,state=m.commandState} end
+        local t, m = entry.target, entry.motor
+        result[tostring(id)] = {
+            entity=tostring(entry.entity), actor=entry.localKey,
+            x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
+            mode=m and "motor" or "pose", fault=entry.pose and entry.pose.fault,
+            error=m and m.error, speed=m and m.speed, gait=m and m.gait,
+            commands=m and m.commands, snaps=m and m.snaps,
+        }
     end
     return result
 end }

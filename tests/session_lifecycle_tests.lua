@@ -13,7 +13,7 @@ local function uint64(offset)
     end})
 end
 
-local function fixture(role, experimental)
+local function fixture(role, experimental, motor)
     local state = {
         attached=true, pregame=false, hasPlayer=true, hash=uint64(1),
         activations={}, bindings={}, logs={}, observations=0, cleared=0,
@@ -24,7 +24,7 @@ local function fixture(role, experimental)
     Game, Observe, CName = nil, nil, nil
     package.loaded.npc_runtime, package.loaded.npc_population = nil, nil
     package.loaded.config = nil
-    if experimental ~= nil then package.loaded.config={experimentalNpcReplication=experimental} end
+    if experimental ~= nil then package.loaded.config={experimentalNpcReplication=experimental, experimentalPlayerMovement=motor == true} end
     print = function(message) state.logs[#state.logs+1] = tostring(message) end
     registerForEvent = function(name, callback)
         assert(events[name] == nil, "duplicate lifecycle registration")
@@ -170,7 +170,7 @@ package.loaded.player_motor={new=function(actor)
     return {step=function(self,target) self.target=target end,
         stop=function() stopped[#stopped+1]=actor end}
 end}
-local s=fixture("HOST",false)
+local s=fixture("HOST",false,true)
 local function body(hash) return {GetEntityID=function() return {hash=hash} end} end
 local first,second,replacement=body(uint64(1)),body(uint64(2)),body("replacementULL")
 s.remotes={{id=2,entity=uint64(1),x=10},{id=3,entity=uint64(2),x=20}}
