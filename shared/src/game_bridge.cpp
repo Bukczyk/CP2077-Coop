@@ -25,7 +25,7 @@ std::optional<std::vector<std::uint8_t>> DecodeGameplayHex(const std::string& va
 }
 std::string EncodeGameplaySubmission(GameplaySubmission value) {
     switch(value.status) {
-    case GameplayAdmission::Queued: return "queued|"+std::to_string(value.ticket);
+    case GameplayAdmission::Queued: return std::string{"queued|"}.append(std::to_string(value.ticket));
     case GameplayAdmission::Inactive: return "inactive";
     case GameplayAdmission::Stale: return "stale";
     case GameplayAdmission::Authority: return "authority";
@@ -36,7 +36,12 @@ std::string EncodeGameplaySubmission(GameplaySubmission value) {
     return "invalid";
 }
 std::string EncodeGameplayEvent(const GameplayEvent& value) {
-    const auto scope="|"+std::to_string(value.scope.identity.session)+"|"+std::to_string(value.scope.identity.epoch)+"|"+std::to_string(value.scope.generation);
+    // Avoid literal + rvalue-string insertion, which GCC 12 diagnoses as an
+    // overlapping copy at -O3. Append preserves the exact lossless textual ABI.
+    std::string scope; scope.reserve(53);
+    scope.push_back('|'); scope.append(std::to_string(value.scope.identity.session));
+    scope.push_back('|'); scope.append(std::to_string(value.scope.identity.epoch));
+    scope.push_back('|'); scope.append(std::to_string(value.scope.generation));
     const auto hex=[](const std::vector<std::uint8_t>& bytes) {
         constexpr char digits[]="0123456789abcdef";
         std::string text; text.reserve(bytes.size()*2);
