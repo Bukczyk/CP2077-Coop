@@ -1,5 +1,6 @@
 #include "coop/client.hpp"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 namespace coop {
