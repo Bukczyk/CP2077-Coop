@@ -266,6 +266,15 @@ void PendingLedgerCapacityReturnsExplicitFull() {
         return full.has_value();
     });
     CHECK(full->disposition==GameplayDisposition::Full && full->committed);
+    while(joiner.PopGameplayStatus()) {}
+    CHECK(joiner.RetryGameplayIntent(*rejected,2,{2}));
+    std::optional<GameplayStatus> stale;
+    n.Until([&]{
+        while(auto status=joiner.PopGameplayStatus())
+            if(status->correlationEvent==*rejected) {stale=*status; break;}
+        return stale.has_value();
+    });
+    CHECK(stale->disposition==GameplayDisposition::Rejected && !stale->committed);
     CHECK(!host.PopGameplayIntent());
     CHECK(joiner.Phase()==ClientPhase::Active);
 }
