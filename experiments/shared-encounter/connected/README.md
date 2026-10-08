@@ -23,13 +23,19 @@ The intended sequence is:
 6. JOINER validates the HOST outcome and queues its existing reaction/death pose.
    Queue acceptance is not evidence that the pose was visually displayed.
 
-Live checkpoint at `97d7c1a`: a real JOINER shot reaches HOST and its explicit
-rejection returns through the reliable route. The player proxy now follows a
-controlled placement, but the independent HOST ray hits the shooter's own proxy
-before the NPC. No connected damage, JOINER reaction or death has passed.
-See [the connected live checkpoint](../../../docs/validation/CONNECTED_ENCOUNTER_2026-10-08.md)
-for exact evidence and the next gate. Earlier component evidence remains in
-[the physical engine checkpoint](../PHYSICAL_ENCOUNTER_CHECKPOINT.md).
+At source `481609a`, a controlled one-PC/two-client trial completed two real
+JOINER requests through independent HOST validation, labelled HOST-weapon
+application, correlated health/death readback, returned outcomes and same-body
+JOINER reaction/death display. Explicitly opting into passive cosmetic players
+removed the earlier shooter-proxy ray obstruction for this test. The shipped
+option remains false; see [passive player validation](../../../docs/validation/PASSIVE_PLAYER.md).
+
+Reconnect restored the NPC's catalog identity but lost its terminal death state.
+The attempted F9 corpse recreation also invoked native quickload, so it is not a
+visual-recreation pass. See [the connected checkpoint](../../../docs/validation/CONNECTED_ENCOUNTER_2026-10-08.md)
+for exact evidence, all earlier failed trials and outstanding gates. This is still
+a HOST-current-weapon diagnostic, not production remote combat. Earlier component
+evidence remains in [the physical engine checkpoint](../PHYSICAL_ENCOUNTER_CHECKPOINT.md).
 
 ## Ownership and files
 
@@ -197,11 +203,15 @@ The private test owner should:
    outcomes to their submitted target. Deduplicate exact event IDs and discard
    superseded results/deferred poses by the latest opaque HOST event per target.
    Keep queued pose and visible pose as separate evidence.
-7. The private runner's F9 may recreate the local projection only after releasing the weak trace
-   reference and unbinding the former exact ID. Wait for observed disappearance;
-   retain terminal death state during same-scope recreation. A reconnect is a
-   different test and is not proved by this local recreation. Keep F10 available
-   for the existing CET overlay binding.
+7. Before binding recreation, inspect the game input mappings and all active CET
+   bindings and select an unused key. **Never use F9:** it invokes native
+   `QuickLoad_Button`; this conflict invalidated trial 5's recreation observation
+   and was already recorded in `PHYSICAL_SHOTS.md`. The private runner's corrected
+   choice is F7 after that preflight, for a future run. Release the weak trace
+   reference and unbind the former exact ID, then wait for observed disappearance
+   before recreation. Retain terminal death state within the same scope and
+   observe the replacement's visible pose. Reconnect/reload is a different test.
+   Keep F10 available for the existing CET overlay binding.
 8. Archive complete logs and failed attempts, close the test-owned processes,
    restore matched runtime/settings bytes and verify current saves were retained.
 
@@ -235,9 +245,11 @@ passed at `aa289044`, `a8b98c72` and `97d7c1a`; the
 [checkpoint](../../../docs/validation/CONNECTED_ENCOUNTER_2026-10-08.md#source-and-automated-validation)
 links the exact runs. Installed scripts compiled on both trial-4 game clients.
 
-Remaining qualification includes connected reaction and persistent death in both
-games, moving/occluded targets, duplicate/stale/failure cases, accepted-state
-restoration after reconnect and a two-PC run. The fixed passive Judy model does
+Source `481609a` additionally passed hosted Windows/Debian/sanitizer checks and
+108 modeled passive-player identity/lifecycle checks. Its controlled connected
+health/death pass does not qualify moving/occluded targets, duplicate/stale/failure
+cases, same-scope corpse recreation, accepted-state restoration after reconnect,
+or a two-PC run. Reconnect death restoration failed in the recorded trial. The fixed passive Judy model does
 not reproduce arbitrary NPC appearance, hit reaction or ragdoll. Its standing
 query capsule does not become corpse physics after a death pose. True JOINER
 weapon/attacker application and combat semantics remain separate game-side work.
