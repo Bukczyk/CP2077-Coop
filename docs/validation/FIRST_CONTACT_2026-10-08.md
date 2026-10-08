@@ -27,8 +27,26 @@ Value-only diagnostics expose player targets and actor identities for live measu
 - PASS: 26/26 Windows Release CTest suites, including player motor, player pose,
   session lifecycle, real sockets, impairment and authority tests.
 - PASS: isolated REDscript compilation with installed Codeware; compiler/game inputs unchanged.
-- Windows plugin build and live test: in progress, not yet accepted.
+- PASS: Windows Release DLL and matching server build at `0c46caf`.
+- PASS: hosted Windows, Debian and sanitizer CI at `0c46caf`, run 37843383366.
+- PASS: installed REDscript compilation in both development copies.
+- Live visibility/movement/reconnect: pending manual game load. Both local windows
+  and the local server are open. Automated menu input did not reliably register;
+  no key remapping attempted. No current live gameplay pass is claimed.
 - Two-PC Debian test: pending connection instructions and both participants.
 
 Private evidence: `D:\Downloads\syncfix\bench-artifacts\20261008-first-contact`.
 Do not promote the public package or claim live success from these offline checks.
+
+## Installed state and next action
+
+Matched DLL/server/scripts from `0c46caf` are installed. Controls, private session
+configuration, Lua config and saves were preserved. The local `zz_FirstContact`
+probe only logs identities, actor counts and actual/received transforms; it does
+not spawn, move, bind or alter actors. Evidence includes deployment.json,
+validation.json, ctest.log and isolated compiler records in the private folder.
+
+Bukczyk reports a real HOST connection to Debian. Treat this as collaborator
+reported admission, not observed two-player gameplay. The JOINER ZIP has not yet
+been provided locally. Inspect its configuration/version privately before
+switching one local client to his session. Do not publish keys or private configs.
