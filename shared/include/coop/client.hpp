@@ -1,6 +1,7 @@
 #pragma once
 #include "coop/server.hpp"
 #include "coop/interpolation.hpp"
+#include <deque>
 #include <unordered_set>
 namespace coop {
 enum class ClientPhase { Disconnected, Hello, Admission, Synchronizing, Active, Failed };
@@ -10,6 +11,7 @@ struct ClientConfig {
     bool host=false, automaticSnapshots=true;
     unsigned playerSnapshotRate=60, vehicleSnapshotRate=60, npcSnapshotRate=20;
     std::size_t maxNpcs=128;
+    std::size_t gameplayQueueCapacity=128;
     InterpolationConfig interpolation{};
     std::uint64_t timeoutMs=10000;
 };
@@ -27,6 +29,9 @@ struct RemoteNpc {
 };
 struct ClientStats { std::uint64_t sent=0, received=0, stale=0, rejected=0; };
 class SessionClient {
+#ifdef COOP_TESTING
+    friend struct SessionClientTestAccess;
+#endif
 public:
     explicit SessionClient(ClientConfig config, LogSink log = {});
     bool Connect();
@@ -38,6 +43,13 @@ public:
     bool AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform);
     bool DespawnNpc(EntityId entity);
     bool SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time);
+    std::optional<std::uint64_t> SendGameplayIntent(std::uint16_t kind,std::vector<std::uint8_t> body);
+    bool RetryGameplayIntent(std::uint64_t requestEvent,std::uint16_t kind,std::vector<std::uint8_t> body);
+    std::optional<std::uint64_t> SendGameplayResult(PlayerId requester,std::uint64_t requestEvent,std::uint16_t kind,GameplayDisposition disposition,std::uint16_t reason,std::vector<std::uint8_t> body);
+    bool RetryGameplayResult(std::uint64_t hostEvent);
+    std::optional<Packet> PopGameplayIntent();
+    std::optional<Packet> PopGameplayOutcome();
+    std::optional<GameplayStatus> PopGameplayStatus();
     void ForgetDeniedNpc(std::uint64_t adoption);
     bool NpcDeniedByServer(std::uint64_t adoption) const { return npcDenied_.contains(adoption); }
     const std::unordered_map<EntityId,RemoteNpc>& Npcs() const { return npcs_; }
@@ -72,6 +84,12 @@ private:
     std::unordered_map<std::uint64_t,NpcAdopt> npcRequests_;
     std::unordered_set<EntityId> npcReleasing_;
     std::unordered_set<std::uint64_t> npcDenied_;
+    std::uint64_t gameplayEvent_=0;
+    std::optional<std::uint64_t> blockedGameplayResult_;
+    std::deque<Packet> gameplayIntents_, gameplayOutcomes_;
+    std::deque<GameplayStatus> gameplayStatuses_;
+    std::uint64_t lastGameplayResultEvent_=0;
+    std::unordered_map<std::uint64_t,Packet> outboundGameplayResults_;
     ClientStats stats_;
 };
 } // namespace coop

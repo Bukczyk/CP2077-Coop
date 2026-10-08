@@ -7,7 +7,7 @@ SessionClient::SessionClient(ClientConfig config,LogSink log) : config_(std::mov
     if(!Validate(Packet{{},Hello{config_.accessKey}}) || !Validate(Packet{{},CreateSession{config_.sessionName}})
         || !config_.server.port || config_.playerSnapshotRate<1 || config_.playerSnapshotRate>60
         || !config_.maxNpcs || config_.maxNpcs>4096 || config_.npcSnapshotRate<1 || config_.npcSnapshotRate>20
-        || config_.vehicleSnapshotRate<1 || config_.vehicleSnapshotRate>60 || config_.timeoutMs<1000)
+        || config_.vehicleSnapshotRate<1 || config_.vehicleSnapshotRate>60 || config_.timeoutMs<1000 || !config_.gameplayQueueCapacity || config_.gameplayQueueCapacity>4096)
         throw std::invalid_argument("Invalid client config");
     SnapshotBuffer validation{config_.interpolation};
 }
@@ -25,7 +25,7 @@ bool SessionClient::Connect() {
 }
 void SessionClient::Disconnect() {
     control_.Close(); udp_.Close(); members_.clear(); remotes_.clear(); member_={}; host_=0; token_={};
-    phase_=ClientPhase::Disconnected; npcs_.clear(); npcDenied_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false;
+    phase_=ClientPhase::Disconnected; npcs_.clear(); npcDenied_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false; gameplayEvent_=0; blockedGameplayResult_.reset(); gameplayIntents_.clear(); gameplayOutcomes_.clear(); gameplayStatuses_.clear(); lastGameplayResultEvent_=0; outboundGameplayResults_.clear();
 }
 void SessionClient::Fail(const std::string& reason) { Disconnect(); phase_=ClientPhase::Failed; Log(reason); }
 void SessionClient::Control(const Packet& packet,std::uint64_t now) {
@@ -47,7 +47,29 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
             return;
         }
     }
-    if(!member_.session || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch || packet.header.sender!=0) {
+    if(const auto* intent=std::get_if<GameplayIntent>(&packet.payload)) {
+        if(!config_.host || phase_!=ClientPhase::Active || packet.header.session!=member_.session
+            || packet.header.epoch!=member_.epoch || !members_.contains(packet.header.sender) || packet.header.sender==host_) {
+            ++stats_.rejected; return;
+        }
+        if(gameplayIntents_.size()>=config_.gameplayQueueCapacity) {
+            if(!SendGameplayResult(packet.header.sender,packet.header.event,intent->kind,GameplayDisposition::Full,1,{}))
+                Fail("GAMEPLAY_INBOX_FULL_RESPONSE_FAILED");
+            return;
+        }
+        gameplayIntents_.push_back(packet); lastReceive_=now; return;
+    }
+    if(std::holds_alternative<GameplayResult>(packet.payload)) {
+        if(phase_!=ClientPhase::Active || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch
+            || packet.header.sender!=host_) {
+            ++stats_.rejected; return;
+        }
+        if(packet.header.event<=lastGameplayResultEvent_) { ++stats_.stale; return; }
+        if(gameplayOutcomes_.size()>=config_.gameplayQueueCapacity) {
+            Fail("GAMEPLAY_OUTCOME_INBOX_FULL"); return;
+        }
+        lastGameplayResultEvent_=packet.header.event; gameplayOutcomes_.push_back(packet); lastReceive_=now; return;
+    }    if(!member_.session || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch || packet.header.sender!=0) {
         Fail("INVALID_CONTROL"); return;
     }
     lastReceive_=now;
@@ -79,6 +101,16 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
         if(!config_.host || !npcRequests_.contains(denied->adoption)) { Fail("UNEXPECTED_NPC_DENIAL"); return; }
         npcDenied_.insert(denied->adoption);
         Log("NPC_ADOPTION_DENIED"); // Retain bounded request to avoid retrying a denied token.
+    } else if(const auto* status=std::get_if<GameplayStatus>(&packet.payload)) {
+        if(gameplayStatuses_.size()>=config_.gameplayQueueCapacity) { Fail("GAMEPLAY_STATUS_INBOX_FULL"); return; }
+        gameplayStatuses_.push_back(*status);
+        if(config_.host && status->disposition==GameplayDisposition::Full && !status->committed)
+            blockedGameplayResult_=status->correlationEvent;
+        if(config_.host && (status->committed || (status->disposition!=GameplayDisposition::Full
+            && status->disposition!=GameplayDisposition::Pending))) {
+            outboundGameplayResults_.erase(status->correlationEvent);
+            if(blockedGameplayResult_==status->correlationEvent) blockedGameplayResult_.reset();
+        }
     } else if(std::holds_alternative<SessionClosed>(packet.payload)) Fail("SESSION_CLOSED");
     else Fail("UNEXPECTED_CONTROL");
 }
@@ -143,7 +175,7 @@ bool SessionClient::SendLocalSnapshot(Transform value,std::uint32_t sequence,std
 bool SessionClient::AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform) {
     if(!config_.host || phase_!=ClientPhase::Active) return false;
     if(auto prior=npcRequests_.find(adoption);prior!=npcRequests_.end()) return prior->second.record==record;
-    if(npcRequests_.size()>=config_.maxNpcs || control_.Pending()) return false;
+    if(npcRequests_.size()>=config_.maxNpcs || control_.Pending() || blockedGameplayResult_) return false;
     NpcAdopt request{adoption,record,transform};
     if(!control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,npcEvent_+1},request})) return false;
     ++npcEvent_; npcRequests_.emplace(adoption,request); return true;
@@ -152,7 +184,7 @@ void SessionClient::ForgetDeniedNpc(std::uint64_t adoption) {
     if(npcDenied_.erase(adoption)) npcRequests_.erase(adoption);
 }
 bool SessionClient::DespawnNpc(EntityId entity) {
-    if(!config_.host || phase_!=ClientPhase::Active || !npcs_.contains(entity)) return false;
+    if(!config_.host || phase_!=ClientPhase::Active || !npcs_.contains(entity) || blockedGameplayResult_) return false;
     if(npcReleasing_.contains(entity)) return true;
     if(control_.Pending()) return false;
     if(!control_.Queue(Packet{{member_.session,member_.epoch,member_.player,0,npcEvent_+1},NpcDespawn{entity}})) return false;
@@ -165,7 +197,46 @@ bool SessionClient::SendNpcSnapshot(EntityId entity,Transform transform,std::uin
     if(sent) ++stats_.sent;
     return sent;
 }
-void SessionClient::Tick(std::uint64_t now) {
+std::optional<std::uint64_t> SessionClient::SendGameplayIntent(std::uint16_t kind,std::vector<std::uint8_t> body) {
+    if(config_.host || phase_!=ClientPhase::Active || gameplayEvent_==std::numeric_limits<std::uint64_t>::max()) return {};
+    const auto event=gameplayEvent_+1;
+    Packet packet{{member_.session,member_.epoch,member_.player,0,event},GameplayIntent{kind,std::move(body)}};
+    if(!Validate(packet) || !control_.CanQueue() || !control_.Queue(packet)) return {};
+    gameplayEvent_=event; return event;
+}
+bool SessionClient::RetryGameplayIntent(std::uint64_t requestEvent,std::uint16_t kind,std::vector<std::uint8_t> body) {
+    if(config_.host || phase_!=ClientPhase::Active || !requestEvent || requestEvent>gameplayEvent_) return false;
+    Packet packet{{member_.session,member_.epoch,member_.player,0,requestEvent},GameplayIntent{kind,std::move(body)}};
+    return Validate(packet) && control_.CanQueue() && control_.Queue(packet);
+}
+std::optional<std::uint64_t> SessionClient::SendGameplayResult(PlayerId requester,std::uint64_t requestEvent,std::uint16_t kind,
+    GameplayDisposition disposition,std::uint16_t reason,std::vector<std::uint8_t> body) {
+    if(!config_.host || phase_!=ClientPhase::Active || !requester || outboundGameplayResults_.size()>=config_.gameplayQueueCapacity
+        || npcEvent_==std::numeric_limits<std::uint64_t>::max() || blockedGameplayResult_) return {};
+    const auto event=npcEvent_+1;
+    Packet packet{{member_.session,member_.epoch,member_.player,0,event},
+        GameplayResult{requester,requestEvent,kind,disposition,reason,std::move(body)}};
+    if(!Validate(packet) || !control_.CanQueue() || !control_.Queue(packet)) return {};
+    npcEvent_=event; outboundGameplayResults_.emplace(event,std::move(packet)); return event;
+}
+bool SessionClient::RetryGameplayResult(std::uint64_t hostEvent) {
+    const auto it=outboundGameplayResults_.find(hostEvent);
+    return config_.host && phase_==ClientPhase::Active && it!=outboundGameplayResults_.end()
+        && (!blockedGameplayResult_ || *blockedGameplayResult_==hostEvent)
+        && control_.CanQueue() && control_.Queue(it->second);
+}
+std::optional<Packet> SessionClient::PopGameplayIntent() {
+    if(gameplayIntents_.empty()) return {};
+    auto packet=std::move(gameplayIntents_.front()); gameplayIntents_.pop_front(); return packet;
+}
+std::optional<Packet> SessionClient::PopGameplayOutcome() {
+    if(gameplayOutcomes_.empty()) return {};
+    auto packet=std::move(gameplayOutcomes_.front()); gameplayOutcomes_.pop_front(); return packet;
+}
+std::optional<GameplayStatus> SessionClient::PopGameplayStatus() {
+    if(gameplayStatuses_.empty()) return {};
+    auto status=gameplayStatuses_.front(); gameplayStatuses_.pop_front(); return status;
+}void SessionClient::Tick(std::uint64_t now) {
     if(phase_==ClientPhase::Disconnected || phase_==ClientPhase::Failed) return;
     std::vector<Packet> incoming;
     if(!control_.Pump(incoming)) { Fail("CONTROL_DISCONNECTED"); return; }
