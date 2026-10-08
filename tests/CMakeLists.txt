@@ -26,6 +26,8 @@ add_test(NAME npc_projection_asset_contract COMMAND "${CMAKE_COMMAND}" -DROOT=${
 set_tests_properties(npc_population npc_static_population npc_static_identity npc_projection_asset_contract PROPERTIES TIMEOUT 15)
 add_test(NAME session_lifecycle COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/session_lifecycle_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(session_lifecycle PROPERTIES TIMEOUT 15)
+add_test(NAME player_pose COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_pose_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(player_pose PROPERTIES TIMEOUT 15)
 add_test(NAME encounter_presentation COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/encounter_presentation_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(encounter_presentation PROPERTIES TIMEOUT 15)
 add_test(NAME encounter_presentation_adapter COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/encounter_presentation_adapter_tests.lua" "${PROJECT_SOURCE_DIR}")
