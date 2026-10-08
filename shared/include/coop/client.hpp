@@ -25,6 +25,7 @@ struct RemotePlayer {
 struct RemoteNpc {
     NpcSpawn descriptor;
     SnapshotBuffer snapshots;
+    std::optional<NpcLifeState> lifeState;
     RemoteNpc(NpcSpawn value,InterpolationConfig config):descriptor(value),snapshots(config) {}
 };
 struct ClientStats { std::uint64_t sent=0, received=0, stale=0, rejected=0; };
@@ -43,6 +44,7 @@ public:
     bool AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform);
     bool DespawnNpc(EntityId entity);
     bool SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time);
+    bool PublishNpcLifeState(EntityId entity,float health,float maxHealth,NpcLifeStatus status);
     std::optional<std::uint64_t> SendGameplayIntent(std::uint16_t kind,std::vector<std::uint8_t> body);
     bool RetryGameplayIntent(std::uint64_t requestEvent,std::uint16_t kind,std::vector<std::uint8_t> body);
     std::optional<std::uint64_t> SendGameplayResult(PlayerId requester,std::uint64_t requestEvent,std::uint16_t kind,GameplayDisposition disposition,std::uint16_t reason,std::vector<std::uint8_t> body);
@@ -81,6 +83,7 @@ private:
     bool readySent_=false, npcSnapshotReady_=false;
     std::uint64_t npcEvent_=0;
     std::unordered_map<EntityId,RemoteNpc> npcs_;
+    std::unordered_map<EntityId,std::uint32_t> npcLifeRevisions_;
     std::unordered_map<std::uint64_t,NpcAdopt> npcRequests_;
     std::unordered_set<EntityId> npcReleasing_;
     std::unordered_set<std::uint64_t> npcDenied_;

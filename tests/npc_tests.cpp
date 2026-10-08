@@ -12,6 +12,7 @@ void Codec() {
         {{1,1,0,0,0},NpcSpawn{id,8,123,{},9,100}},
         {{1,1,1,0,2},NpcDespawn{id}}, {{1,1,0,0,0},NpcRemoved{id}},
         {{1,1,1,1,0},NpcState{id,{},100}}, {{1,1,0,0,0},NpcSnapshotEnd{}},
+        {{1,1,1,1,0},NpcLifeState{id,75,100,NpcLifeStatus::Alive,1}},
         {{1,1,0,0,0},NpcDenied{8}}};
     for(auto p:packets) {
         auto bytes=Encode(p); CHECK(bytes); CHECK(Decode(*bytes).packet==p);
@@ -22,6 +23,9 @@ void Codec() {
     CHECK(!Encode(Packet{{1,1,1,0,1},NpcAdopt{1,1ULL<<40,{}}}));
     CHECK(!Encode(Packet{{1,1,1,0,1},NpcAdopt{0,123,{}}}));
     CHECK(!Encode(Packet{{1,1,1,1,0},NpcState{1,{},100}}));
+    CHECK(!Encode(Packet{{1,1,1,0,0},NpcLifeState{id,75,100,NpcLifeStatus::Alive,1}}));
+    CHECK(!Encode(Packet{{1,1,1,2,0},NpcLifeState{id,75,100,NpcLifeStatus::Alive,1}}));
+    CHECK(!Encode(Packet{{1,1,1,1,0},NpcLifeState{id,101,100,NpcLifeStatus::Alive,1}}));
     Transform nan; nan.position.x=std::numeric_limits<float>::quiet_NaN();
     CHECK(!Encode(Packet{{1,1,1,1,0},NpcState{id,nan,100}}));
 }
@@ -49,10 +53,21 @@ void Policy() {
     CHECK(r.Receive(10,state,4).error==SessionError::Stale);
     state.header.sender=j.player; CHECK(r.Receive(11,state,4).error==SessionError::Authority);
     state.header.sender=h.player;
+    Packet life{{h.session,h.epoch,h.player,1,0},NpcLifeState{id,50,100,NpcLifeStatus::Alive,1}};
+    CHECK(r.Receive(10,life,4));
+    CHECK(r.Find(h.session)->npcLifeStates.at(id)==std::get<NpcLifeState>(life.payload));
+    auto joinerLife=life; joinerLife.header.sender=j.player;
+    CHECK(r.Receive(11,joinerLife,4).error==SessionError::Authority);
+    auto olderLife=life; olderLife.header.sequence=0xffffffffu; std::get<NpcLifeState>(olderLife.payload).revision=0xffffffffu;
+    CHECK(r.Receive(10,olderLife,4).error==SessionError::Stale);
+    auto newerLife=life; newerLife.header.sequence=2; std::get<NpcLifeState>(newerLife.payload).health=0;
+    std::get<NpcLifeState>(newerLife.payload).status=NpcLifeStatus::Dead; std::get<NpcLifeState>(newerLife.payload).revision=2;
+    CHECK(r.Receive(10,newerLife,4));
+    CHECK(r.Find(h.session)->npcLifeStates.at(id).status==NpcLifeStatus::Dead);
     auto other=*r.Create(20,4).membership; state.header.session=other.session;
     CHECK(!r.Receive(10,state,4)); state.header.session=h.session;
     CHECK(r.Receive(10,Packet{{h.session,h.epoch,h.player,0,3},NpcDespawn{id}},5));
-    CHECK(r.Find(h.session)->npcs.empty());
+    CHECK(r.Find(h.session)->npcs.empty() && r.Find(h.session)->npcLifeStates.empty());
     CHECK(r.Receive(10,state,6).error==SessionError::MissingEntity);
     adopt.header.event=4; CHECK(r.Receive(10,adopt,6).error==SessionError::EntityReuse);
     CHECK(r.ResetWorld(11)==SessionError::Authority);
@@ -61,15 +76,23 @@ void Policy() {
     adopt.header.epoch++; adopt.header.event=1;
     auto reset=r.Receive(10,adopt,7); CHECK(reset && reset.adopted);
     CHECK(reset.adopted->entity==id); // Same numeric namespace, distinct epoch identity.
+    CHECK(r.Find(h.session)->npcLifeStates.empty());
+    CHECK(r.Receive(10,life,8).error==SessionError::Epoch);
     game::EntityRegistry mappings; mappings.Reset({h.session,h.epoch},h.player);
     CHECK(mappings.Accept({h.session,h.epoch},{id,game::Kind::NPC,h.player,h.player,0},h.player));
     CHECK(mappings.Bind(id,0x123456789abcdefULL)); CHECK(mappings.FromLocal(0x123456789abcdefULL)==id);
     mappings.Reset({h.session,h.epoch+1},h.player); CHECK(!mappings.FromLocal(0x123456789abcdefULL));
     CHECK(!mappings.Accept({h.session,h.epoch},{id,game::Kind::NPC,h.player,h.player,0},h.player));
-    SessionLimits limits; limits.maxNpcs=1; SessionRegistry bounded(limits); auto b=*bounded.Create(30,0).membership;
+    SessionLimits limits; limits.maxNpcs=2; limits.maxNpcLifeStates=1; SessionRegistry bounded(limits); auto b=*bounded.Create(30,0).membership;
     CHECK(bounded.Receive(30,Packet{{b.session,b.epoch,b.player,0,1},NpcAdopt{1,123,{}}},1).adopted);
-    auto denied=bounded.Receive(30,Packet{{b.session,b.epoch,b.player,0,2},NpcAdopt{2,123,{}}},2);
-    CHECK(denied && denied.npcDenied && bounded.Find(b.session)->npcs.size()==1);
+    auto second=bounded.Receive(30,Packet{{b.session,b.epoch,b.player,0,2},NpcAdopt{2,123,{}}},2);
+    CHECK(second && second.adopted);
+    const auto id1=second.adopted->entity;
+    auto life1=bounded.Receive(30,Packet{{b.session,b.epoch,b.player,1,0},NpcLifeState{id,100,100,NpcLifeStatus::Alive,1}},3);
+    CHECK(life1);
+    auto full=bounded.Receive(30,Packet{{b.session,b.epoch,b.player,1,0},NpcLifeState{id1,100,100,NpcLifeStatus::Alive,1}},4);
+    CHECK(full.error==SessionError::Capacity);
+    CHECK(bounded.Find(b.session)->npcLifeStates.size()==1);
 }
 void Sockets() {
     ServerConfig sc; sc.port=0; sc.accessKey=std::string(64,'a'); SessionServer server(sc);
@@ -88,8 +111,14 @@ void Sockets() {
     until([&]{return host.AdoptNpc(77,123,{{1,0,0},{}});});
     until([&]{return host.Npcs().size()==1;}); const auto id=host.Npcs().begin()->first;
     CHECK(host.AdoptNpc(77,123,{})); CHECK(host.Npcs().size()==1);
+    CHECK(host.PublishNpcLifeState(id,50,100,NpcLifeStatus::Alive));
     CHECK(joiner.Connect()); until([&]{return joiner.Phase()==ClientPhase::Active;});
     CHECK(joiner.Npcs().size()==1 && joiner.Npcs().contains(id));
+    CHECK(joiner.Npcs().at(id).lifeState && joiner.Npcs().at(id).lifeState->status==NpcLifeStatus::Alive);
+    CHECK(joiner.Npcs().at(id).lifeState->revision==1);
+    CHECK(host.PublishNpcLifeState(id,0,100,NpcLifeStatus::Dead));
+    until([&]{return joiner.Npcs().at(id).lifeState && joiner.Npcs().at(id).lifeState->revision==2;});
+    CHECK(joiner.Npcs().at(id).lifeState->status==NpcLifeStatus::Dead);
     CHECK(!joiner.AdoptNpc(88,123,{})); CHECK(!joiner.SendNpcSnapshot(id,{},1,100)); CHECK(!joiner.DespawnNpc(id));
     CHECK(host.SendNpcSnapshot(id,{{2,0,0},{}},1,100));
     until([&]{return joiner.Npcs().at(id).descriptor.sequence==1;});
@@ -105,6 +134,8 @@ void Sockets() {
     joiner.Disconnect(); until([&]{return !host.Remotes().contains(oldPlayer);});
     CHECK(joiner.Connect()); until([&]{return joiner.Phase()==ClientPhase::Active;});
     CHECK(joiner.Member().player!=oldPlayer && joiner.Npcs().contains(id));
+    CHECK(joiner.Npcs().at(id).lifeState && joiner.Npcs().at(id).lifeState->status==NpcLifeStatus::Dead);
+    CHECK(joiner.Npcs().at(id).lifeState->revision==2);
     CHECK(joiner.Npcs().at(id).descriptor.sequence==2);
     CHECK(joiner.Npcs().at(id).descriptor.transform.position.x==3);
     until([&]{return host.DespawnNpc(id);});

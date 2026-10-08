@@ -1,5 +1,6 @@
 #include "coop/client.hpp"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 namespace coop {
@@ -25,7 +26,7 @@ bool SessionClient::Connect() {
 }
 void SessionClient::Disconnect() {
     control_.Close(); udp_.Close(); members_.clear(); remotes_.clear(); member_={}; host_=0; token_={};
-    phase_=ClientPhase::Disconnected; npcs_.clear(); npcDenied_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false; gameplayEvent_=0; blockedGameplayResult_.reset(); gameplayIntents_.clear(); gameplayOutcomes_.clear(); gameplayStatuses_.clear(); lastGameplayResultEvent_=0; outboundGameplayResults_.clear();
+    phase_=ClientPhase::Disconnected; npcs_.clear(); npcDenied_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false; gameplayEvent_=0; blockedGameplayResult_.reset(); gameplayIntents_.clear(); gameplayOutcomes_.clear(); gameplayStatuses_.clear(); lastGameplayResultEvent_=0; outboundGameplayResults_.clear(); npcLifeRevisions_.clear();
 }
 void SessionClient::Fail(const std::string& reason) { Disconnect(); phase_=ClientPhase::Failed; Log(reason); }
 void SessionClient::Control(const Packet& packet,std::uint64_t now) {
@@ -69,7 +70,21 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
             Fail("GAMEPLAY_OUTCOME_INBOX_FULL"); return;
         }
         lastGameplayResultEvent_=packet.header.event; gameplayOutcomes_.push_back(packet); lastReceive_=now; return;
-    }    if(!member_.session || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch || packet.header.sender!=0) {
+    }    if(const auto* life=std::get_if<NpcLifeState>(&packet.payload)) {
+        if(config_.host || (phase_!=ClientPhase::Synchronizing && phase_!=ClientPhase::Active)
+            || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch || packet.header.sender!=host_) {
+            ++stats_.rejected; return;
+        }
+        auto npc=npcs_.find(life->entity);
+        if(npc==npcs_.end()) { ++stats_.rejected; return; }
+        if(npc->second.lifeState && !IsNewer(life->revision,npc->second.lifeState->revision)) {
+            ++stats_.stale; return;
+        }
+        npc->second.lifeState=*life; lastReceive_=now; ++stats_.received;
+        Log("NPC_LIFE_STATE entity="+std::to_string(life->entity)+" revision="+std::to_string(life->revision));
+        return;
+    }
+    if(!member_.session || packet.header.session!=member_.session || packet.header.epoch!=member_.epoch || packet.header.sender!=0) {
         Fail("INVALID_CONTROL"); return;
     }
     lastReceive_=now;
@@ -93,7 +108,7 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
     } else if(const auto* removed=std::get_if<NpcRemoved>(&packet.payload)) {
         auto it=npcs_.find(removed->entity);
         if(it!=npcs_.end()) npcRequests_.erase(it->second.descriptor.adoption);
-        npcs_.erase(removed->entity); npcReleasing_.erase(removed->entity);
+        npcs_.erase(removed->entity); npcReleasing_.erase(removed->entity); npcLifeRevisions_.erase(removed->entity);
         Log("NPC_REMOVED entity="+std::to_string(removed->entity));
     } else if(std::holds_alternative<NpcSnapshotEnd>(packet.payload)) {
         npcSnapshotReady_=true; Log("NPC_SNAPSHOT_COMPLETE");
@@ -196,6 +211,18 @@ bool SessionClient::SendNpcSnapshot(EntityId entity,Transform transform,std::uin
     const bool sent=net::SendUdp(udp_,config_.server,token_,packet);
     if(sent) ++stats_.sent;
     return sent;
+}
+bool SessionClient::PublishNpcLifeState(EntityId entity,float health,float maxHealth,NpcLifeStatus status) {
+    if(!config_.host || phase_!=ClientPhase::Active || !npcs_.contains(entity) || npcReleasing_.contains(entity)
+        || !std::isfinite(health) || !std::isfinite(maxHealth) || maxHealth<=0) return false;
+    const auto previous=npcLifeRevisions_.contains(entity)?npcLifeRevisions_.at(entity):0;
+    const auto revision=previous+1;
+    if(!revision) return false;
+    NpcLifeState state{entity,health,maxHealth,status,revision};
+    Packet packet{{member_.session,member_.epoch,member_.player,revision,0},state};
+    if(!Validate(packet) || !control_.CanQueue() || !control_.Queue(packet)) return false;
+    npcLifeRevisions_[entity]=revision; ++stats_.sent;
+    return true;
 }
 std::optional<std::uint64_t> SessionClient::SendGameplayIntent(std::uint16_t kind,std::vector<std::uint8_t> body) {
     if(config_.host || phase_!=ClientPhase::Active || gameplayEvent_==std::numeric_limits<std::uint64_t>::max()) return {};

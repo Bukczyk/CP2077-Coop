@@ -47,6 +47,7 @@ struct Session {
     std::unordered_map<EntityId, Entity> entities;
     EntityId lastNpc=kNpcEntityBase-1;
     std::unordered_map<EntityId,NpcSpawn> npcs;
+    std::unordered_map<EntityId,NpcLifeState> npcLifeStates;
     // Tombstones prevent an adoption token from resurrecting a retired NPC.
     std::unordered_map<std::uint64_t,EntityId> npcAdoptions;
 };
@@ -72,6 +73,7 @@ struct SessionLimits {
     std::size_t maxSessions = 16, maxMembers = 16, maxEntities = 4096;
     std::uint64_t timeoutMs = 10000;
     std::size_t maxNpcs = 128;
+    std::size_t maxNpcLifeStates = 128;
 };
 class SessionRegistry {
 public:

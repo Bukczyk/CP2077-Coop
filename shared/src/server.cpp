@@ -231,7 +231,11 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
             p.control.Queue(serverPacket(m,MemberJoined{other.member->player}));
             other.control.Queue(serverPacket(*other.member,MemberJoined{m.player}));
         }
-        for(const auto& [npcId,npc]:s->npcs) { (void)npcId; QueueNpc(p,npc); }
+        for(const auto& [npcId,npc]:s->npcs) {
+            QueueNpc(p,npc);
+            if(const auto life=s->npcLifeStates.find(npcId);life!=s->npcLifeStates.end())
+                QueueNpc(p,Packet{{m.session,m.epoch,s->host,life->second.revision,0},life->second});
+        }
         QueueNpc(p,NpcSnapshotEnd{});
         if(create) p.control.Queue(serverPacket(m,SessionReady{}));
         Log(std::string(create?"CREATE_SESSION":"JOIN_SESSION")+" session="+std::to_string(m.session)
@@ -250,6 +254,24 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
         }
         p.control.Queue(serverPacket(m,SessionReady{}));
         Log("SESSION_READY session="+std::to_string(m.session)+" player="+std::to_string(m.player)); return;
+    }
+    if(const auto* life=std::get_if<NpcLifeState>(&packet.payload)) {
+        const auto accepted=registry_.Receive(id,packet,now);
+        if(!accepted) {
+            if(accepted.error==SessionError::Stale || accepted.error==SessionError::Duplicate) ++stats_.stale;
+            else if(accepted.error==SessionError::Capacity) {
+                ++stats_.rejected;
+                Log("NPC_LIFE_STATE_CAPACITY entity="+std::to_string(life->entity));
+            } else RejectPeer(p,RejectReason::Policy,now);
+            return;
+        }
+        for(auto& [unused,peer]:peers_) {
+            (void)unused;
+            if(!peer.member || peer.member->session!=m.session || peer.member->player==m.player || peer.closing) continue;
+            QueueNpc(peer,packet);
+        }
+        Log("NPC_LIFE_STATE entity="+std::to_string(life->entity)+" revision="+std::to_string(life->revision));
+        return;
     }
     if(std::holds_alternative<NpcAdopt>(packet.payload) || std::holds_alternative<NpcDespawn>(packet.payload)) {
         const auto accepted=registry_.Receive(id,packet,now);
@@ -350,8 +372,12 @@ void SessionServer::RouteStates(std::uint64_t now) {
     }
 }
 void SessionServer::QueueNpc(Peer& p,Payload payload) {
+    if(!p.member) { p.control.Close(); return; }
+    QueueNpc(p,serverPacket(*p.member,std::move(payload)));
+}
+void SessionServer::QueueNpc(Peer& p,Packet packet) {
     if(!p.member || p.npcOutbox.size()>=2*config_.limits.maxNpcs+16) { p.control.Close(); return; }
-    p.npcOutbox.push_back(serverPacket(*p.member,std::move(payload)));
+    p.npcOutbox.push_back(std::move(packet));
 }
 void SessionServer::RouteNpcs(std::uint64_t now) {
     for(auto& [unused,p]:peers_) {

@@ -1,4 +1,4 @@
-Current implementation uses protocol **v3**. The v1 section below is historical; current NPC additions are specified at the end. The v2 session handshake and timestamped player/vehicle states remain in v3; v1/v2 peers are rejected rather than mixed with v3.
+Current implementation uses protocol **v5**. Sections v1 and v3 below document historical milestones; current NPC life-state recovery is specified at the end. Peers with older protocol versions are rejected.
 
 # Historical protocol v1 core contract
 
@@ -76,3 +76,10 @@ NPC IDs are server-issued u64 values starting at 2^32, separate from PlayerId. A
 | NpcDenied | 0x506 | 8 | adoption u64 | Server TCP capacity response |
 
 Server controls use sender/sequence/event zero in the header. NpcState uses the HOST sender and stream sequence; stale sequence or source time and foreign epochs are rejected. NpcAdopt/Despawn use contiguous event IDs over TCP. Capacity denial consumes the valid command event but creates no entity. Adoption tokens are HOST request identities, not engine pointers or positional matches; retired tokens remain bounded tombstones for the epoch. JOINER sends Ready only after both player baseline and NPC catalog completion. NPC lifecycle outboxes and client catalogs are bounded; overload fails explicitly. High-frequency NPC routing uses observer distance and configured NPC rates.
+
+
+## v5 authoritative NPC life-state
+
+NpcLifeState (0x507, 21 bytes) is a HOST-authored snapshot carried over the ordered TCP control channel. Its payload is entity u64, health f32, maxHealth f32, lifeStatus u8 (Alive=1, Defeated=2, Dead=3), revision u32. The header sequence must equal the nonzero revision and event is zero. Health values must be finite, maxHealth positive and bounded, and health must be in [0,maxHealth]. Revisions are compared with the existing modular sequence rule per NPC and epoch; stale/duplicate updates do not replace accepted state.
+
+The server stores at most max_npc_life_states entries per session (default 128); capacity failure is explicit in the registry API and is logged by the server. Despawn removes the entry and HOST world reset clears the epoch-scoped map. On JOIN/reconnect, each NPC life-state follows its NpcSpawn catalog record and precedes NpcSnapshotEnd on the same TCP stream. The client applies the latest baseline before it sends Ready, exposing the current value through RemoteNpc.lifeState. Only this latest baseline is restored; transient hit/reaction events are not retained or replayed. Protocol v5 is not wire-compatible with v4.
