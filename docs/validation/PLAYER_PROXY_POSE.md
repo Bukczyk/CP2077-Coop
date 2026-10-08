@@ -1,6 +1,6 @@
 # Experimental player proxy pose actuator
 
-Owner: KyleBuildsAI. UTC checkpoint: 2026-10-08T03:30Z.
+Owner: KyleBuildsAI. Live checkpoint: 2026-10-08T03:41:10Z.
 
 During connected combat trial 3, the JOINER received a changed HOST native X
 coordinate of approximately -1641.597 while its exact tagged Judy player actor
@@ -39,7 +39,7 @@ or smooth tracking. A moving actor that never reaches its admitted pose can
 still hit the bounded failure gate. That requires live diagnosis, not a relaxed
 combat origin tolerance or fabricated placement success.
 
-## Validation before the next live trial
+## Offline validation
 
 PASS: Windows Release build and all 24 CTest suites, including session lifecycle,
 player pose, connected encounter, transport and authority regressions.
@@ -56,8 +56,26 @@ Codeware, typed natives and the connected combat probes. Compiler exit 0;
 game/cache/compiler input hashes unchanged. Private evidence:
 `bench-artifacts/20261007-connected-combat/redscript/compile-20261008T032941182719Z.json`.
 
-Live qualification of this new actuator is pending. Required: both directions
-at multiple positions, real actor/native target convergence, bounded command
-behavior during movement, and cleanup after disconnect. Then repeat the real
-JOINER shot and retain the existing independent HOST ray validation. No package
-version or public gameplay milestone is claimed by this change.
+## Controlled placement result
+
+Trial 4 used source `97d7c1a0b0fb7751800bf0fa2697769ca4e4b238`.
+Installed REDscript compilation succeeded on both HOST and JOINER. After a
+controlled JOINER placement of approximately six metres, HOST's received player
+position and its exact actor position matched. At `2026-10-08T03:36:49Z`, both
+were `(-1647.8989257813, -2318.9399414063, 39.731163024902)` for player 2,
+actor `10724893`; the actual JOINER source was at the same position.
+
+This fixes the observed freeze for that controlled placement. It does not prove
+smooth continuous movement, animation, both-direction tracking over a route,
+bounded behavior during prolonged movement or cleanup after disconnect.
+
+A subsequent real JOINER shot passed the unchanged HOST origin-distance gate:
+the squared distance was `2.554573`, below `25`. Its ray then hit the exact
+authenticated shooter proxy instead of the controlled NPC and correctly rejected
+the request. No damage, reaction or death pass follows from the pose correction.
+See the [connected live checkpoint](CONNECTED_ENCOUNTER_2026-10-08.md) for the
+remaining query blocker and failed collision-disable experiment.
+
+All hosted Windows, Debian and sanitizer jobs passed at this exact source head:
+[run 37723374154](https://github.com/Bukczyk/CP2077-Coop/actions/runs/37723374154).
+No package version or public gameplay milestone is claimed by this change.

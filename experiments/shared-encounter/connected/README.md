@@ -23,9 +23,13 @@ The intended sequence is:
 6. JOINER validates the HOST outcome and queues its existing reaction/death pose.
    Queue acceptance is not evidence that the pose was visually displayed.
 
-No connected live result is claimed by this initial integration note. Earlier
-component evidence remains in [the physical engine checkpoint](../PHYSICAL_ENCOUNTER_CHECKPOINT.md).
-Record a new matched-build live trial before claiming the complete sequence.
+Live checkpoint at `97d7c1a`: a real JOINER shot reaches HOST and its explicit
+rejection returns through the reliable route. The player proxy now follows a
+controlled placement, but the independent HOST ray hits the shooter's own proxy
+before the NPC. No connected damage, JOINER reaction or death has passed.
+See [the connected live checkpoint](../../../docs/validation/CONNECTED_ENCOUNTER_2026-10-08.md)
+for exact evidence and the next gate. Earlier component evidence remains in
+[the physical engine checkpoint](../PHYSICAL_ENCOUNTER_CHECKPOINT.md).
 
 ## Ownership and files
 
@@ -161,7 +165,10 @@ The HOST ray requires origin within five metres of that proxy and a nearest hit
 on the exact target within 100 metres, using Static, Vehicle, PlayerBlocker and AI
 query groups. This is current-state validation, with no lag compensation. The
 controlled passive capsule and natural NPC geometry can differ; genuine in-game
-ray/occlusion tests remain necessary.
+ray/occlusion tests remain necessary. The current live blocker is shooter-proxy
+self-intersection. An exact-instance `NPCPuppet.DisableCollision()` diagnostic
+did not remove that actor from this query. A verified exact-shooter exclusion or
+passive player body is required; do not bypass the nearest-hit or identity check.
 
 ## Private runner flow
 
@@ -190,10 +197,11 @@ The private test owner should:
    outcomes to their submitted target. Deduplicate exact event IDs and discard
    superseded results/deferred poses by the latest opaque HOST event per target.
    Keep queued pose and visible pose as separate evidence.
-7. F10 may recreate the local projection only after releasing the weak trace
+7. The private runner's F9 may recreate the local projection only after releasing the weak trace
    reference and unbinding the former exact ID. Wait for observed disappearance;
    retain terminal death state during same-scope recreation. A reconnect is a
-   different test and is not proved by F10.
+   different test and is not proved by this local recreation. Keep F10 available
+   for the existing CET overlay binding.
 8. Archive complete logs and failed attempts, close the test-owned processes,
    restore matched runtime/settings bytes and verify current saves were retained.
 
@@ -220,6 +228,12 @@ The private runner has separate mocked checks for exact-shot gating and the
 HOST observation/reply loop. Mocks, script compilation, native compilation and
 Windows/Debian/sanitizer CI do not establish live gameplay. Record exact source
 and installed hashes with each real trial; keep failed attempts visible.
+
+At `97d7c1a`, the Windows Release build and all 24 local CTests passed, including
+the player-pose entrypoint regression. Hosted Windows/Debian/sanitizer checks also
+passed at `aa289044`, `a8b98c72` and `97d7c1a`; the
+[checkpoint](../../../docs/validation/CONNECTED_ENCOUNTER_2026-10-08.md#source-and-automated-validation)
+links the exact runs. Installed scripts compiled on both trial-4 game clients.
 
 Remaining qualification includes connected reaction and persistent death in both
 games, moving/occluded targets, duplicate/stale/failure cases, accepted-state
