@@ -44,7 +44,8 @@ combat origin tolerance or fabricated placement success.
 PASS: Windows Release build and all 24 CTest suites, including session lifecycle,
 player pose, connected encounter, transport and authority regressions.
 
-PASS: `player_pose_tests.lua`, 36 checks under the pinned LuaJIT runner. The
+PASS: `player_pose_tests.lua`, 36 checks under the configured Lua runner, using
+opaque-ID mocks. This local run does not establish LuaJIT cdata coverage. The
 test executes the actual CET entrypoint with a silent NPC teleport-facility
 no-op, changes native targets while a command is pending, and verifies exact
 cleanup. It covers deferred initialization, rejected/dropped commands, false
