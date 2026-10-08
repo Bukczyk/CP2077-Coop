@@ -1,6 +1,9 @@
 #pragma once
 #include "coop/net.hpp"
 #include "coop/session.hpp"
+#include "coop/request_ledger.hpp"
+#include <array>
+#include <memory>
 #include <functional>
 namespace coop {
 using LogSink = std::function<void(const std::string&)>;
@@ -9,10 +12,22 @@ struct ServerConfig {
     std::uint16_t port = 11779;
     SessionLimits limits{};
     std::size_t maxConnections = 512;
+    std::size_t gameplayRequestCapacity = 4096;
+    std::size_t gameplayMemberCapacity = 65536;
     unsigned snapshotRate = 60, distantRate = 15;
     unsigned npcSnapshotRate=20, npcDistantRate=10;
     float nearDistance = 60, interestDistance = 250;
 };
+struct CachedGameplayOutcome {
+    std::uint64_t hostEvent=0;
+    std::uint16_t kind=0;
+    GameplayDisposition disposition=GameplayDisposition::Rejected;
+    std::uint16_t reason=0;
+    std::uint16_t bodySize=0;
+    std::array<std::uint8_t,kMaxGameplayBodySize> body{};
+    bool operator==(const CachedGameplayOutcome&) const = default;
+};
+using GameplayLedger = BoundedGameplayRequestLedger<CachedGameplayOutcome>;
 struct ServerStats {
     std::uint64_t hellos=0, creates=0, joins=0, acceptedStates=0, stale=0, rejected=0, routed=0, filtered=0;
 };
@@ -48,6 +63,11 @@ private:
     void RouteStates(std::uint64_t now);
     void QueueNpc(Peer& peer,Payload payload);
     void RouteNpcs(std::uint64_t now);
+    GameplayLedger* EnsureGameplayLedger(SessionId session);
+    void GameplayIntentMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now);
+    void GameplayResultMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now);
+    bool QueueGameplayStatus(Peer& peer,const Membership& member,std::uint64_t request,GameplayDisposition disposition,std::uint16_t reason=0,bool committed=false);
+    Packet CachedResult(const GameplayRequestKey& key,const CachedGameplayOutcome& value) const;
     void Log(const std::string& message) const { if (log_) log_(message); }
     ServerConfig config_;
     LogSink log_;
@@ -56,6 +76,7 @@ private:
     ConnectionId nextConnection_=1;
     std::unordered_map<ConnectionId,Peer> peers_;
     std::unordered_map<SessionId,Room> rooms_;
+    std::unordered_map<SessionId,std::unique_ptr<GameplayLedger>> gameplayLedgers_;
     std::unordered_map<std::string,SessionId> names_;
     ServerStats stats_;
 };

@@ -9,7 +9,7 @@ namespace coop {
 namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 constexpr std::uint32_t kMagic = 0x43505331; // CPS1
-constexpr std::array<PacketType, 30> kTypes{
+constexpr std::array<PacketType, 33> kTypes{
     PacketType::Heartbeat, PacketType::Leave, PacketType::Ack,
     PacketType::PlayerPose, PacketType::PlayerState, PacketType::VehicleInput,
     PacketType::VehicleState, PacketType::HitRequest, PacketType::DamageApplied,
@@ -18,14 +18,16 @@ constexpr std::array<PacketType, 30> kTypes{
     PacketType::SessionAccepted, PacketType::Reject, PacketType::MemberJoined, PacketType::MemberLeft,
     PacketType::SessionClosed, PacketType::Ready, PacketType::SessionReady,
     PacketType::NpcAdopt, PacketType::NpcSpawn, PacketType::NpcDespawn, PacketType::NpcRemoved,
-    PacketType::NpcState, PacketType::NpcSnapshotEnd, PacketType::NpcDenied};
-constexpr std::array<std::uint32_t, 30> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8};
+    PacketType::NpcState, PacketType::NpcSnapshotEnd, PacketType::NpcDenied,
+    PacketType::GameplayIntent, PacketType::GameplayResult, PacketType::GameplayStatus};
+constexpr std::array<std::uint32_t, 33> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8, 0, 0, 12};
 struct Writer {
     std::vector<std::uint8_t> data;
     void integer(std::uint64_t value, unsigned width) {
         for (unsigned i = width; i > 0; --i)
             data.push_back(static_cast<std::uint8_t>(value >> ((i - 1) * 8)));
     }
+    void bytes(const std::vector<std::uint8_t>& value) { data.insert(data.end(),value.begin(),value.end()); }
     void text(const std::string& value, unsigned width) {
         for (unsigned i = 0; i < width; ++i) integer(i < value.size() ? static_cast<unsigned char>(value[i]) : 0, 1);
     }
@@ -53,6 +55,12 @@ struct Reader {
         for (unsigned i = 0; i < width; ++i) value = (value << 8) | data[offset++];
         return value;
     }
+    std::vector<std::uint8_t> bytes(std::size_t count) {
+        if(offset>data.size() || count>data.size()-offset) { canonical=false; return {}; }
+        std::vector<std::uint8_t> value(data.begin()+static_cast<std::ptrdiff_t>(offset),data.begin()+static_cast<std::ptrdiff_t>(offset+count));
+        offset+=count; return value;
+    }
+    bool boolean() { const auto value=integer(1); if(value>1) canonical=false; return value!=0; }
     std::uint32_t u32() { return static_cast<std::uint32_t>(integer(4)); }
     float scalar() { return std::bit_cast<float>(u32()); }
     Vec3 vector() { return {scalar(), scalar(), scalar()}; }
@@ -76,7 +84,7 @@ bool valid(EntityKind kind) {
 PacketType TypeOf(const Payload& payload) { return kTypes[payload.index()]; }
 bool IsReliable(PacketType type) {
     return type == PacketType::Leave || type == PacketType::HitRequest
-        || type == PacketType::DamageApplied || type == PacketType::EntitySpawn
+        || type == PacketType::DamageApplied || type == PacketType::GameplayIntent || type == PacketType::GameplayResult || type == PacketType::EntitySpawn
         || type == PacketType::EntityDespawn || type == PacketType::NpcAdopt || type == PacketType::NpcDespawn;
 }
 bool IsNewer(std::uint32_t candidate, std::uint32_t previous) {
@@ -90,7 +98,7 @@ bool Validate(const Packet& packet) {
         || type == PacketType::CreateSession || type == PacketType::JoinSession || type == PacketType::Reject;
     const bool server = type == PacketType::SessionAccepted || type == PacketType::MemberJoined
         || type == PacketType::MemberLeft || type == PacketType::SessionClosed || type == PacketType::SessionReady
-        || type == PacketType::NpcSpawn || type == PacketType::NpcRemoved || type == PacketType::NpcSnapshotEnd || type == PacketType::NpcDenied;
+        || type == PacketType::NpcSpawn || type == PacketType::NpcRemoved || type == PacketType::NpcSnapshotEnd || type == PacketType::NpcDenied || type == PacketType::GameplayStatus;
     if (pre) { if (h.session || h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (server) { if (!h.session || !h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (h.session == 0 || h.epoch == 0 || h.sender == 0) return false;
@@ -118,6 +126,9 @@ bool Validate(const Packet& packet) {
         else if constexpr (std::is_same_v<T, NpcState>) return p.entity>=kNpcEntityBase && p.sampleTimeMs && valid(p.transform);
         else if constexpr (std::is_same_v<T, NpcSnapshotEnd>) return true;
         else if constexpr (std::is_same_v<T, NpcDenied>) return p.adoption!=0;
+        else if constexpr (std::is_same_v<T, GameplayIntent>) return p.kind!=0 && p.body.size()<=kMaxGameplayBodySize;
+        else if constexpr (std::is_same_v<T, GameplayResult>) return p.requester!=0 && p.requestEvent!=0 && p.kind!=0 && p.disposition>=GameplayDisposition::Accepted && p.disposition<=GameplayDisposition::Full && p.body.size()<=kMaxGameplayBodySize;
+        else if constexpr (std::is_same_v<T, GameplayStatus>) return p.correlationEvent!=0 && p.disposition>=GameplayDisposition::Pending && p.disposition<=GameplayDisposition::Full;
         else if constexpr (std::is_same_v<T, Ack>) return p.event != 0;
         else if constexpr (std::is_same_v<T, HitRequest>)
             return p.attacker != 0 && p.target != 0 && p.attacker != p.target && bounded(p.proposedDamage, 0.001f, 100000);
@@ -137,13 +148,22 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
     w.data.reserve(kHeaderSize + kSizes[packet.payload.index()]);
     w.integer(kMagic, 4); w.integer(kProtocolVersion, 2);
     w.integer(static_cast<std::uint16_t>(TypeOf(packet.payload)), 2);
-    w.integer(kSizes[packet.payload.index()], 4);
+    w.integer(0, 4); // patched after the payload is serialized
     const auto& h = packet.header;
     w.integer(h.session, 8); w.integer(h.epoch, 4); w.integer(h.sender, 4);
     w.integer(h.sequence, 4); w.integer(h.event, 8);
     std::visit([&](const auto& p) {
         using T = std::decay_t<decltype(p)>;
-        if constexpr (std::is_same_v<T, NpcSnapshotEnd>) {}
+        if constexpr (std::is_same_v<T, GameplayIntent>) { w.integer(p.kind,2); w.integer(p.body.size(),2); w.bytes(p.body); }
+        else if constexpr (std::is_same_v<T, GameplayResult>) {
+            w.integer(p.requester,4); w.integer(p.requestEvent,8); w.integer(p.kind,2);
+            w.integer(static_cast<std::uint8_t>(p.disposition),1); w.integer(p.reason,2);
+            w.integer(p.body.size(),2); w.bytes(p.body);
+        }
+        else if constexpr (std::is_same_v<T, GameplayStatus>) {
+            w.integer(p.correlationEvent,8); w.integer(static_cast<std::uint8_t>(p.disposition),1); w.integer(p.reason,2); w.integer(p.committed?1:0,1);
+        }
+        else if constexpr (std::is_same_v<T, NpcSnapshotEnd>) {}
         else if constexpr (std::is_same_v<T, NpcDenied>) w.integer(p.adoption,8);
         else if constexpr (std::is_same_v<T, NpcAdopt>) { w.integer(p.adoption,8); w.integer(p.record,8); w.transform(p.transform); }
         else if constexpr (std::is_same_v<T, NpcSpawn>) {
@@ -176,6 +196,8 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
             }
         }
     }, packet.payload);
+    const auto payloadSize=static_cast<std::uint32_t>(w.data.size()-kHeaderSize);
+    w.data[8]=static_cast<std::uint8_t>(payloadSize>>24); w.data[9]=static_cast<std::uint8_t>(payloadSize>>16); w.data[10]=static_cast<std::uint8_t>(payloadSize>>8); w.data[11]=static_cast<std::uint8_t>(payloadSize);
     return w.data;
 }
 DecodeResult Decode(std::span<const std::uint8_t> bytes) {
@@ -189,7 +211,9 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     while (index < kTypes.size() && kTypes[index] != type) ++index;
     if (index == kTypes.size()) return fail(CodecError::Type);
     const auto length = r.u32();
-    if (length != kSizes[index] || bytes.size() != kHeaderSize + length) return fail(CodecError::Length);
+    if ((kSizes[index] && length != kSizes[index]) || bytes.size() != kHeaderSize + length) return fail(CodecError::Length);
+    if (type == PacketType::GameplayIntent && (length < 4 || length > 4+kMaxGameplayBodySize)) return fail(CodecError::Length);
+    if (type == PacketType::GameplayResult && (length < 19 || length > 19+kMaxGameplayBodySize)) return fail(CodecError::Length);
     Packet packet;
     packet.header = {r.integer(8), r.u32(), r.u32(), r.u32(), r.integer(8)};
     switch (type) {
@@ -200,6 +224,9 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     case PacketType::NpcState: packet.payload=NpcState{r.integer(8),r.transform(),r.integer(8)}; break;
     case PacketType::NpcSnapshotEnd: packet.payload=NpcSnapshotEnd{}; break;
     case PacketType::NpcDenied: packet.payload=NpcDenied{r.integer(8)}; break;
+    case PacketType::GameplayIntent: { auto kind=static_cast<std::uint16_t>(r.integer(2)); auto size=static_cast<std::size_t>(r.integer(2)); packet.payload=GameplayIntent{kind,r.bytes(size)}; break; }
+    case PacketType::GameplayResult: { auto requester=r.u32(); auto requestEvent=r.integer(8); auto kind=static_cast<std::uint16_t>(r.integer(2)); auto status=static_cast<GameplayDisposition>(r.integer(1)); auto reason=static_cast<std::uint16_t>(r.integer(2)); auto size=static_cast<std::size_t>(r.integer(2)); packet.payload=GameplayResult{requester,requestEvent,kind,status,reason,r.bytes(size)}; break; }
+    case PacketType::GameplayStatus: packet.payload=GameplayStatus{r.integer(8),static_cast<GameplayDisposition>(r.integer(1)),static_cast<std::uint16_t>(r.integer(2)),r.boolean()}; break;
     case PacketType::Hello: packet.payload = Hello{r.text(64)}; break;
     case PacketType::HelloOk: packet.payload = HelloOk{}; break;
     case PacketType::CreateSession: packet.payload = CreateSession{r.text(32)}; break;
@@ -224,7 +251,7 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     case PacketType::EntityDespawn: packet.payload = EntityDespawn{r.integer(8)}; break;
     case PacketType::WorldState: packet.payload = WorldState{r.integer(8), r.transform()}; break;
     }
-    if (!r.canonical || !Validate(packet)) return fail(CodecError::InvalidValue);
+    if (!r.canonical || r.offset!=bytes.size() || !Validate(packet)) return fail(CodecError::InvalidValue);
     return {packet, CodecError::None};
 }
 } // namespace coop

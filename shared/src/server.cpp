@@ -19,6 +19,7 @@ SessionServer::SessionServer(ServerConfig config,LogSink log)
     : config_(std::move(config)),log_(std::move(log)),registry_(config_.limits) {
     if(!Validate(Packet{{},Hello{config_.accessKey}}) || config_.maxConnections<config_.limits.maxMembers
         || config_.snapshotRate<1 || config_.snapshotRate>60 || config_.distantRate<1 || config_.distantRate>config_.snapshotRate
+        || !config_.gameplayRequestCapacity || config_.gameplayMemberCapacity<config_.limits.maxMembers
         || !std::isfinite(config_.nearDistance) || !std::isfinite(config_.interestDistance)
         || config_.npcSnapshotRate<1 || config_.npcSnapshotRate>20 || config_.npcDistantRate<1 || config_.npcDistantRate>config_.npcSnapshotRate
         || config_.nearDistance<=0 || config_.interestDistance<config_.nearDistance)
@@ -29,7 +30,168 @@ SessionServer::SessionServer(ServerConfig config,LogSink log)
     if(!udp_) throw std::runtime_error("UDP bind failed");
     Log("LISTEN tcp+udp="+std::to_string(Port())+" max_players="+std::to_string(config_.limits.maxMembers));
 }
-void SessionServer::RejectPeer(Peer& p,RejectReason reason,std::uint64_t now) {
+GameplayLedger* SessionServer::EnsureGameplayLedger(SessionId id) {
+    const auto* session=registry_.Find(id);
+    if(!session) return nullptr;
+    auto it=gameplayLedgers_.find(id);
+    if(it==gameplayLedgers_.end()) {
+        auto ledger=std::make_unique<GameplayLedger>(GameplayRequestScope{id,session->epoch},
+            config_.gameplayRequestCapacity,config_.gameplayMemberCapacity);
+        it=gameplayLedgers_.emplace(id,std::move(ledger)).first;
+    } else {
+        const auto scope=it->second->Scope();
+        if(scope.epoch!=session->epoch) {
+            if(!it->second->Reset({id,session->epoch})) return nullptr;
+        }
+    }
+    for(const auto& [player,unused]:session->members) {
+        (void)unused;
+        const auto result=it->second->AddMember(player);
+        if(result!=RequestMemberResult::Added && result!=RequestMemberResult::AlreadyActive) return nullptr;
+    }
+    return it->second.get();
+}
+bool SessionServer::QueueGameplayStatus(Peer& peer,const Membership& member,std::uint64_t request,
+    GameplayDisposition disposition,std::uint16_t reason,bool committed) {
+    if(!peer.control.CanQueue()) return false;
+    return peer.control.Queue(serverPacket(member,GameplayStatus{request,disposition,reason,committed}));
+}
+Packet SessionServer::CachedResult(const GameplayRequestKey& key,const CachedGameplayOutcome& value) const {
+    const auto* session=registry_.Find(key.session);
+    if(!session || value.bodySize>value.body.size() || !value.hostEvent) return {};
+    std::vector<std::uint8_t> body(value.body.begin(),value.body.begin()+value.bodySize);
+    return {{key.session,key.epoch,session->host,0,value.hostEvent},
+        GameplayResult{key.sender,key.event,value.kind,value.disposition,value.reason,std::move(body)}};
+}
+void SessionServer::GameplayIntentMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now) {
+    if(!peer.member || peer.member->role!=Role::Joiner) { RejectPeer(peer,RejectReason::Policy,now); return; }
+    const auto member=*peer.member;
+    if(!peer.control.CanQueue()) { peer.control.Close(); return; }
+    auto* ledger=EnsureGameplayLedger(member.session);
+    const auto* session=registry_.Find(member.session);
+    if(!ledger || !session) { QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full); return; }
+    const GameplayRequestKey key{member.session,member.epoch,member.player,packet.header.event};
+    const auto admission=ledger->Begin(key);
+    if(admission.result==RequestLedgerResult::DuplicatePending) {
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Pending); return;
+    }
+    if(admission.result==RequestLedgerResult::DuplicateCommitted) {
+        if(!admission.replay) { RejectPeer(peer,RejectReason::Policy,now); return; }
+        const auto& cached=admission.replay->value;
+        if(cached.hostEvent) {
+            if(peer.control.CanQueue()) peer.control.Queue(CachedResult(key,cached));
+        } else {
+            QueueGameplayStatus(peer,member,key.event,cached.disposition,cached.reason,true);
+        }
+        return;
+    }
+    if(admission.result==RequestLedgerResult::Capacity) {
+        const auto accepted=registry_.Receive(id,packet,now);
+        if(!accepted && accepted.error!=SessionError::Duplicate) {
+            QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
+        }
+        QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full,0,true); return;
+    }
+    if(admission.result!=RequestLedgerResult::New) {
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(admission.result)); return;
+    }
+    const auto hostMember=session->members.find(session->host);
+    auto hostPeer=hostMember==session->members.end()?peers_.end():peers_.find(hostMember->second.connection);
+    if(hostPeer==peers_.end() || !hostPeer->second.member || hostPeer->second.closing
+        || !hostPeer->second.control.CanQueue()) {
+        const auto accepted=registry_.Receive(id,packet,now);
+        if(!accepted) {
+            ledger->CancelPending(key);
+            QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
+        }
+        CachedGameplayOutcome cached{};
+        cached.kind=std::get<GameplayIntent>(packet.payload).kind;
+        cached.disposition=GameplayDisposition::Full; cached.reason=1;
+        ledger->Commit(key,GameplayRequestStatus::Full,cached);
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Full,cached.reason,true); return;
+    }
+    const auto accepted=registry_.Receive(id,packet,now);
+    if(!accepted) {
+        ledger->CancelPending(key);
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
+    }
+    if(accepted.route!=Route::Host || accepted.recipients.size()!=1 || accepted.recipients.front()!=session->host
+        || !hostPeer->second.control.Queue(packet)) {
+        CachedGameplayOutcome cached{}; cached.kind=std::get<GameplayIntent>(packet.payload).kind;
+        cached.disposition=GameplayDisposition::Full; cached.reason=1;
+        ledger->Commit(key,GameplayRequestStatus::Full,cached);
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Full,cached.reason,true); return;
+    }
+    QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Pending);
+}
+void SessionServer::GameplayResultMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now) {
+    if(!peer.member || peer.member->role!=Role::Host) { RejectPeer(peer,RejectReason::Policy,now); return; }
+    const auto member=*peer.member;
+    const auto& result=std::get<GameplayResult>(packet.payload);
+    if(!peer.control.CanQueue()) { peer.control.Close(); return; }
+    auto* ledger=EnsureGameplayLedger(member.session);
+    const GameplayRequestKey key{member.session,member.epoch,result.requester,result.requestEvent};
+    if(!ledger) { QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full); return; }
+    const auto admission=ledger->Begin(key);
+    if(admission.result==RequestLedgerResult::DuplicateCommitted) {
+        if(!admission.replay) { RejectPeer(peer,RejectReason::Policy,now); return; }
+        const auto& cached=admission.replay->value;
+        const auto replay=CachedResult(key,cached);
+        if(!cached.hostEvent || cached.hostEvent!=packet.header.event || replay.payload!=packet.payload) {
+            QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Rejected,2,false); return;
+        }
+        const auto* session=registry_.Find(member.session);
+        if(session) {
+            const auto requester=session->members.find(result.requester);
+            if(requester!=session->members.end()) {
+                const auto target=peers_.find(requester->second.connection);
+                if(target!=peers_.end() && target->second.member && target->second.control.CanQueue())
+                    target->second.control.Queue(replay);
+            }
+        }
+        QueueGameplayStatus(peer,member,cached.hostEvent,result.disposition,result.reason,true); return;
+    }
+    if(admission.result==RequestLedgerResult::New) {
+        ledger->CancelPending(key);
+        const auto consumed=registry_.Receive(id,packet,now);
+        if(!consumed) {
+            QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(consumed.error)); return;
+        }
+        QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Rejected,
+            static_cast<std::uint16_t>(RequestLedgerResult::MissingRequest)); return;
+    }
+    if(admission.result!=RequestLedgerResult::DuplicatePending) {
+        QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(admission.result)); return;
+    }
+    const auto* session=registry_.Find(member.session);
+    if(!session) { QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected); return; }
+    for(const auto& [player,active]:session->members) {
+        if(player==session->host || active.phase!=Phase::Active || now<active.lastSeen
+            || now-active.lastSeen>=config_.limits.timeoutMs) continue;
+        const auto recipient=peers_.find(active.connection);
+        if(recipient==peers_.end() || !recipient->second.member || recipient->second.closing
+            || !recipient->second.control.CanQueue()) {
+            QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full); return;
+        }
+    }
+    const auto accepted=registry_.Receive(id,packet,now);
+    if(!accepted) {
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
+    }
+    CachedGameplayOutcome cached{}; cached.hostEvent=packet.header.event; cached.kind=result.kind;
+    cached.disposition=result.disposition; cached.reason=result.reason;
+    cached.bodySize=static_cast<std::uint16_t>(result.body.size());
+    std::copy(result.body.begin(),result.body.end(),cached.body.begin());
+    const auto committed=ledger->Commit(key,static_cast<GameplayRequestStatus>(static_cast<unsigned>(result.disposition)-static_cast<unsigned>(GameplayDisposition::Accepted)),cached);
+    if(committed!=RequestLedgerResult::Committed) { RejectPeer(peer,RejectReason::Policy,now); return; }
+    for(const auto recipientId:accepted.recipients) {
+        const auto recipientMember=session->members.find(recipientId);
+        if(recipientMember==session->members.end()) continue;
+        const auto recipient=peers_.find(recipientMember->second.connection);
+        if(recipient!=peers_.end()) recipient->second.control.Queue(packet);
+    }
+    QueueGameplayStatus(peer,member,packet.header.event,result.disposition,result.reason,true);
+}void SessionServer::RejectPeer(Peer& p,RejectReason reason,std::uint64_t now) {
     ++stats_.rejected;
     p.control.Queue(Packet{{},Reject{reason}}); p.closing=now+100;
     Log("REJECT reason="+std::to_string(static_cast<unsigned>(reason)));
@@ -56,6 +218,9 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
         if(registry_.RegisterPlayer(m.session,m.player)!=SessionError::None) {
             registry_.Disconnect(id); p.member.reset(); RejectPeer(p,RejectReason::Full,now); return;
         }
+        if(!EnsureGameplayLedger(m.session)) {
+            registry_.Disconnect(id); p.member.reset(); RejectPeer(p,RejectReason::Full,now); return;
+        }
         p.token=net::RandomToken();
         if(create) { names_[name]=m.session; rooms_.emplace(m.session,Room{name,{}}); ++stats_.creates; }
         else ++stats_.joins;
@@ -77,6 +242,8 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
     if(packet.header.session!=m.session || packet.header.epoch!=m.epoch || packet.header.sender!=m.player) {
         RejectPeer(p,RejectReason::Policy,now); return;
     }
+    if(std::holds_alternative<GameplayIntent>(packet.payload)) { GameplayIntentMessage(id,p,packet,now); return; }
+    if(std::holds_alternative<GameplayResult>(packet.payload)) { GameplayResultMessage(id,p,packet,now); return; }
     if(std::holds_alternative<Ready>(packet.payload) && p.baselineSent) {
         if(registry_.MarkSynchronized(m.session,m.player,m.epoch)!=SessionError::None) {
             RejectPeer(p,RejectReason::Policy,now); return;
@@ -209,6 +376,10 @@ void SessionServer::RouteNpcs(std::uint64_t now) {
     }
 }
 void SessionServer::NotifyRemoval(const Removal& r,std::uint64_t now) {
+    if(auto ledger=gameplayLedgers_.find(r.session);ledger!=gameplayLedgers_.end()) {
+        if(r.closed) gameplayLedgers_.erase(ledger);
+        else ledger->second->RemoveMember(r.player);
+    }
     auto room=rooms_.find(r.session);
     if(room!=rooms_.end()) {
         if(r.closed) { names_.erase(room->second.name); rooms_.erase(room); }

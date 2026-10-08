@@ -19,7 +19,7 @@ bool hostOnly(PacketType t) {
     return t == PacketType::PlayerState || t == PacketType::VehicleState
         || t == PacketType::DamageApplied || t == PacketType::EntitySpawn
         || t == PacketType::EntityDespawn || t == PacketType::WorldState
-        || t == PacketType::NpcAdopt || t == PacketType::NpcDespawn || t == PacketType::NpcState;
+        || t == PacketType::NpcAdopt || t == PacketType::NpcDespawn || t == PacketType::NpcState || t == PacketType::GameplayResult;
 }
 void eraseEntity(Session& s, EntityId id) {
     s.entities.erase(id); s.npcs.erase(id);
@@ -116,6 +116,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     const bool control = type == PacketType::Heartbeat || type == PacketType::Ack || type == PacketType::Leave;
     if (!control && m.phase != Phase::Active) return fail(SessionError::NotReady);
     if (hostOnly(type) && m.role != Role::Host) return fail(SessionError::Authority);
+    if (type == PacketType::GameplayIntent && m.role != Role::Joiner) return fail(SessionError::Authority);
     const bool reliable = IsReliable(type);
     if (reliable) {
         if (packet.header.event <= m.lastEvent) return fail(SessionError::Duplicate);
@@ -132,6 +133,7 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if ((type == PacketType::VehicleInput || type == PacketType::VehicleState) && entity->second.kind != EntityKind::Vehicle)
         return fail(SessionError::Kind);
     if (type == PacketType::WorldState && entity->second.kind != EntityKind::World) return fail(SessionError::Kind);
+
     if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
         if (spawn->entity>=kNpcEntityBase) return fail(SessionError::Kind);
         if (spawn->entity <= s.lastEntity) return fail(SessionError::EntityReuse);

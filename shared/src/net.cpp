@@ -181,7 +181,7 @@ std::uint16_t LocalPort(const Socket& s) {
 }
 bool Channel::Queue(const Packet& packet) {
     auto encoded = Encode(packet);
-    if (!encoded || !Open() || out_.size() >= 128) { Close(); return false; }
+    if (!encoded || !CanQueue()) { Close(); return false; }
     const auto size = static_cast<std::uint32_t>(encoded->size());
     std::vector<std::uint8_t> framed{static_cast<std::uint8_t>(size >> 24),static_cast<std::uint8_t>(size >> 16),
         static_cast<std::uint8_t>(size >> 8),static_cast<std::uint8_t>(size)};

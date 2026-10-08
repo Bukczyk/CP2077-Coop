@@ -1,4 +1,4 @@
-foreach(suite protocol session net interpolation network_e2e network_impairment game_bridge npc)
+foreach(suite protocol session net interpolation network_e2e network_impairment gameplay_routing request_ledger game_bridge npc)
     add_executable(${suite}_tests ${suite}_tests.cpp)
     target_link_libraries(${suite}_tests PRIVATE coop::core)
     add_test(NAME ${suite} COMMAND ${suite}_tests)
@@ -7,7 +7,7 @@ add_test(NAME runtime_import COMMAND "${CMAKE_COMMAND}" -DROOT=${PROJECT_SOURCE_
     -P "${PROJECT_SOURCE_DIR}/build-support/VerifyRuntime.cmake")
 
 set_tests_properties(protocol session net interpolation network_e2e runtime_import PROPERTIES TIMEOUT 40)
-set_tests_properties(network_impairment PROPERTIES TIMEOUT 60)
+set_tests_properties(network_impairment gameplay_routing PROPERTIES TIMEOUT 60)
 
 if(COOP_BUILD_SESSION_SERVER)
     add_test(NAME server_smoke COMMAND CP2077SessionServer --config "${CMAKE_CURRENT_SOURCE_DIR}/server.ini" --run-for-ms 50)
