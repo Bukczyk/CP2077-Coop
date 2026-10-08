@@ -1,5 +1,6 @@
 -- Matched typed-session bridge. No combat/world side effects or legacy native calls.
 local NpcRuntime = require("npc_runtime")
+local PlayerPose = assert(require("player_pose"), "player_pose module missing")
 local population = require("npc_population")
 local config = require("config")
 local staticPopulation = require("npc_static_population")
@@ -22,6 +23,7 @@ local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
 local function clear()
+    for _, entry in pairs(proxies) do if entry.pose then entry.pose:reset() end end
     ensureNpcProjection()
     npcProjection:reset()
     local system = Game.GetDynamicEntitySystem()
@@ -90,8 +92,16 @@ local function update(delta)
                 print("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
             end
             local entry = proxies[id]
+            if entry ~= nil and tostring(entry.entity) ~= tostring(entity) then
+                entry.pose:reset()
+                system:DeleteTagged(entry.tag)
+                proxies[id], entry = nil, nil
+            end
             if entry == nil then
                 entry = { tag = CName.new(commonTag .. "." .. tostring(id)), entity = entity, nextSpawn = 0 }
+                entry.pose = PlayerPose.new(function(status)
+                    print("[CP2077Session] PLAYER_POSE player=" .. tostring(id) .. " " .. status)
+                end)
                 proxies[id] = entry
             end
             local entities = system:GetTagged(entry.tag)
@@ -106,9 +116,9 @@ local function update(delta)
                     error("Remote projection binding rejected for player " .. tostring(id))
                 end
                 bubble.exclusions[#bubble.exclusions+1] = proxy:GetEntityID()
-                -- Each render frame samples the shared interpolation buffer. This is not
-                -- packet-triggered teleportation; extrapolation/snap policy lives in C++.
-                Game.GetTeleportationFacility():Teleport(proxy, Vector4.new(x, y, z, 1), EulerAngles.new(0, 0, math.deg(yaw)))
+                -- Keep sampling interpolation while one owned engine command is
+                -- pending. Only actual transform readback confirms placement.
+                entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time)
             end
         end
     end
@@ -173,7 +183,7 @@ local function update(delta)
         end
     end -- experimentalNpcReplication; player cleanup always runs
     for id, entry in pairs(proxies) do
-        if not seen[id] then system:DeleteTagged(entry.tag); proxies[id] = nil end
+        if not seen[id] then entry.pose:reset(); system:DeleteTagged(entry.tag); proxies[id] = nil end
     end
 end
 registerForEvent("onInit", function()
