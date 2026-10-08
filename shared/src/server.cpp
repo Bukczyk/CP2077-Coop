@@ -85,11 +85,15 @@ void SessionServer::GameplayIntentMessage(ConnectionId id,Peer& peer,const Packe
         }
         return;
     }
+    if(admission.result==RequestLedgerResult::StaleRequest) {
+        QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(admission.result)); return;
+    }
     if(admission.result==RequestLedgerResult::Capacity) {
         const auto accepted=registry_.Receive(id,packet,now);
-        if(!accepted && accepted.error!=SessionError::Duplicate) {
+        if(!accepted) {
             QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
         }
+        if(ledger->MarkAccepted(key)!=RequestLedgerResult::Accepted) { RejectPeer(peer,RejectReason::Policy,now); return; }
         QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Full,0,true); return;
     }
     if(admission.result!=RequestLedgerResult::New) {
@@ -104,6 +108,7 @@ void SessionServer::GameplayIntentMessage(ConnectionId id,Peer& peer,const Packe
             ledger->CancelPending(key);
             QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
         }
+        if(ledger->MarkAccepted(key)!=RequestLedgerResult::Accepted) { RejectPeer(peer,RejectReason::Policy,now); return; }
         CachedGameplayOutcome cached{};
         cached.kind=std::get<GameplayIntent>(packet.payload).kind;
         cached.disposition=GameplayDisposition::Full; cached.reason=1;
@@ -115,6 +120,7 @@ void SessionServer::GameplayIntentMessage(ConnectionId id,Peer& peer,const Packe
         ledger->CancelPending(key);
         QueueGameplayStatus(peer,member,key.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(accepted.error)); return;
     }
+    if(ledger->MarkAccepted(key)!=RequestLedgerResult::Accepted) { RejectPeer(peer,RejectReason::Policy,now); return; }
     if(accepted.route!=Route::Host || accepted.recipients.size()!=1 || accepted.recipients.front()!=session->host
         || !hostPeer->second.control.Queue(packet)) {
         CachedGameplayOutcome cached{}; cached.kind=std::get<GameplayIntent>(packet.payload).kind;
@@ -150,6 +156,13 @@ void SessionServer::GameplayResultMessage(ConnectionId id,Peer& peer,const Packe
             }
         }
         QueueGameplayStatus(peer,member,cached.hostEvent,result.disposition,result.reason,true); return;
+    }
+    if(admission.result==RequestLedgerResult::StaleRequest) {
+        const auto consumed=registry_.Receive(id,packet,now);
+        if(!consumed) {
+            QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(consumed.error)); return;
+        }
+        QueueGameplayStatus(peer,member,packet.header.event,GameplayDisposition::Rejected,static_cast<std::uint16_t>(admission.result)); return;
     }
     if(admission.result==RequestLedgerResult::New) {
         ledger->CancelPending(key);

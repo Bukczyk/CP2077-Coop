@@ -1,6 +1,7 @@
 #pragma once
 #include "coop/protocol.hpp"
 #include <cstddef>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -60,13 +61,15 @@ enum class RequestLedgerResult {
     DuplicatePending,
     DuplicateCommitted,
     Committed,
+    Accepted,
     StaleSession,
     StaleEpoch,
     NotMember,
     InvalidKey,
     Capacity,
     MissingRequest,
-    Cancelled
+    Cancelled,
+    StaleRequest
 };
 
 template<class Outcome>
@@ -85,8 +88,10 @@ struct RequestAdmission {
 // Bounded, in-memory idempotency ledger for reliable gameplay intents. It has
 // no knowledge of packet payloads or game objects. The owner registers only
 // authenticated active requestors. Outcomes must be fixed-size value types.
-// Entries and membership tombstones are never
-// evicted: capacity exhaustion is explicit until an epoch/session reset.
+// Pending entries are never evicted. Committed outcomes remain in a bounded
+// FIFO replay window and may be retired under capacity pressure. The accepted
+// request-event high-watermark remains for each member identity through the
+// epoch, so a retired replay record can never make an old intent executable.
 template<class Outcome>
 class BoundedGameplayRequestLedger {
     static_assert(std::is_trivially_copyable_v<Outcome>,
@@ -138,12 +143,30 @@ public:
                 return {RequestLedgerResult::DuplicateCommitted, it->second.outcome};
             return {RequestLedgerResult::DuplicatePending, {}};
         }
+        const auto accepted = acceptedEvents_.find(key.sender);
+        if (accepted != acceptedEvents_.end() && key.event <= accepted->second)
+            return {RequestLedgerResult::StaleRequest, {}};
         if (!members_.contains(key.sender))
             return {RequestLedgerResult::NotMember, {}};
+        PruneTerminalUntilRoom();
         if (entries_.size() >= capacity_)
             return {RequestLedgerResult::Capacity, {}};
         entries_.emplace(key, Entry{});
         return {RequestLedgerResult::New, {}};
+    }
+
+    // Record a request only after SessionRegistry accepted its reliable event.
+    // This compact watermark survives replay-record pruning and member retirement.
+    RequestLedgerResult MarkAccepted(const GameplayRequestKey& key) {
+        std::lock_guard lock(mutex_);
+        if (key.session != scope_.session) return RequestLedgerResult::StaleSession;
+        if (key.epoch != scope_.epoch) return RequestLedgerResult::StaleEpoch;
+        if (!key.sender || !key.event) return RequestLedgerResult::InvalidKey;
+        if (!members_.contains(key.sender)) return RequestLedgerResult::NotMember;
+        auto& highWatermark = acceptedEvents_[key.sender];
+        if (key.event <= highWatermark) return RequestLedgerResult::StaleRequest;
+        highWatermark = key.event;
+        return RequestLedgerResult::Accepted;
     }
 
     // The first terminal outcome wins. Repeated commits never overwrite it.
@@ -157,6 +180,7 @@ public:
         if (it == entries_.end()) return RequestLedgerResult::MissingRequest;
         if (it->second.outcome) return RequestLedgerResult::DuplicateCommitted;
         it->second.outcome.emplace(StoredGameplayOutcome<Outcome>{status, std::move(value)});
+        terminalOrder_.push_back(key);
         return RequestLedgerResult::Committed;
     }
 
@@ -180,6 +204,8 @@ public:
         if (next.session == scope_.session && next.epoch <= scope_.epoch) return false;
         scope_ = next;
         entries_.clear();
+        terminalOrder_.clear();
+        acceptedEvents_.clear();
         members_.clear();
         retired_.clear();
         return true;
@@ -203,12 +229,24 @@ private:
         std::optional<StoredGameplayOutcome<Outcome>> outcome;
     };
 
+    void PruneTerminalUntilRoom() {
+        while (entries_.size() >= capacity_ && !terminalOrder_.empty()) {
+            const auto oldest = terminalOrder_.front();
+            terminalOrder_.pop_front();
+            const auto it = entries_.find(oldest);
+            if (it != entries_.end() && it->second.outcome)
+                entries_.erase(it);
+        }
+    }
+
     mutable std::mutex mutex_;
     GameplayRequestScope scope_;
     const std::size_t capacity_;
     const std::size_t memberCapacity_;
     std::unordered_set<PlayerId> members_;
     std::unordered_set<PlayerId> retired_;
+    std::unordered_map<PlayerId, std::uint64_t> acceptedEvents_;
+    std::deque<GameplayRequestKey> terminalOrder_;
     std::unordered_map<GameplayRequestKey, Entry, GameplayRequestKeyHash> entries_;
 };
 
