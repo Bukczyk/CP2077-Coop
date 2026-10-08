@@ -9,7 +9,7 @@ namespace coop {
 namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 constexpr std::uint32_t kMagic = 0x43505331; // CPS1
-constexpr std::array<PacketType, 33> kTypes{
+constexpr std::array<PacketType, 34> kTypes{
     PacketType::Heartbeat, PacketType::Leave, PacketType::Ack,
     PacketType::PlayerPose, PacketType::PlayerState, PacketType::VehicleInput,
     PacketType::VehicleState, PacketType::HitRequest, PacketType::DamageApplied,
@@ -19,8 +19,8 @@ constexpr std::array<PacketType, 33> kTypes{
     PacketType::SessionClosed, PacketType::Ready, PacketType::SessionReady,
     PacketType::NpcAdopt, PacketType::NpcSpawn, PacketType::NpcDespawn, PacketType::NpcRemoved,
     PacketType::NpcState, PacketType::NpcSnapshotEnd, PacketType::NpcDenied,
-    PacketType::GameplayIntent, PacketType::GameplayResult, PacketType::GameplayStatus};
-constexpr std::array<std::uint32_t, 33> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8, 0, 0, 12};
+    PacketType::GameplayIntent, PacketType::GameplayResult, PacketType::GameplayStatus, PacketType::NpcLifeState};
+constexpr std::array<std::uint32_t, 34> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8, 0, 0, 12, 21};
 struct Writer {
     std::vector<std::uint8_t> data;
     void integer(std::uint64_t value, unsigned width) {
@@ -103,6 +103,7 @@ bool Validate(const Packet& packet) {
     else if (server) { if (!h.session || !h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (h.session == 0 || h.epoch == 0 || h.sender == 0) return false;
     if (IsReliable(TypeOf(packet.payload)) ? (h.event == 0 || h.sequence != 0) : h.event != 0) return false;
+    if (type == PacketType::NpcLifeState && (!h.sequence || h.sequence != std::get<NpcLifeState>(packet.payload).revision)) return false;
     return std::visit([](const auto& p) {
         using T = std::decay_t<decltype(p)>;
         if constexpr (std::is_same_v<T, Heartbeat> || std::is_same_v<T, Leave>) return true;
@@ -124,6 +125,9 @@ bool Validate(const Packet& packet) {
         else if constexpr (std::is_same_v<T, NpcSpawn>) return p.entity>=kNpcEntityBase && p.adoption && p.record && p.record<=0xffffffffffULL && valid(p.transform);
         else if constexpr (std::is_same_v<T, NpcDespawn> || std::is_same_v<T, NpcRemoved>) return p.entity>=kNpcEntityBase;
         else if constexpr (std::is_same_v<T, NpcState>) return p.entity>=kNpcEntityBase && p.sampleTimeMs && valid(p.transform);
+        else if constexpr (std::is_same_v<T, NpcLifeState>) return p.entity>=kNpcEntityBase
+            && std::isfinite(p.health) && std::isfinite(p.maxHealth) && p.maxHealth>0 && p.maxHealth<=10000000
+            && p.health>=0 && p.health<=p.maxHealth && p.status>=NpcLifeStatus::Alive && p.status<=NpcLifeStatus::Dead && p.revision>0;
         else if constexpr (std::is_same_v<T, NpcSnapshotEnd>) return true;
         else if constexpr (std::is_same_v<T, NpcDenied>) return p.adoption!=0;
         else if constexpr (std::is_same_v<T, GameplayIntent>) return p.kind!=0 && p.body.size()<=kMaxGameplayBodySize;
@@ -164,6 +168,10 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
             w.integer(p.correlationEvent,8); w.integer(static_cast<std::uint8_t>(p.disposition),1); w.integer(p.reason,2); w.integer(p.committed?1:0,1);
         }
         else if constexpr (std::is_same_v<T, NpcSnapshotEnd>) {}
+        else if constexpr (std::is_same_v<T, NpcLifeState>) {
+            w.integer(p.entity,8); w.scalar(p.health); w.scalar(p.maxHealth);
+            w.integer(static_cast<std::uint8_t>(p.status),1); w.integer(p.revision,4);
+        }
         else if constexpr (std::is_same_v<T, NpcDenied>) w.integer(p.adoption,8);
         else if constexpr (std::is_same_v<T, NpcAdopt>) { w.integer(p.adoption,8); w.integer(p.record,8); w.transform(p.transform); }
         else if constexpr (std::is_same_v<T, NpcSpawn>) {
@@ -222,6 +230,7 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     case PacketType::NpcDespawn: packet.payload=NpcDespawn{r.integer(8)}; break;
     case PacketType::NpcRemoved: packet.payload=NpcRemoved{r.integer(8)}; break;
     case PacketType::NpcState: packet.payload=NpcState{r.integer(8),r.transform(),r.integer(8)}; break;
+    case PacketType::NpcLifeState: packet.payload=NpcLifeState{r.integer(8),r.scalar(),r.scalar(),static_cast<NpcLifeStatus>(r.integer(1)),r.u32()}; break;
     case PacketType::NpcSnapshotEnd: packet.payload=NpcSnapshotEnd{}; break;
     case PacketType::NpcDenied: packet.payload=NpcDenied{r.integer(8)}; break;
     case PacketType::GameplayIntent: { auto kind=static_cast<std::uint16_t>(r.integer(2)); auto size=static_cast<std::size_t>(r.integer(2)); packet.payload=GameplayIntent{kind,r.bytes(size)}; break; }

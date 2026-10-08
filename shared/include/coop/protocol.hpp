@@ -13,7 +13,7 @@ using PlayerId = std::uint32_t;
 using EntityId = std::uint64_t;
 using VehicleId = EntityId;
 using ConnectionToken = std::array<std::uint8_t,16>;
-constexpr std::uint16_t kProtocolVersion = 4;
+constexpr std::uint16_t kProtocolVersion = 5;
 constexpr std::size_t kHeaderSize = 40;
 constexpr std::size_t kMaxPacketSize = 1200;
 
@@ -26,7 +26,8 @@ enum class PacketType : std::uint16_t {
     HitRequest = 0x300, DamageApplied = 0x301,
     EntitySpawn = 0x400, EntityDespawn = 0x401, WorldState = 0x402,
     NpcAdopt = 0x500, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied,
-    GameplayIntent = 0x600, GameplayResult, GameplayStatus
+    GameplayIntent = 0x600, GameplayResult, GameplayStatus,
+    NpcLifeState = 0x507
 };
 enum class EntityKind : std::uint8_t { Player = 1, Vehicle = 2, World = 3, NPC = 4 };
 struct Header {
@@ -139,6 +140,14 @@ struct NpcState {
     EntityId entity=0; Transform transform{}; std::uint64_t sampleTimeMs=0;
     bool operator==(const NpcState&) const = default;
 };
+enum class NpcLifeStatus : std::uint8_t { Alive=1, Defeated=2, Dead=3 };
+struct NpcLifeState {
+    EntityId entity=0;
+    float health=0, maxHealth=0;
+    NpcLifeStatus status=NpcLifeStatus::Alive;
+    std::uint32_t revision=0;
+    bool operator==(const NpcLifeState&) const = default;
+};
 struct NpcSnapshotEnd { bool operator==(const NpcSnapshotEnd&) const = default; };
 struct NpcDenied { std::uint64_t adoption=0; bool operator==(const NpcDenied&) const = default; };
 // Opaque reliable gameplay values. Their kind/body schemas are owned by a
@@ -172,7 +181,7 @@ using Payload = std::variant<Heartbeat, Leave, Ack, PlayerPose, PlayerState,
     VehicleInput, VehicleState, HitRequest, DamageApplied, EntitySpawn, EntityDespawn, WorldState, Hello, HelloOk, CreateSession, JoinSession,
     SessionAccepted, Reject, MemberJoined, MemberLeft, SessionClosed, Ready, SessionReady,
     NpcAdopt, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied,
-    GameplayIntent, GameplayResult, GameplayStatus>;
+    GameplayIntent, GameplayResult, GameplayStatus, NpcLifeState>;
 struct Packet {
     Header header{};
     Payload payload{};

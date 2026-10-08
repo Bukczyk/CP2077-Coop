@@ -62,6 +62,7 @@ private:
     void NotifyRemoval(const Removal& removal, std::uint64_t now);
     void RouteStates(std::uint64_t now);
     void QueueNpc(Peer& peer,Payload payload);
+    void QueueNpc(Peer& peer,Packet packet);
     void RouteNpcs(std::uint64_t now);
     GameplayLedger* EnsureGameplayLedger(SessionId session);
     void GameplayIntentMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now);
