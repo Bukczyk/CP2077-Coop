@@ -1,0 +1,111 @@
+{
+  "Header": {
+    "WolvenKitVersion": "9.0.1",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-10-07T02:05:13.707697+00:00",
+    "DataType": "CR2W"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "animAnimGraph",
+      "additionalAnimDatabases": [],
+      "animFeatures": [],
+      "cookingPlatform": "PLATFORM_PC",
+      "hackAlwaysSample": 0,
+      "hasMixerSlot": 0,
+      "isPaused": 0,
+      "jsonFilesDirectory": "",
+      "nodesToInit": [
+        {
+          "HandleId": "0",
+          "Data": {
+            "$type": "animAnimNode_Root",
+            "id": 4294967295,
+            "debugName": {
+              "$type": "CName",
+              "$storage": "string",
+              "$value": "None"
+            },
+            "nodes": [
+              {
+                "HandleId": "1",
+                "Data": {
+                  "$type": "animAnimNode_Output",
+                  "id": 4294967295,
+                  "debugName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  },
+                  "node": {
+                    "$type": "animPoseLink",
+                    "node": {
+                      "HandleId": "2",
+                      "Data": {
+                        "$type": "animAnimNode_SkAnim",
+                        "id": 4294967295,
+                        "debugName": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "animation": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "idle_stand"
+                        },
+                        "isLooped": 1,
+                        "applyMotion": 0,
+                        "collectEvents": 0,
+                        "fireAnimLoopEvent": 0,
+                        "resume": 0
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "HandleRefId": "2"
+              }
+            ],
+            "outputNode": {
+              "$type": "animPoseLink",
+              "node": null
+            }
+          }
+        },
+        {
+          "HandleRefId": "1"
+        },
+        {
+          "HandleRefId": "2"
+        }
+      ],
+      "oneFrameToggle": 0,
+      "rootNode": {
+        "HandleRefId": "0"
+      },
+      "timeDeltaMultiplier": 1,
+      "useAnimCommands": 0,
+      "useAnimCommandsForCrowd": 0,
+      "useAnimStaticCommands": 0,
+      "useLunaticMode": 0,
+      "variables": {
+        "HandleId": "3",
+        "Data": {
+          "$type": "animAnimVariableContainer",
+          "boolVariables": [],
+          "floatVariables": [],
+          "intVariables": [],
+          "quaternionVariables": [],
+          "transformVariables": [],
+          "vectorVariables": []
+        }
+      }
+    },
+    "EmbeddedFiles": []
+  }
+}
