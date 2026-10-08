@@ -3,6 +3,9 @@
 Experimental session-based co-op development. The native session bridge and
 reliable gameplay route are connected to controlled engine experiments.
 
+PR #10 now includes the validated connected preparation rebased onto main after
+PR #9 merged. See [the update and validation record](docs/validation/PR10_MAIN_UPDATE_2026-10-08.md).
+
 At `481609a`, a one-PC/two-client diagnostic connected JOINER firing to HOST
 validation, observed health loss/death and JOINER reaction/death presentation.
 It uses the HOST's current weapon and an explicitly opt-in cosmetic player body.

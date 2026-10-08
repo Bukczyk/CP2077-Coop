@@ -1,5 +1,10 @@
 # Connected encounter live checkpoint
 
+PR #9 has merged, and PR #10 now includes this validated preparation on main.
+The [rebase record](PR10_MAIN_UPDATE_2026-10-08.md) verifies unchanged runtime
+bytes and records fresh offline validation. The live evidence below remains
+the original trial; this update did not repeat or extend its live qualification.
+
 Owner: KyleBuildsAI. Last connected shot: 2026-10-08T04:13:09Z.
 Same-body death display observed at 04:14:39Z; subsequent reload is a separate failed recovery test.
 One Windows PC, two low-graphics clients and the local typed session server.

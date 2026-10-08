@@ -59,8 +59,8 @@ evidence remains in [the physical engine checkpoint](../PHYSICAL_ENCOUNTER_CHECK
 KyleBuildsAI owns these engine/bridge integration changes. Bukczyk owns the
 protocol, session/server policy and authoritative routing contract. This
 experiment does not add or change a protocol message or server-side combat rule.
-Keep the work in draft PR #10; do not fold it into PR #9's passive identity,
-cleanup and idle-animation update.
+PR #9 has merged. This preparation is now included in PR #10, rebased onto
+main for review. See the [update record](../../../docs/validation/PR10_MAIN_UPDATE_2026-10-08.md).
 
 ## CET module loading
 
