@@ -125,6 +125,8 @@ void WorkerRoutingAndReservedResult() {
     CHECK(host.CompleteGameplay(hs,wrong).status==g::GameplayAdmission::Missing);
     wrong=result; wrong.kind=0;
     CHECK(host.CompleteGameplay(hs,wrong).status==g::GameplayAdmission::Invalid);
+    wrong=result; wrong.kind=322;
+    CHECK(host.CompleteGameplay(hs,wrong).status==g::GameplayAdmission::Invalid);
     auto reply=host.CompleteGameplay(hs,result); CHECK(reply.status==g::GameplayAdmission::Queued);
     CHECK(host.CompleteGameplay(hs,result).ticket==reply.ticket);
     wrong=result; wrong.body.clear(); CHECK(host.CompleteGameplay(hs,wrong).status==g::GameplayAdmission::Invalid);

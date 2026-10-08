@@ -154,6 +154,7 @@ GameplaySubmission SessionBridge::CompleteGameplay(GameplayScope scope,GameplayR
     auto it=gameplayPending_.find({result.requester,result.requestEvent});
     if(it==gameplayPending_.end()) return {GameplayAdmission::Missing,0};
     auto& pending=it->second;
+    if(result.kind!=std::get<GameplayIntent>(pending.request.payload).kind) return {GameplayAdmission::Invalid,0};
     if(pending.result) return *pending.result==result?GameplaySubmission{GameplayAdmission::Queued,pending.ticket}:GameplaySubmission{GameplayAdmission::Invalid,0};
     if(nextGameplayTicket_==std::numeric_limits<std::uint64_t>::max()) return {GameplayAdmission::Full,0};
     pending.ticket=nextGameplayTicket_++; pending.result=std::move(result);
