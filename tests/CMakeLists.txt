@@ -36,6 +36,8 @@ add_test(NAME encounter_presentation_adapter COMMAND coop_lua_test "${CMAKE_CURR
 set_tests_properties(encounter_presentation_adapter PROPERTIES TIMEOUT 15)
 add_test(NAME connected_encounter COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/connected_encounter_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(connected_encounter PROPERTIES TIMEOUT 15)
+add_test(NAME connected_presentation COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/connected_presentation_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(connected_presentation PROPERTIES TIMEOUT 15)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(NAME passive_hittable_asset COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/passive_hittable_asset_tests.py")

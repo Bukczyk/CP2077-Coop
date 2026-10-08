@@ -1,5 +1,9 @@
 # Connected encounter diagnostic
 
+Game-side follow-up: [accepted state during local NPC recreation](PRESENTATION_RESTORE.md)
+adds an opt-in JOINER adapter that retains supplied health/death while a projection
+is absent and restores the exact replacement. Reconnect delivery remains separate.
+
 This opt-in experiment connects the existing physical-shot, HOST engine-observation
 and passive-presentation probes to the reliable `GameplayIntent` / `GameplayResult`
 route introduced by PR #11. It uses the existing protocol and server contract.
