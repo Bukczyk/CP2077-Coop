@@ -3,6 +3,13 @@ local NpcRuntime = require("npc_runtime")
 local PlayerPose = assert(require("player_pose"), "player_pose module missing")
 local population = require("npc_population")
 local config = require("config")
+local passivePlayers = nil
+if config.experimentalPassivePlayers == true then
+    local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
+    passivePlayers = PassivePlayers.new(function(status)
+        print("[CP2077Session] PASSIVE_PLAYER " .. status)
+    end)
+end
 local staticPopulation = require("npc_static_population")
 local npcProjection = nil
 local staticProjectionEnabled = false
@@ -23,6 +30,7 @@ local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
 local function clear()
+    if passivePlayers then passivePlayers:reset() end
     for _, entry in pairs(proxies) do if entry.pose then entry.pose:reset() end end
     ensureNpcProjection()
     npcProjection:reset()
@@ -40,6 +48,8 @@ local function stop()
 end
 local function update(delta)
     time = time + delta
+    -- Continue observing asynchronous retirement even while no save is loaded.
+    if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
     local requests = Game.GetSystemRequestsHandler()
     local loaded = player ~= nil and player:IsAttached() and
@@ -72,8 +82,17 @@ local function update(delta)
         error("Local player projection binding rejected")
     end
     local system = Game.GetDynamicEntitySystem()
-    if system == nil or not system:IsReady() then return end
+    local dynamicReady = system ~= nil and system:IsReady()
+    if not dynamicReady then return end
+    if passivePlayers and #system:GetTagged(CName.new(commonTag)) > 0 then
+        -- DeleteTagged is asynchronous. Old dynamic bodies must disappear
+        -- before the experimental representation can be considered active.
+        passivePlayers:reset()
+        passivePlayers:status("dynamic_retirement_pending")
+        return
+    end
     local seen = {}
+    local passiveFrame = {}
     local bubble = { radius = Game.CP2077Session_BubbleRadius(), centers = { {x=position.x,y=position.y,z=position.z} }, exclusions = {player:GetEntityID()} }
     for index = 0, count - 1 do
         if Game.CP2077Session_Select(index) then
@@ -91,6 +110,9 @@ local function update(delta)
                 bubble.centers[1] = {x=x+1.75,y=y,z=z}
                 print("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
             end
+            if passivePlayers then
+                passiveFrame[#passiveFrame + 1] = {player=id, entity=entity, x=x, y=y, z=z, yaw=yaw}
+            else
             local entry = proxies[id]
             if entry ~= nil and tostring(entry.entity) ~= tostring(entity) then
                 entry.pose:reset()
@@ -120,9 +142,14 @@ local function update(delta)
                 -- pending. Only actual transform readback confirms placement.
                 entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time)
             end
+            end -- selected player representation
         end
     end
-    if config.experimentalNpcReplication then
+    if passivePlayers then
+        passivePlayers:step(generation, passiveFrame, time)
+        for _, id in ipairs(passivePlayers:boundIds()) do bubble.exclusions[#bubble.exclusions+1] = id end
+    end
+    if config.experimentalNpcReplication and dynamicReady then
         npcLimit = Game.CP2077Session_NpcCapacity()
         if Game.CP2077Session_Self() == Game.CP2077Session_Host() then
             local countNpc = 0
@@ -194,10 +221,16 @@ registerForEvent("onInit", function()
         end
     end)
     initialized = true
-    print("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication))
+    print("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication)
+        .. " passive_players=" .. tostring(passivePlayers ~= nil))
 end)
 registerForEvent("onUpdate", function(delta)
-    if not initialized or failed then return end
+    if not initialized then return end
+    if failed then
+        -- A latched bridge failure must not discard still-owned static tokens.
+        if passivePlayers then pcall(function() passivePlayers:reset() end) end
+        return
+    end
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
