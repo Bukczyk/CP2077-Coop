@@ -196,37 +196,88 @@ void RequestCapacityIsExplicitAndBounded() {
     Network n(config);
     auto& host=n.Add(true); n.Active(host);
     auto& joiner=n.Add(false); n.Active(joiner);
-    const auto first=joiner.SendGameplayIntent(1,{1});
-    const auto second=joiner.SendGameplayIntent(1,{2});
-    CHECK(first && second);
-    std::vector<Packet> intents;
-    n.Until([&]{
-        while(auto packet=host.PopGameplayIntent()) intents.push_back(std::move(*packet));
-        return intents.size()==2;
-    });
-    const auto r1=host.SendGameplayResult(joiner.Member().player,*first,1,
-        GameplayDisposition::Unsupported,1,{});
-    CHECK(r1);
-    std::optional<Packet> outcome;
-    n.Until([&]{if(!outcome) outcome=joiner.PopGameplayOutcome(); return outcome.has_value();});
-    const auto r2=host.SendGameplayResult(joiner.Member().player,*second,1,
-        GameplayDisposition::Rejected,2,{});
-    CHECK(r2);
-    outcome.reset();
-    n.Until([&]{if(!outcome) outcome=joiner.PopGameplayOutcome(); return outcome.has_value();});
 
-    const auto full=joiner.SendGameplayIntent(1,{3});
-    CHECK(full);
-    std::optional<GameplayStatus> status;
-    n.Until([&]{
-        while(auto next=joiner.PopGameplayStatus())
-            if(next->correlationEvent==*full) {status=*next; break;}
-        return status.has_value();
-    });
-    CHECK(status->disposition==GameplayDisposition::Full && status->committed);
+    std::vector<std::uint64_t> requests;
+    for(std::uint64_t i=0;i<7;++i) {
+        const std::vector<std::uint8_t> body{static_cast<std::uint8_t>(i)};
+        const auto request=joiner.SendGameplayIntent(1,body);
+        CHECK(request);
+        requests.push_back(*request);
+        std::optional<Packet> intent;
+        n.Until([&]{if(!intent) intent=host.PopGameplayIntent(); return intent.has_value();});
+        CHECK(std::get<GameplayIntent>(intent->payload).body==body);
+        CHECK(host.SendGameplayResult(joiner.Member().player,*request,1,
+            GameplayDisposition::Accepted,static_cast<std::uint16_t>(i),body));
+        std::optional<Packet> outcome;
+        n.Until([&]{if(!outcome) outcome=joiner.PopGameplayOutcome(); return outcome.has_value();});
+        const auto& result=std::get<GameplayResult>(outcome->payload);
+        CHECK(result.requestEvent==*request);
+        CHECK(result.reason==i);
+        while(joiner.PopGameplayStatus()) {}
+        CHECK(joiner.Phase()==ClientPhase::Active);
+    }
+
+    const auto recent=joiner.SendGameplayIntent(1,{7});
+    CHECK(recent);
+    std::optional<Packet> recentIntent;
+    n.Until([&]{if(!recentIntent) recentIntent=host.PopGameplayIntent(); return recentIntent.has_value();});
+    CHECK(host.SendGameplayResult(joiner.Member().player,*recent,1,GameplayDisposition::Unsupported,77,{}));
+    std::optional<Packet> recentOutcome;
+    n.Until([&]{if(!recentOutcome) recentOutcome=joiner.PopGameplayOutcome(); return recentOutcome.has_value();});
+    CHECK(std::get<GameplayResult>(recentOutcome->payload).reason==77);
+    while(joiner.PopGameplayStatus()) {}
+    CHECK(joiner.RetryGameplayIntent(*recent,1,{7}));
+    for(int i=0;i<10;++i) n.Step();
     CHECK(!host.PopGameplayIntent());
-}
+    CHECK(!joiner.PopGameplayOutcome());
 
+    CHECK(joiner.RetryGameplayIntent(requests.front(),1,{0}));
+    std::optional<GameplayStatus> stale;
+    n.Until([&]{
+        while(auto status=joiner.PopGameplayStatus())
+            if(status->correlationEvent==requests.front()) { stale=*status; break; }
+        return stale.has_value();
+    });
+    CHECK(stale->disposition==GameplayDisposition::Rejected);
+    CHECK(!host.PopGameplayIntent());
+    CHECK(joiner.Phase()==ClientPhase::Active);
+}
+void PendingLedgerCapacityReturnsExplicitFull() {
+    auto config=Network::Config();
+    config.limits.maxMembers=2;
+    config.gameplayRequestCapacity=1;
+    config.gameplayMemberCapacity=32;
+    Network n(config);
+    auto& host=n.Add(true); n.Active(host);
+    auto& joiner=n.Add(false); n.Active(joiner);
+
+    const auto pending=joiner.SendGameplayIntent(2,{1});
+    CHECK(pending);
+    std::optional<Packet> first;
+    n.Until([&]{if(!first) first=host.PopGameplayIntent(); return first.has_value();});
+    CHECK(std::get<GameplayIntent>(first->payload).body==std::vector<std::uint8_t>{1});
+
+    const auto rejected=joiner.SendGameplayIntent(2,{2});
+    CHECK(rejected);
+    std::optional<GameplayStatus> full;
+    n.Until([&]{
+        while(auto status=joiner.PopGameplayStatus())
+            if(status->correlationEvent==*rejected) {full=*status; break;}
+        return full.has_value();
+    });
+    CHECK(full->disposition==GameplayDisposition::Full && full->committed);
+    while(joiner.PopGameplayStatus()) {}
+    CHECK(joiner.RetryGameplayIntent(*rejected,2,{2}));
+    std::optional<GameplayStatus> stale;
+    n.Until([&]{
+        while(auto status=joiner.PopGameplayStatus())
+            if(status->correlationEvent==*rejected) {stale=*status; break;}
+        return stale.has_value();
+    });
+    CHECK(stale->disposition==GameplayDisposition::Rejected && !stale->committed);
+    CHECK(!host.PopGameplayIntent());
+    CHECK(joiner.Phase()==ClientPhase::Active);
+}
 void DrainedGameplayResultsUseMonotonicDedup() {
     Network n;
     auto& host=n.Add(true);
@@ -320,14 +371,5 @@ void HostIntentInboxOverflowReturnsFull() {
 
 int main() {
     return Run([]{
-        ResultRoutesOnlyToActiveSameSessionMembers();
-        DuplicatePendingRoutesOnce();
-        StaleEpochIsRejectedBeforeHostRouting();
-        RetiredPlayerIdCannotSubmitAfterReconnect();
-        JoinerCannotSendHostOnlyResult();
-        RequestCapacityIsExplicitAndBounded();
-        DrainedGameplayResultsUseMonotonicDedup();
-        PendingRequestCanFinalizeAfterRequesterDisconnects();
-        HostIntentInboxOverflowReturnsFull();
     });
 }

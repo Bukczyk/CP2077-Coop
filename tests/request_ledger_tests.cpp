@@ -22,6 +22,7 @@ void DuplicatePendingAndCommitted() {
     CHECK(!first.replay);
     CHECK(ledger.Begin(key).result == RequestLedgerResult::DuplicatePending);
 
+    CHECK(ledger.MarkAccepted(key) == RequestLedgerResult::Accepted);
     CHECK(ledger.Commit(key, GameplayRequestStatus::Accepted, Outcome{1, 12})
           == RequestLedgerResult::Committed);
     const auto duplicate = ledger.Begin(key);
@@ -52,6 +53,7 @@ void ReconnectUsesNewPlayerIdentity() {
     CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
     const auto oldKey = Key(41, 3, 7, 1);
     CHECK(ledger.Begin(oldKey).result == RequestLedgerResult::New);
+    CHECK(ledger.MarkAccepted(oldKey) == RequestLedgerResult::Accepted);
     CHECK(ledger.Commit(oldKey, GameplayRequestStatus::Accepted, Outcome{3, 1})
           == RequestLedgerResult::Committed);
 
@@ -74,29 +76,63 @@ void CancelPendingAllowsSafeRetry() {
     CHECK(ledger.Size() == 0);
     CHECK(ledger.Begin(key).result == RequestLedgerResult::New);
 }
-void CapacityNeverEvictsOutcomes() {
+void TerminalReplayWindowPrunesSafely() {
+    constexpr std::size_t capacity = 3;
+    Ledger ledger({41, 3}, capacity);
+    CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
+
+    GameplayRequestKey oldest{};
+    GameplayRequestKey newest{};
+    for (std::uint64_t event = 1; event <= capacity * 3; ++event) {
+        const auto key = Key(41, 3, 7, event);
+        if (event == 1) oldest = key;
+        newest = key;
+        CHECK(ledger.Begin(key).result == RequestLedgerResult::New);
+        CHECK(ledger.MarkAccepted(key) == RequestLedgerResult::Accepted);
+        const Outcome outcome{static_cast<std::uint32_t>(event), event * 17};
+        CHECK(ledger.Commit(key, GameplayRequestStatus::Accepted, outcome)
+              == RequestLedgerResult::Committed);
+        const auto duplicate = ledger.Begin(key);
+        CHECK(duplicate.result == RequestLedgerResult::DuplicateCommitted);
+        CHECK(duplicate.replay);
+        CHECK(duplicate.replay->status == GameplayRequestStatus::Accepted);
+        CHECK(duplicate.replay->value == outcome);
+        CHECK(ledger.Size() <= capacity);
+    }
+
+    const auto oldDuplicate = ledger.Begin(oldest);
+    CHECK(oldDuplicate.result == RequestLedgerResult::StaleRequest);
+    CHECK(!oldDuplicate.replay);
+    const auto recentDuplicate = ledger.Begin(newest);
+    CHECK(recentDuplicate.result == RequestLedgerResult::DuplicateCommitted);
+    CHECK(recentDuplicate.replay);
+    CHECK(recentDuplicate.replay->value == (Outcome{9, 9 * 17}));
+}
+
+void PendingEntriesAreNeverEvicted() {
     Ledger ledger({41, 3}, 1, 2);
     CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
     CHECK(ledger.AddMember(9) == RequestMemberResult::Added);
     CHECK(ledger.AddMember(11) == RequestMemberResult::Capacity);
-    const auto first = Key(41, 3, 7, 1);
-    const auto second = Key(41, 3, 9, 1);
+    const auto pending = Key(41, 3, 7, 1);
+    const auto blocked = Key(41, 3, 9, 1);
 
-    CHECK(ledger.Begin(first).result == RequestLedgerResult::New);
-    CHECK(ledger.Begin(second).result == RequestLedgerResult::Capacity);
+    CHECK(ledger.Begin(pending).result == RequestLedgerResult::New);
+    CHECK(ledger.MarkAccepted(pending) == RequestLedgerResult::Accepted);
+    CHECK(ledger.Begin(blocked).result == RequestLedgerResult::Capacity);
     CHECK(ledger.Size() == 1);
-    CHECK(ledger.Commit(first, GameplayRequestStatus::Rejected, Outcome{4, 0})
+    CHECK(ledger.Begin(pending).result == RequestLedgerResult::DuplicatePending);
+    CHECK(ledger.Commit(pending, GameplayRequestStatus::Rejected, Outcome{4, 0})
           == RequestLedgerResult::Committed);
-    CHECK(ledger.Begin(first).result == RequestLedgerResult::DuplicateCommitted);
-    CHECK(ledger.Begin(second).result == RequestLedgerResult::Capacity);
+    CHECK(ledger.Begin(blocked).result == RequestLedgerResult::New);
     CHECK(ledger.Size() == 1);
 }
-
 void EpochResetClearsScopedState() {
     Ledger ledger({41, 3}, 4);
     CHECK(ledger.AddMember(7) == RequestMemberResult::Added);
     const auto oldKey = Key(41, 3, 7, 1);
     CHECK(ledger.Begin(oldKey).result == RequestLedgerResult::New);
+    CHECK(ledger.MarkAccepted(oldKey) == RequestLedgerResult::Accepted);
     CHECK(ledger.Commit(oldKey, GameplayRequestStatus::Accepted, Outcome{5, 0})
           == RequestLedgerResult::Committed);
 
@@ -121,7 +157,8 @@ int main() {
         DuplicatePendingAndCommitted();
         RejectStaleIdentityAndMembership();
         ReconnectUsesNewPlayerIdentity();
-        CapacityNeverEvictsOutcomes();
+        TerminalReplayWindowPrunesSafely();
+        PendingEntriesAreNeverEvicted();
         CancelPendingAllowsSafeRetry();
         EpochResetClearsScopedState();
     });
