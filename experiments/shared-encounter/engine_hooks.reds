@@ -33,6 +33,9 @@ private let CPEncounterPendingKind: String;
 @addField(NPCPuppet)
 private let CPEncounterBeforeHealth: Float;
 
+@addField(NPCPuppet)
+private let CPEncounterFixtureHit: wref<gameHitEvent>;
+
 @addMethod(NPCPuppet)
 public func CP2077Encounter_Scoped() -> Bool {
     let system = GameInstance.GetDynamicEntitySystem();
@@ -197,6 +200,7 @@ public func CP2077Encounter_HostWeaponHit(request: Uint32) -> String {
     shape.result.hitPositionEnter = evt.hitPosition;
     shape.result.hitPositionExit = evt.hitPosition;
     ArrayPush(evt.hitRepresentationResult.hitShapes, shape);
+    this.CPEncounterFixtureHit = evt;
     this.CPEncounterLastRequest = request;
     this.CPEncounterBeforeHealth = this.CP2077Encounter_Health();
     this.CPEncounterPending = true;
@@ -247,13 +251,24 @@ public func CP2077Encounter_RecordHit(kind: String, hit: ref<gameHitEvent>) -> V
     if IsDefined(hit.attackComputed) {
         computed = hit.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health);
     }
+    let instigatorId: EntityID;
+    let weaponId: EntityID;
+    if IsDefined(hit.attackData.GetInstigator()) { instigatorId = hit.attackData.GetInstigator().GetEntityID(); }
+    if IsDefined(hit.attackData.GetWeapon()) { weaponId = hit.attackData.GetWeapon().GetEntityID(); }
+    let attackPosition = hit.attackData.GetAttackPosition();
     this.CP2077Encounter_Log(kind, "computedNotObserved=" + ToString(computed)
+        + " syntheticFixture=" + ToString(hit == this.CPEncounterFixtureHit)
         + " projectionPipeline=" + ToString(hit.projectionPipeline)
+        + " instigatorLocal=" + ToString(instigatorId.hash) + " weaponLocal=" + ToString(weaponId.hash)
         + " instigatorDefined=" + ToString(IsDefined(hit.attackData.GetInstigator()))
         + " weaponDefined=" + ToString(IsDefined(hit.attackData.GetWeapon()))
         + " attackType=" + ToString(EnumInt(hit.attackData.GetAttackType()))
         + " hitX=" + ToString(hit.hitPosition.X) + " hitY=" + ToString(hit.hitPosition.Y)
         + " hitZ=" + ToString(hit.hitPosition.Z)
+        + " directionX=" + ToString(hit.hitDirection.X) + " directionY=" + ToString(hit.hitDirection.Y)
+        + " directionZ=" + ToString(hit.hitDirection.Z)
+        + " originX=" + ToString(attackPosition.X) + " originY=" + ToString(attackPosition.Y)
+        + " originZ=" + ToString(attackPosition.Z)
         + " hitShapes=" + ToString(ArraySize(hit.hitRepresentationResult.hitShapes)));
 }
 

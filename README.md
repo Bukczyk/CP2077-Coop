@@ -1,6 +1,20 @@
 # CP2077-Coop
 
-Work toward v0.1.0 Session Architecture. The running legacy plugin still reports v0.0.25; the imported Lua bridge reports v0.0.26. The new portable core is not yet wired into the game or a public session server.
+Experimental session-based co-op development. The native session bridge and
+reliable gameplay route are connected to controlled engine experiments.
+
+PR #10 now includes the validated connected preparation rebased onto main after
+PR #9 merged. See [the update and validation record](docs/validation/PR10_MAIN_UPDATE_2026-10-08.md).
+
+At `481609a`, a one-PC/two-client diagnostic connected JOINER firing to HOST
+validation, observed health loss/death and JOINER reaction/death presentation.
+It uses the HOST's current weapon and an explicitly opt-in cosmetic player body.
+Reconnect death recovery still fails; this is not a public shared-combat release.
+See [the exact checkpoint and remaining gates](docs/validation/CONNECTED_ENCOUNTER_2026-10-08.md)
+and [passive player scope](docs/validation/PASSIVE_PLAYER.md).
+
+The early build/source notes below predate this checkpoint; current game runtime
+and packaging guidance is in [runtime/session/README.md](runtime/session/README.md).
 
 ## Build and check
 Requirements: CMake 3.21+, C++20 compiler, Git for SDK bootstrap. Windows: Visual Studio C++ x64 tools and Windows SDK. Linux: GCC 12+ and Ninja (Debian bookworm packages cmake, g++, ninja-build).

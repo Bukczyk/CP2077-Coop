@@ -1,0 +1,326 @@
+{
+  "Header": {
+    "WolvenKitVersion": "9.0.1",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-10-07T02:05:13.707697+00:00",
+    "DataType": "CR2W"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "animAnimGraph",
+      "additionalAnimDatabases": [],
+      "animFeatures": [],
+      "cookingPlatform": "PLATFORM_PC",
+      "hackAlwaysSample": 0,
+      "hasMixerSlot": 0,
+      "isPaused": 0,
+      "jsonFilesDirectory": "",
+      "nodesToInit": [
+        {
+          "HandleId": "0",
+          "Data": {
+            "$type": "animAnimNode_Root",
+            "id": 4294967295,
+            "debugName": {
+              "$type": "CName",
+              "$storage": "string",
+              "$value": "None"
+            },
+            "nodes": [
+              {
+                "HandleId": "1",
+                "Data": {
+                  "$type": "animAnimNode_Output",
+                  "id": 4294967295,
+                  "debugName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  },
+                  "node": {
+                    "$type": "animPoseLink",
+                    "node": {
+                      "HandleId": "2",
+                      "Data": {
+                        "$type": "animAnimNode_Switch",
+                        "id": 4294967295,
+                        "debugName": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "numInputs": 3,
+                        "blendTime": 0.0,
+                        "timeWarpingEnabled": 0,
+                        "canRequestInertialization": 0,
+                        "inputNodes": [
+                          {
+                            "$type": "animPoseLink",
+                            "node": {
+                              "HandleId": "3",
+                              "Data": {
+                                "$type": "animAnimNode_SkAnim",
+                                "id": 4294967295,
+                                "debugName": {
+                                  "$type": "CName",
+                                  "$storage": "string",
+                                  "$value": "None"
+                                },
+                                "animation": {
+                                  "$type": "CName",
+                                  "$storage": "string",
+                                  "$value": "idle_stand"
+                                },
+                                "isLooped": 1,
+                                "applyMotion": 0,
+                                "collectEvents": 0,
+                                "fireAnimLoopEvent": 0,
+                                "resume": 0
+                              }
+                            }
+                          },
+                          {
+                            "$type": "animPoseLink",
+                            "node": {
+                              "HandleId": "4",
+                              "Data": {
+                                "$type": "animAnimNode_SkFrameAnim",
+                                "id": 4294967295,
+                                "debugName": {
+                                  "$type": "CName",
+                                  "$storage": "string",
+                                  "$value": "None"
+                                },
+                                "animation": {
+                                  "$type": "CName",
+                                  "$storage": "string",
+                                  "$value": "impact_stand_front_torso_l"
+                                },
+                                "isLooped": 0,
+                                "applyMotion": 0,
+                                "collectEvents": 0,
+                                "fireAnimLoopEvent": 0,
+                                "resume": 0,
+                                "progressLink": {
+                                  "$type": "animFloatLink",
+                                  "node": {
+                                    "HandleId": "7",
+                                    "Data": {
+                                      "$type": "animAnimNode_FloatVariable",
+                                      "id": 4294967295,
+                                      "debugName": {
+                                        "$type": "CName",
+                                        "$storage": "string",
+                                        "$value": "None"
+                                      },
+                                      "variableName": {
+                                        "$type": "CName",
+                                        "$storage": "string",
+                                        "$value": "cp_coop_hit_progress"
+                                      }
+                                    }
+                                  }
+                                },
+                                "fireAnimEndOnceOnAnimEnd": 0
+                              }
+                            }
+                          },
+                          {
+                            "$type": "animPoseLink",
+                            "node": {
+                              "HandleId": "5",
+                              "Data": {
+                                "$type": "animAnimNode_SkFrameAnim",
+                                "id": 4294967295,
+                                "debugName": {
+                                  "$type": "CName",
+                                  "$storage": "string",
+                                  "$value": "None"
+                                },
+                                "animation": {
+                                  "$type": "CName",
+                                  "$storage": "string",
+                                  "$value": "death_front_torso_l_idle"
+                                },
+                                "isLooped": 0,
+                                "applyMotion": 0,
+                                "collectEvents": 0,
+                                "fireAnimLoopEvent": 0,
+                                "resume": 0,
+                                "progressLink": {
+                                  "$type": "animFloatLink",
+                                  "node": {
+                                    "HandleId": "8",
+                                    "Data": {
+                                      "$type": "animAnimNode_FloatVariable",
+                                      "id": 4294967295,
+                                      "debugName": {
+                                        "$type": "CName",
+                                        "$storage": "string",
+                                        "$value": "None"
+                                      },
+                                      "variableName": {
+                                        "$type": "CName",
+                                        "$storage": "string",
+                                        "$value": "cp_coop_death_progress"
+                                      }
+                                    }
+                                  }
+                                },
+                                "fireAnimEndOnceOnAnimEnd": 0
+                              }
+                            }
+                          }
+                        ],
+                        "weightNode": {
+                          "$type": "animFloatLink",
+                          "node": {
+                            "HandleId": "6",
+                            "Data": {
+                              "$type": "animAnimNode_FloatVariable",
+                              "id": 4294967295,
+                              "debugName": {
+                                "$type": "CName",
+                                "$storage": "string",
+                                "$value": "None"
+                              },
+                              "variableName": {
+                                "$type": "CName",
+                                "$storage": "string",
+                                "$value": "cp_coop_phase"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "HandleRefId": "2"
+              },
+              {
+                "HandleRefId": "3"
+              },
+              {
+                "HandleRefId": "4"
+              },
+              {
+                "HandleRefId": "5"
+              },
+              {
+                "HandleRefId": "6"
+              },
+              {
+                "HandleRefId": "7"
+              },
+              {
+                "HandleRefId": "8"
+              }
+            ],
+            "outputNode": {
+              "$type": "animPoseLink",
+              "node": null
+            }
+          }
+        },
+        {
+          "HandleRefId": "1"
+        },
+        {
+          "HandleRefId": "2"
+        },
+        {
+          "HandleRefId": "3"
+        },
+        {
+          "HandleRefId": "4"
+        },
+        {
+          "HandleRefId": "5"
+        },
+        {
+          "HandleRefId": "6"
+        },
+        {
+          "HandleRefId": "7"
+        },
+        {
+          "HandleRefId": "8"
+        }
+      ],
+      "oneFrameToggle": 0,
+      "rootNode": {
+        "HandleRefId": "0"
+      },
+      "timeDeltaMultiplier": 1,
+      "useAnimCommands": 0,
+      "useAnimCommandsForCrowd": 0,
+      "useAnimStaticCommands": 0,
+      "useLunaticMode": 0,
+      "variables": {
+        "HandleId": "9",
+        "Data": {
+          "$type": "animAnimVariableContainer",
+          "boolVariables": [],
+          "intVariables": [],
+          "floatVariables": [
+            {
+              "HandleId": "10",
+              "Data": {
+                "$type": "animAnimVariableFloat",
+                "name": {
+                  "$type": "CName",
+                  "$storage": "string",
+                  "$value": "cp_coop_phase"
+                },
+                "value": 0,
+                "default": 0,
+                "min": 0,
+                "max": 2
+              }
+            },
+            {
+              "HandleId": "11",
+              "Data": {
+                "$type": "animAnimVariableFloat",
+                "name": {
+                  "$type": "CName",
+                  "$storage": "string",
+                  "$value": "cp_coop_hit_progress"
+                },
+                "value": 0,
+                "default": 0,
+                "min": 0,
+                "max": 1
+              }
+            },
+            {
+              "HandleId": "12",
+              "Data": {
+                "$type": "animAnimVariableFloat",
+                "name": {
+                  "$type": "CName",
+                  "$storage": "string",
+                  "$value": "cp_coop_death_progress"
+                },
+                "value": 0,
+                "default": 0,
+                "min": 0,
+                "max": 1
+              }
+            }
+          ],
+          "quaternionVariables": [],
+          "transformVariables": [],
+          "vectorVariables": []
+        }
+      }
+    },
+    "EmbeddedFiles": []
+  }
+}

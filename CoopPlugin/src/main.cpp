@@ -144,9 +144,56 @@ NATIVE(NpcX,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.positi
 NATIVE(NpcY,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.y:0; }
 NATIVE(NpcZ,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.z:0; }
 NATIVE(NpcYaw,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.rotation.z:0; }
+std::string Text(const RED4ext::CString& value) { return {value.c_str(),value.Length()}; }
+NATIVE(GameplayScope,RED4ext::CString) {
+    ++f->code;
+    *out=RED4ext::CString(std::to_string(frame.member.session)+"|"+std::to_string(frame.member.epoch)+"|"+std::to_string(frame.generation)+"|"+std::to_string(frame.member.player)+"|"+std::to_string(frame.host)+"|"+std::to_string(static_cast<unsigned>(frame.phase)));
+}
+NATIVE(GameplaySubmit,RED4ext::CString) {
+    RED4ext::CString session,generation,body; std::uint32_t epoch=0,kind=0;
+    RED4ext::GetParameter(f,&session); RED4ext::GetParameter(f,&epoch); RED4ext::GetParameter(f,&generation);
+    RED4ext::GetParameter(f,&kind); RED4ext::GetParameter(f,&body); ++f->code;
+    if(session.Length()>20 || generation.Length()>20 || body.Length()>2*coop::kMaxGameplayBodySize) { *out=RED4ext::CString("invalid"); return; }
+    const auto sid=g::ParseGameplayId(Text(session)),gen=g::ParseGameplayId(Text(generation));
+    auto bytes=g::DecodeGameplayHex(Text(body));
+    if(!sid || !gen || !bytes || !kind || kind>65535) { *out=RED4ext::CString("invalid"); return; }
+    *out=RED4ext::CString(g::EncodeGameplaySubmission(bridge?bridge->SubmitGameplay({{*sid,epoch},*gen},static_cast<std::uint16_t>(kind),std::move(*bytes)):g::GameplaySubmission{}));
+}
+NATIVE(GameplayReply,RED4ext::CString) {
+    RED4ext::CString session,generation,request,body; std::uint32_t epoch=0,requester=0,kind=0,disposition=0,reason=0;
+    RED4ext::GetParameter(f,&session); RED4ext::GetParameter(f,&epoch); RED4ext::GetParameter(f,&generation);
+    RED4ext::GetParameter(f,&requester); RED4ext::GetParameter(f,&request); RED4ext::GetParameter(f,&kind);
+    RED4ext::GetParameter(f,&disposition); RED4ext::GetParameter(f,&reason); RED4ext::GetParameter(f,&body); ++f->code;
+    if(session.Length()>20 || generation.Length()>20 || request.Length()>20 || body.Length()>2*coop::kMaxGameplayBodySize) { *out=RED4ext::CString("invalid"); return; }
+    const auto sid=g::ParseGameplayId(Text(session)),gen=g::ParseGameplayId(Text(generation)),event=g::ParseGameplayId(Text(request));
+    auto bytes=g::DecodeGameplayHex(Text(body));
+    if(!sid || !gen || !event || !bytes || !kind || kind>65535 || reason>65535 || disposition<2 || disposition>5) { *out=RED4ext::CString("invalid"); return; }
+    coop::GameplayResult result{requester,*event,static_cast<std::uint16_t>(kind),static_cast<coop::GameplayDisposition>(disposition),static_cast<std::uint16_t>(reason),std::move(*bytes)};
+    *out=RED4ext::CString(g::EncodeGameplaySubmission(bridge?bridge->CompleteGameplay({{*sid,epoch},*gen},std::move(result)):g::GameplaySubmission{}));
+}
+NATIVE(GameplayPoll,RED4ext::CString) {
+    ++f->code; auto event=bridge?bridge->PopGameplay():std::optional<g::GameplayEvent>{};
+    *out=RED4ext::CString(event?g::EncodeGameplayEvent(*event):std::string{});
+}
+NATIVE(GameplayFault,RED4ext::CString) { ++f->code; *out=RED4ext::CString(bridge?bridge->GameplayFault():"bridge_unavailable"); }
 void RegisterTypes() {}
 void RegisterFunctions() {
     auto rtti=RED4ext::CRTTISystem::Get();
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplayScope","CP2077Session_GameplayScope",&GameplayScope);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("String"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplaySubmit","CP2077Session_GameplaySubmit",&GameplaySubmit);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("String");
+      fn->AddParam("String","session"); fn->AddParam("Uint32","epoch"); fn->AddParam("String","generation");
+      fn->AddParam("Uint32","kind"); fn->AddParam("String","bodyHex"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplayReply","CP2077Session_GameplayReply",&GameplayReply);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("String");
+      fn->AddParam("String","session"); fn->AddParam("Uint32","epoch"); fn->AddParam("String","generation");
+      fn->AddParam("Uint32","requester"); fn->AddParam("String","requestEvent"); fn->AddParam("Uint32","kind");
+      fn->AddParam("Uint32","disposition"); fn->AddParam("Uint32","reason"); fn->AddParam("String","bodyHex"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplayPoll","CP2077Session_GameplayPoll",&GameplayPoll);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("String"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplayFault","CP2077Session_GameplayFault",&GameplayFault);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("String"); rtti->RegisterFunction(fn); }
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcOffer","CP2077Session_NpcOffer",&NpcOffer);
       fn->flags={.isNative=true,.isStatic=true};
       fn->SetReturnType("Bool");

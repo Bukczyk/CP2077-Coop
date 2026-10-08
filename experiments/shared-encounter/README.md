@@ -1,6 +1,14 @@
 # Controlled encounter engine probe
 
-Opt-in local evidence only. This does not implement PR7 networking or certify passive-proxy hit detection. Install only through the private test runner after isolated compilation.
+Opt-in engine evidence and experimental integration. The original probe below is local;
+the [connected diagnostic](connected/README.md) now bridges its observations to PR #11's
+generic reliable request/result route. That diagnostic is not production combat or a
+live-pass claim. Install only through the private test runner after isolated compilation.
+
+For the next engine checkpoint, read [physical shot capture and target queries](PHYSICAL_SHOTS.md),
+[passive reaction/death presentation](PRESENTATION.md), and the
+[trial results, failures and remaining gates](PHYSICAL_ENCOUNTER_CHECKPOINT.md).
+These experimental modules are not installed by the normal session package.
 
 Only an explicitly enabled `NPCPuppet` created/managed by Codeware DynamicEntitySystem with tag `CP2077Coop.ControlledEncounter` is observed. A session/epoch/generation change disables its scope. All wrappers always execute vanilla behavior. No listener is registered, no ambient actor is modified, and no god-mode protection is removed.
 

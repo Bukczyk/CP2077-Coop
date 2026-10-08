@@ -14,13 +14,14 @@ enabling it does not make shared NPC simulation safe. Edit it with games closed
 and restart both clients for a controlled NPC experiment.
 
 See [lifecycle validation](../../docs/validation/CET_SESSION_LIFECYCLE.md) for the
-focused test record. Player proxy movement remains a separate unresolved issue.
+focused test record. The experimental player pose actuator and its remaining
+live acceptance gates are recorded in [player proxy pose validation](../../docs/validation/PLAYER_PROXY_POSE.md).
 
 Default plugin: build/windows/CoopPlugin/Release/CP2077Coop.dll. Matching files are in this directory only. Generate role-specific, non-installed packages with `./scripts/package-session.ps1 -Server <IPv4> -Session <name> [-AccessKeyFile <path>]`; it creates HOST/JOINER profiles, matched scripts, Debian config/key and hashes under ignored artifacts/. Rates default to 60 Hz; interpolation is sampled on every CET update. No save or installation writes occur.
 
 The native frame is coherent from BeginFrame until the next BeginFrame. SetActive(false) invalidates it; workers own SessionClient and never access REDengine. SessionEntityId/engine EntityID remain exact 64-bit values. Game-thread EntityRegistry holds Player/NPC/Vehicle/World projections and rejects foreign epochs, authorities and duplicate local bindings. Player IDs currently correspond to server-registered player EntityIds. NPC adoption/state/release use the bounded SessionBridge NPC interface and protocol v3. Other world-action contracts remain Unsupported; no combat or stimuli are enabled.
 
-Judy is a temporary non-persistent player proxy, not an NPC simulation implementation. Spawned proxies use unique PlayerId tags and are removed on interest loss/disconnect. JOINER teleports once to its received HOST baseline. The engine transform setter consumes interpolated samples each render frame; it does not apply raw packets. Native registration/CET names are checked by CTest; this does not compile REDscript or certify actual engine behavior.
+Judy is a temporary non-persistent player proxy, not an NPC simulation implementation. Spawned proxies use unique PlayerId tags and are removed on interest loss/disconnect. JOINER teleports once to its received HOST baseline. `player_pose.lua` samples the interpolated target every frame and applies it through one owned `AITeleportCommand` on the exactly bound player proxy. It coalesces newer targets while the engine command is pending, observes real placement, and bounds retries. This replaces the observed silent `TeleportationFacility` NPC no-op. It is an experimental placement correction, not validated smooth locomotion or animation synchronization. Native registration/CET names are checked by CTest; these tests alone do not certify actual engine behavior.
 
 ## Missing hooks/routes for Shared World Reaction MVP
 - VPS entity allocation/adoption acknowledgement for NPC/Vehicle/World, snapshot descriptors/archetypes, stable IDs across local streaming and explicit session epoch reset. Never derive identity from coordinates or invent it from a nearest-NPC query.
