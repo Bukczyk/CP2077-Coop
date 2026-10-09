@@ -13,7 +13,7 @@ local function uint64(offset)
     end})
 end
 
-local function fixture(role, experimental, motor, passive)
+local function fixture(role, experimental, motor, passive, markers)
     local state = {
         attached=true, pregame=false, hasPlayer=true, hash=uint64(1),
         activations={}, bindings={}, logs={}, observations=0, cleared=0,
@@ -36,7 +36,8 @@ local function fixture(role, experimental, motor, passive)
     end}
     package.loaded.config = nil
     if experimental ~= nil then package.loaded.config={experimentalNpcReplication=experimental,
-        experimentalPlayerMovement=motor == true,experimentalPassivePlayers=passive == true} end
+        experimentalPlayerMovement=motor == true,experimentalPassivePlayers=passive == true,
+        experimentalPlayerMarkers=markers==true,showSessionUI=true} end
     print = function(message) state.logs[#state.logs+1] = tostring(message) end
     registerForEvent = function(name, callback)
         assert(events[name] == nil, "duplicate lifecycle registration")
@@ -53,7 +54,7 @@ local function fixture(role, experimental, motor, passive)
     assert(#state.activations == 0)
 
     local system = {}
-    function system:IsReady() return true end
+    function system:IsReady() return not state.dynamicUnavailable end
     function system:DeleteTagged() error("player cleanup must not delete by tag") end
     local function key(id) return tostring(id.hash) end
     local function entry(id) return state.world[key(id)] end
@@ -84,6 +85,15 @@ local function fixture(role, experimental, motor, passive)
     function system:IsTagged() return false end
     function system:CreateEntity() state.npcSpawns=state.npcSpawns+1; error("unexpected NPC creation") end
     local player = {}
+    state.markers={}
+    function player:CP2077Session_ClearPlayerMarkers() state.markers={}; return true end
+    function player:CP2077Session_SetPlayerMarker(id,x,y,z,yaw)
+        state.markers[id]={x=x,y=y,z=z,yaw=yaw}; return true
+    end
+    function player:CP2077Session_RemovePlayerMarker(id)
+        if state.markerCleanupFails then return false end
+        state.markers[id]=nil; return true
+    end
     function player:IsAttached() return state.attached end
     function player:GetEntityID() return {hash=state.hash} end
     function player:GetWorldPosition() return {x=1,y=2,z=3} end
@@ -183,6 +193,8 @@ local function fixture(role, experimental, motor, passive)
     end
     state.reconnect=hotkeys.cp2077_session_reconnect
     state.shutdown=events.onShutdown
+    state.draw=events.onDraw
+    state.overlayOpen=events.onOverlayOpen
     return state
 end
 
@@ -426,6 +438,29 @@ assert(#s.deleted==1 and next(s.bridge.playerRetirementDiagnostics())==nil,
     "throwing passive cleanup does not block dynamic retirement pumping")
 passiveResetThrows=false; s.shutdown(); package.loaded.player_passive=nil
 package.loaded.player_motor=nil
+-- Map input does not wait for the avatar's dynamic entity system. A temporarily
+-- unavailable cleanup is retried while the save remains unloaded.
+s=fixture("HOST",false,false,false,true)
+s.dynamicUnavailable=true; s.remotes={{id=2,entity=uint64(1),x=10},{id=3,entity=uint64(2),x=20}}
+s.init(); s.tick(2)
+assert(s.markers[2].x==10 and s.markers[3].x==20 and s.playerSpawns==0)
+s.remotes={{id=3,entity=uint64(2),x=25}}; s.tick(12)
+assert(not s.markers[2] and s.markers[3].x==25)
+s.markerCleanupFails=true; s.hasPlayer=false; s.tick()
+assert(s.bridge.markerDiagnostics()["3"].retiring and s.markers[3])
+s.markerCleanupFails=false; s.tick(90)
+assert(not s.markers[3] and next(s.bridge.markerDiagnostics())==nil)
+s.shutdown()
+s=fixture("HOST",false,false,false,false)
+s.phase=1; s.markers[77]={x=123}; s.init(); s.tick()
+assert(next(s.markers)==nil,"disabled/disconnected reload clears retained owned pins")
+s.shutdown()
+s=fixture("HOST",false,false,false,false); s.init(); s.tick()
+ImGui={Begin=function() return true end,Text=function() end,End=function() end,Button=function() return true end}
+s.overlayOpen(); local activations=#s.activations; s.draw(); s.draw()
+assert(#s.activations==activations,"UI draw must not run engine/session cleanup")
+s.tick(); assert(#s.activations==activations+2,"queued UI reconnect runs once on update")
+ImGui=nil; s.shutdown()
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

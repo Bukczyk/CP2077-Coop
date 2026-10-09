@@ -5,7 +5,13 @@ local PlayerLifetime = assert(require("player_lifetime"), "player_lifetime modul
 local population = require("npc_population")
 local config = require("config")
 local PlayerMotor = require("player_motor")
+local sessionUI = require("session_ui").new()
+local overlayOpen = false
+local reconnect, reconnectRequested
 local usePlayerMotor = config.experimentalPlayerMovement == true
+local markers = require("player_markers").new(function(status)
+    print("[CP2077Session] PLAYER_MARKER " .. status)
+end)
 local passivePlayers = nil
 if config.experimentalPassivePlayers == true then
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
@@ -126,6 +132,7 @@ local function retainDynamicRetirement()
 end
 local function clear()
     retainDynamicRetirement()
+    if markers then markers:reset(time) end
     local errors = {}
     if passivePlayers then
         local ok, reason = pcall(function() passivePlayers:reset() end)
@@ -150,6 +157,7 @@ local function stop()
 end
 local function update(delta)
     time = time + delta
+    if markers then markers:drain(time) end
     -- Continue observing asynchronous retirement even while no save is loaded.
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
@@ -159,11 +167,13 @@ local function update(delta)
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
+        sessionUI:update({loaded=false})
         if active then stop() end
         return
     end
     -- CET returns a fresh EntityID wrapper. Compare its exact Uint64 value,
     -- not the wrapper's address, and never round it through a Lua number.
+    markers:recover(player,time) -- also clean our retained handles when disabled/disconnected
     local currentEntity = tostring(player:GetEntityID().hash)
     if active and currentEntity ~= localEntity then stop() end
     if not active then
@@ -175,6 +185,8 @@ local function update(delta)
     local angles = player:GetWorldOrientation():ToEulerAngles()
     Game.CP2077Session_PushLocal(position.x, position.y, position.z, math.rad(angles.yaw))
     local count = Game.CP2077Session_BeginFrame()
+    sessionUI:update({loaded=true,phase=Game.CP2077Session_Phase(),session=Game.CP2077Session_Session(),
+        player=Game.CP2077Session_Self(),host=Game.CP2077Session_Host(),remotes=count})
     local nextGeneration = tostring(Game.CP2077Session_Generation()) .. ":" .. tostring(Game.CP2077Session_Session()) .. ":" .. tostring(Game.CP2077Session_Epoch())
     if generation ~= nextGeneration then
         clear(); generation = nextGeneration
@@ -184,6 +196,17 @@ local function update(delta)
     if Game.CP2077Session_Phase() ~= 4 then clear(); return end
     if not Game.CP2077Session_Bind(Game.CP2077Session_SelfEntity(), player:GetEntityID()) then
         error("Local player projection binding rejected")
+    end
+    -- Same coherent native frame, independent of actor creation/readback.
+    if config.experimentalPlayerMarkers == true then
+        local frame = {}
+        for index = 0, count - 1 do
+            if Game.CP2077Session_Select(index) and Game.CP2077Session_Player() ~= Game.CP2077Session_Self() then
+                frame[#frame+1] = {player=Game.CP2077Session_Player(),entity=Game.CP2077Session_Entity(),
+                    x=Game.CP2077Session_X(),y=Game.CP2077Session_Y(),z=Game.CP2077Session_Z(),yaw=Game.CP2077Session_Yaw()}
+            end
+        end
+        markers:step(generation, player, frame, time)
     end
     local system = Game.GetDynamicEntitySystem()
     local dynamicReady = system ~= nil and system:IsReady()
@@ -352,10 +375,13 @@ registerForEvent("onInit", function()
 end)
 registerForEvent("onUpdate", function(delta)
     if not initialized then return end
+    if reconnectRequested then reconnectRequested=false; reconnect() end
     if failed then
+        sessionUI:update({loaded=Game.GetPlayer()~=nil,error=true})
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
         time = time + delta
+        if markers then pcall(function() markers:reset(time) end) end
         pcall(function()
             local requests = Game.GetSystemRequestsHandler()
             pumpRetirement(requests ~= nil and requests:IsGamePaused())
@@ -365,6 +391,7 @@ registerForEvent("onUpdate", function(delta)
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
+        sessionUI:update({loaded=true,error=true})
         local stopped, cleanupReason = pcall(stop)
         print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
             .. (stopped and "" or "; cleanup: " .. tostring(cleanupReason)))
@@ -388,15 +415,28 @@ registerForEvent("onShutdown", function()
         end
     end
 end)
-registerHotkey("cp2077_session_reconnect", "Reconnect coop session", function()
+reconnect = function()
     if not initialized then return end
+    sessionUI:reconnect()
     local ok, reason = pcall(stop)
     failed = not ok
     if not ok then print("[CP2077Session] BRIDGE_ERROR reconnect: " .. tostring(reason)) end
+end
+registerHotkey("cp2077_session_reconnect", "Reconnect coop session", reconnect)
+registerForEvent("onOverlayOpen", function() overlayOpen=true end)
+registerForEvent("onOverlayClose", function() overlayOpen=false end)
+registerForEvent("onDraw", function()
+    if not initialized or not overlayOpen or config.showSessionUI~=true then return end
+    sessionUI:draw(ImGui,function()
+        -- Draw only requests the action. Engine cleanup stays on onUpdate.
+        reconnectRequested=true
+        sessionUI:reconnect()
+    end)
 end)
 
 -- Value-only diagnostics for local test tooling. No engine handles or setters.
-return { playerRetirementDiagnostics = function()
+return { markerDiagnostics = function() return markers and markers:diagnostics() or {} end,
+playerRetirementDiagnostics = function()
     local result = {}
     for key, entry in pairs(retiring) do
         result[key] = {status=entry.life.status, blocked=entry.life.blocked,
