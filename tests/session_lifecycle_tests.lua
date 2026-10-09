@@ -19,6 +19,7 @@ local function fixture(role, experimental, motor)
         activations={}, bindings={}, logs={}, observations=0, cleared=0,
         npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false,
         remotes={}, bodies={}, unbindings={}, frameGeneration=1,
+        playerSpawns=0, teleports=0,
     }
     local events, hotkeys = {}, {}
     Game, Observe, CName = nil, nil, nil
@@ -53,12 +54,17 @@ local function fixture(role, experimental, motor)
     function player:GetWorldOrientation()
         return {ToEulerAngles=function() return {yaw=30} end}
     end
+    function player:CP2077Session_SpawnProxy() state.playerSpawns=state.playerSpawns+1 end
     local native = {
         GetPlayer=function() if state.hasPlayer then return player end end,
         GetSystemRequestsHandler=function()
-            return {IsPreGame=function() return state.pregame end}
+            return {IsPreGame=function() return state.pregame end,
+                IsGamePaused=function() return state.paused == true end}
         end,
         GetDynamicEntitySystem=function() return system end,
+        GetTeleportationFacility=function()
+            return {Teleport=function() state.teleports=state.teleports+1 end}
+        end,
         CP2077Session_SetActive=function(value)
             state.activations[#state.activations+1]=value
         end,
@@ -190,6 +196,36 @@ s.tick()
 assert(#made==4 and made[4]==second,"new generation creates a fresh motor")
 s.shutdown()
 package.loaded.player_motor=nil
+-- The actual entrypoint keeps session snapshots/bindings alive while paused,
+-- but informs the pose owner that world AI cannot execute its commands.
+local pauseFlags={}
+package.loaded.player_pose={new=function()
+    return {reset=function() end, step=function(_,_,_,_,paused)
+        pauseFlags[#pauseFlags+1]=paused
+    end}
+end}
+s=fixture("HOST",false,false)
+s.remotes={{id=2,entity=uint64(1),x=10}}
+s.bodies["CP2077Session.Projection.2"]=first
+s.init(); s.tick()
+s.paused=true; s.tick(240)
+assert(pauseFlags[1]==false and pauseFlags[#pauseFlags]==true,
+    "entrypoint forwards observed engine pause to the pose owner")
+assert(s.pushes==241 and #s.activations==1,
+    "pause must not disconnect or stop the native snapshot path")
+s.paused=false; s.tick()
+assert(pauseFlags[#pauseFlags]==false,"resume reaches the pose owner")
+s.shutdown()
+package.loaded.player_pose=nil
+-- JOINER admission while paused defers its initial game-side teleport/spawn.
+Vector4={new=function() return {} end}; EulerAngles={new=function() return {} end}
+s=fixture("JOINER",false,false)
+s.remotes={{id=1,entity=uint64(1),x=10}}
+s.paused=true; s.init(); s.tick(240)
+assert(s.playerSpawns==0 and s.teleports==0,"pause defers new actors and initial alignment")
+s.paused=false; s.tick()
+assert(s.playerSpawns==1 and s.teleports==1,"resume starts deferred game-side admission")
+s.shutdown()
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

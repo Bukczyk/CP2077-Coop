@@ -8,12 +8,26 @@ local function report(event, data)
     data = data or {}; data.event = event
     print("POSE_FIXTURE " .. json.encode(data))
 end
+-- Observation only. CET updates may continue while the engine world is paused;
+-- do not infer pause from focus, an open overlay, or a stalled transform.
+local function observePause()
+    local ok, paused = pcall(function()
+        local requests = Game.GetSystemRequestsHandler()
+        if requests == nil then return nil end
+        return requests:IsGamePaused()
+    end)
+    if not ok then return {status="error"} end
+    if type(paused) ~= "boolean" then return {status="unavailable"} end
+    return {status="observed",paused=paused}
+end
 local function stop(reason)
     if not run then return end
+    local diagnosis = run.pose:diagnostics()
     run.pose:reset()
     retiring={id=run.id,age=0,nextSample=0}
     Game.GetDynamicEntitySystem():DeleteTagged(CName.new(tag))
-    report("stop", {reason=reason, samples=run.samples, fault=run.fault})
+    report("stop", {reason=reason, samples=run.samples, fault=run.fault,
+        pause=observePause(),pose=diagnosis})
     run = nil
 end
 registerForEvent("onUpdate", function(dt)
@@ -46,6 +60,7 @@ registerForEvent("onUpdate", function(dt)
     end
     if not run then return end
     local ok, err = pcall(function()
+        run.lastPause = observePause()
         elapsed = elapsed + dt
         if elapsed > 32 then stop("duration_limit"); return end
         local actors = Game.GetDynamicEntitySystem():GetTagged(CName.new(tag))
@@ -61,19 +76,20 @@ registerForEvent("onUpdate", function(dt)
         if phase >= 3 then x = run.x + 1 + travel*run.speed end
         local target={x=x,y=run.y,z=run.z,
             yaw=run.yaw+(phase>=2 and math.pi/2 or 0)+travel*run.turnRate}
-        local result = run.pose:step(actor,target,elapsed)
+        local result = run.pose:step(actor,target,elapsed,run.lastPause.paused == true)
         run.fault = run.pose.fault
         if elapsed >= run.nextSample then
             run.nextSample=elapsed+0.1; run.samples=run.samples+1
             local q=actor:GetWorldPosition()
             local c=run.pose.command
             report("sample", {t=elapsed,phase=phase,result=result,fault=run.fault,
+                dt=dt,pause=run.lastPause,pose=run.pose:diagnostics(),
                 actor=tostring(actor:GetEntityID().hash),target=target,
                 actual={x=q.x,y=q.y,z=q.z,yaw=actor:GetWorldOrientation():ToEulerAngles().yaw},
                 commandState=c and actor:CP2077Session_PoseState(c),sent=run.pose.sent})
         end
     end)
-    if not ok then report("error",{message=tostring(err)}); stop("error") end
+    if not ok then report("error",{message=tostring(err),pause=run.lastPause}); stop("error") end
 end)
 registerForEvent("onShutdown", function() stop("shutdown") end)
 return {
@@ -101,7 +117,10 @@ return {
         local id=system:CreateEntity(spec)
         elapsed=0
         run={id=id,x=p.x+3,y=p.y,z=p.z,yaw=math.rad(yaw)+initialTurn,speed=speed,turnRate=turnRate,samples=0,nextSample=0,
-            pose=Pose.new(function(message) report("controller",{message=message}) end)}
+            pose=Pose.new(function(message)
+                report("controller",{message=message,pause=run and run.lastPause,
+                    pose=run and run.pose:diagnostics()})
+            end)}
         report("start",{actor=tostring(id.hash),method="local scripted target; not network or walking input",speed=speed,turnRate=turnRate,initialTurn=initialTurn})
         return true
     end,

@@ -36,6 +36,7 @@ function Pose:reset()
     self.everSubmitted = false
     self.lastReadback, self.lastFailure = nil, nil
     self.submissions = 0
+    self.pausedAt, self.submittedAt, self.deadline = nil, nil, nil
 end
 -- Return detached values, never the owned engine command or a mutable target.
 function Pose:diagnostics()
@@ -62,20 +63,40 @@ function Pose:fail(reason, now)
         self.log("fault=" .. reason .. " until_actor_or_session_reset")
     end
 end
-function Pose:step(actor, target, now)
+function Pose:step(actor, target, now, paused)
     if actor == nil then return "missing" end
     local key = tostring(actor:GetEntityID().hash) -- keep Uint64 exact
     if self.key ~= key then
         self:reset()
-        self.key, self.actor, self.firstSeen = key, actor, now
+        self.key, self.actor = key, actor
     end
     if self.fault then return "fault" end
+    -- CET can keep ticking while world AI is paused. Keep the admitted command
+    -- owned, but do not spend its deadline or the actor's initialization grace.
+    -- Validate the clock before storing pause timestamps or shifting timers.
+    if not finite(now) then
+        if paused ~= true then self:release() end
+        self.fault=self.fault or "invalid_pose"; self.log("fault="..self.fault); return "fault"
+    end
+    self.firstSeen = self.firstSeen or now
+    if paused == true then
+        self.pausedAt = self.pausedAt or now
+        return "paused"
+    end
+    if self.pausedAt ~= nil then
+        local duration = math.max(0, now-self.pausedAt)
+        self.firstSeen = self.firstSeen + duration
+        self.nextSend = self.nextSend + duration
+        if self.submittedAt ~= nil then self.submittedAt = self.submittedAt + duration end
+        if self.deadline ~= nil then self.deadline = self.deadline + duration end
+        self.pausedAt = nil
+    end
     if not actor:IsAttached() or not actor:CP2077Session_PoseReady() then
         if not self:release() then return "fault" end
         if now-self.firstSeen >= 3 then self.fault="attachment_timeout"; self.log("fault="..self.fault) end
         return "waiting_attachment"
     end
-    if not (finite(now) and finite(target.x) and finite(target.y) and finite(target.z) and finite(target.yaw)) then
+    if not (finite(target.x) and finite(target.y) and finite(target.z) and finite(target.yaw)) then
         self:release(); self.fault="invalid_pose"; self.log("fault="..self.fault); return "fault"
     end
     local actual = actor:GetWorldPosition()

@@ -54,6 +54,7 @@ local function update(delta)
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
     local requests = Game.GetSystemRequestsHandler()
+    local paused = requests ~= nil and requests:IsGamePaused()
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
@@ -104,7 +105,7 @@ local function update(delta)
             local yaw = Game.CP2077Session_Yaw()
             seen[id] = true
             bubble.centers[#bubble.centers+1] = {x=x,y=y,z=z}
-            if not joined and Game.CP2077Session_Self() ~= Game.CP2077Session_Host() and id == Game.CP2077Session_Host() then
+            if not paused and not joined and Game.CP2077Session_Self() ~= Game.CP2077Session_Host() and id == Game.CP2077Session_Host() then
                 Game.GetTeleportationFacility():Teleport(player, Vector4.new(x + 1.75, y, z, 1), EulerAngles.new(0, 0, math.deg(yaw)))
                 -- Update the coherent local snapshot immediately after the baseline teleport.
                 Game.CP2077Session_PushLocal(x + 1.75, y, z, yaw)
@@ -134,7 +135,7 @@ local function update(delta)
             local entities = system:GetTagged(entry.tag)
             local proxy = entities[1]
             if proxy == nil then
-                if time >= entry.nextSpawn then
+                if not paused and time >= entry.nextSpawn then
                     player:CP2077Session_SpawnProxy(entry.tag, x, y, z)
                     entry.nextSpawn = time + 1
                 end
@@ -154,9 +155,9 @@ local function update(delta)
                 -- Keep sampling interpolation while one owned engine command is
                 -- pending. Only actual transform readback confirms placement.
                 if entry.motor then
-                    entry.motor:step({x=x,y=y,z=z,yaw=yaw}, delta)
+                    if not paused then entry.motor:step({x=x,y=y,z=z,yaw=yaw}, delta) end
                 else
-                    entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time)
+                    entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time, paused)
                 end
             end
             end -- selected player representation

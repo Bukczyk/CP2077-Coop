@@ -101,6 +101,86 @@ p:reset(); check(replacement.stops==1,"reset cancels own pending command")
 a,p=actor(),Pose.new(); p:step(a,{x=0/0,y=0,z=1,yaw=0},0)
 check(p.fault=="invalid_pose" and #a.commands==0,"nonfinite target fails closed")
 
+-- A live pause kept CET ticking while AI commands did not execute. Paused
+-- ticks must not consume attempts, cancel ownership or age engine deadlines.
+a,p=actor(),Pose.new(); p:step(a,target,0)
+local pending=a.commands[1]
+check(p:step(a,latest,0.4,true)=="paused","pending command suspends during world pause")
+for _,now in ipairs({1.5,4,10}) do p:step(a,latest,now,true) end
+check(p.command==pending and #a.commands==1 and a.stops==0 and p.failures==0,
+    "long pause preserves one admitted command without retries or cancellation")
+check(p:step(a,latest,10.4,false)=="pending" and p.fault==nil,
+    "resume retains remaining active deadline")
+check(math.abs(p:diagnostics().readback.age-0.4)<0.0001,
+    "readback age excludes time spent paused")
+a:complete(pending); p:step(a,latest,10.5,false)
+check(#a.commands==2 and a.commands[2].x==latest.x and a.stops==1,
+    "resumed completion follows newest target with one replacement command")
+a:complete(a.commands[2]); check(p:step(a,latest,10.6,false)=="observed",
+    "resumed latest pose completes normally")
+
+a,p=actor(),Pose.new(); p:step(a,target,0)
+p:step(a,target,0.4,true); p:step(a,target,10.4,false); p:step(a,target,11.01,false)
+check(p.failures==1 and a.stops==1,
+    "resume preserves the remaining deadline instead of granting a fresh one")
+
+a,p=actor(),Pose.new(); a.accept=false; p:step(a,target,0)
+p:step(a,target,0.05,true); a.accept=true
+check(p:step(a,target,10.05,false)=="cooldown" and #a.commands==0,
+    "pause retains the unsent command's remaining retry cooldown")
+check(p:step(a,target,10.11,false)=="pending","retry cooldown ends after active time")
+p:step(a,target,10.3,true); p:step(a,target,20.3,false)
+p:step(a,target,20.5,true); p:step(a,target,30.5,false)
+check(p.failures==0 and #a.commands==1
+    and math.abs(p:diagnostics().readback.age-0.39)<0.0001,
+    "repeated pauses exclude each interval once without resetting active age")
+
+a,p=actor(),Pose.new()
+check(p:step(a,target,0,true)=="paused" and p:step(a,target,12,true)=="paused",
+    "idle paused actor is observed without submission")
+check(#a.commands==0 and a.stops==0 and p.failures==0,
+    "idle pause performs no engine command work")
+check(p:step(a,target,12.1,false)=="pending" and #a.commands==1,
+    "idle actor submits once after resume")
+
+for _,unavailable in ipairs({"controller","origin","submission"}) do
+    a,p=actor(),Pose.new()
+    if unavailable=="controller" then a.ready=false
+    elseif unavailable=="origin" then a.position={x=0,y=0,z=0}
+    else a.accept=false end
+    p:step(a,target,0); p:step(a,target,0.4,true); p:step(a,target,10,true)
+    p:step(a,target,10.4,false)
+    check(p.fault==nil and #a.commands==0,unavailable.." grace excludes paused time")
+    a.ready=true; a.accept=true; a.position={x=1,y=2,z=3}
+    check(p:step(a,target,10.6,false)=="pending",unavailable.." resumes initialization normally")
+end
+
+-- Reset/replacement ends pause accounting with the old actor lifetime.
+a,p=actor(),Pose.new(); p:step(a,target,0); p:step(a,target,0.4,true)
+p:reset(); p:step(a,target,10,false); p:step(a,target,11.01,false)
+check(p.failures==1 and #a.commands==2,"reset does not carry old paused duration")
+a,p=actor(),Pose.new(); p:step(a,target,0); p:step(a,target,0.4,true)
+replacement=actor("9007199254740994ULL")
+p:step(replacement,target,10,true)
+check(a.stops==1 and #replacement.commands==0,
+    "replacement retires only old actor and does not submit on paused new actor")
+p:step(replacement,target,20,false); p:step(replacement,target,21.01,false)
+check(p.failures==1 and #replacement.commands==1,
+    "replacement counts pause only within its own lifetime")
+
+a,p=actor(),Pose.new()
+for _,now in ipairs({0,1.01,1.2,2.21,2.4,3.41}) do p:step(a,target,now) end
+local priorFailure=p:diagnostics().failure
+check(p:step(a,target,4,true)=="fault" and p:step(a,target,20,false)=="fault"
+    and p.fault=="readback_timeout" and #a.commands==3
+    and p:diagnostics().failure.at==priorFailure.at,
+    "pause never clears a genuine pre-existing fault")
+
+a,p=actor(),Pose.new(); p:step(a,target,0)
+check(p:step(a,target,0/0,true)=="fault" and p.pausedAt==nil
+    and p.fault=="invalid_pose" and a.stops==0,
+    "invalid clock never becomes a pause timestamp or cancels while paused")
+
 -- Run the real entrypoint: a silent TeleportationFacility NPC no-op must not
 -- freeze the remote actor again. Interpolation changes while a command is pending.
 local callbacks,hotkeys,logs={},{},{}

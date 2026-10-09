@@ -40,3 +40,11 @@ target yaw is radians. Preserve raw records, including initial origin placement
 and failed trials. Report moving-phase errors separately from spawn transients.
 Scheduling success is not observed movement, and scripted translation is not
 walking input or animation validation.
+
+For pause verification, start a trial, close CET, open the normal Escape menu,
+then resume before the 32-second trial ends. Samples record observed engine pause
+state, CET delta and detached controller diagnostics. The controller suspends
+deadlines and submissions during pause; the fixture's target path and duration
+still use elapsed CET time. A successful resume proves recovery to the latest
+target, not continuous-motion latency. Missing/erroring pause probes are recorded
+explicitly. Do not infer pause from focus alone.
