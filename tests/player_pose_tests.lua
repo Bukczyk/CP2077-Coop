@@ -62,7 +62,27 @@ check(p.fault=="placement_timeout" and #a.commands==0,"placement failure is boun
 a,p=actor(),Pose.new()
 for _, now in ipairs({0,1.01,1.2,2.21,2.4,3.41,9}) do p:step(a,target,now) end
 check(#a.commands==3 and p.fault=="readback_timeout","no indefinite teleport flood")
+local diagnosis=p:diagnostics()
+check(diagnosis.submissions==3 and diagnosis.failures==3,"diagnostics count bounded attempts")
+check(diagnosis.failure.reason=="readback_timeout" and diagnosis.failure.state==1,
+    "failure preserves queued state before cancellation changes it")
+check(diagnosis.failure.positionError>30 and diagnosis.failure.yawError==90,
+    "failure separates translation from rotation error")
+diagnosis.failure.state=999
+check(p:diagnostics().failure.state==1,"diagnostics cannot mutate retained failure")
 p:reset(); check(p:step(a,target,10)=="pending","explicit lifecycle reset permits a new diagnostic")
+check(p:diagnostics().failure==nil and p:diagnostics().submissions==1,
+    "new actor lifetime does not inherit old evidence")
+
+-- A moving latest target must not contaminate the admitted-pose comparison.
+a,p=actor(),Pose.new(); p:step(a,target,0)
+a.position={x=target.x,y=target.y,z=target.z}; a.yaw=0
+p:step(a,latest,0.5)
+diagnosis=p:diagnostics()
+check(diagnosis.readback.positionError==0 and diagnosis.readback.yawError==90,
+    "identify rotation-only failure against admitted target")
+check(diagnosis.readback.sentX==10 and diagnosis.readback.age==0.5,
+    "keep admitted coordinates and command age")
 a,p=actor(),Pose.new(); a.accept=false
 for _, now in ipairs({0,1,2}) do p:step(a,target,now) end
 check(p.fault==nil,"initial submission rejection allows bounded AI initialization")
@@ -81,6 +101,86 @@ p:reset(); check(replacement.stops==1,"reset cancels own pending command")
 a,p=actor(),Pose.new(); p:step(a,{x=0/0,y=0,z=1,yaw=0},0)
 check(p.fault=="invalid_pose" and #a.commands==0,"nonfinite target fails closed")
 
+-- A live pause kept CET ticking while AI commands did not execute. Paused
+-- ticks must not consume attempts, cancel ownership or age engine deadlines.
+a,p=actor(),Pose.new(); p:step(a,target,0)
+local pending=a.commands[1]
+check(p:step(a,latest,0.4,true)=="paused","pending command suspends during world pause")
+for _,now in ipairs({1.5,4,10}) do p:step(a,latest,now,true) end
+check(p.command==pending and #a.commands==1 and a.stops==0 and p.failures==0,
+    "long pause preserves one admitted command without retries or cancellation")
+check(p:step(a,latest,10.4,false)=="pending" and p.fault==nil,
+    "resume retains remaining active deadline")
+check(math.abs(p:diagnostics().readback.age-0.4)<0.0001,
+    "readback age excludes time spent paused")
+a:complete(pending); p:step(a,latest,10.5,false)
+check(#a.commands==2 and a.commands[2].x==latest.x and a.stops==1,
+    "resumed completion follows newest target with one replacement command")
+a:complete(a.commands[2]); check(p:step(a,latest,10.6,false)=="observed",
+    "resumed latest pose completes normally")
+
+a,p=actor(),Pose.new(); p:step(a,target,0)
+p:step(a,target,0.4,true); p:step(a,target,10.4,false); p:step(a,target,11.01,false)
+check(p.failures==1 and a.stops==1,
+    "resume preserves the remaining deadline instead of granting a fresh one")
+
+a,p=actor(),Pose.new(); a.accept=false; p:step(a,target,0)
+p:step(a,target,0.05,true); a.accept=true
+check(p:step(a,target,10.05,false)=="cooldown" and #a.commands==0,
+    "pause retains the unsent command's remaining retry cooldown")
+check(p:step(a,target,10.11,false)=="pending","retry cooldown ends after active time")
+p:step(a,target,10.3,true); p:step(a,target,20.3,false)
+p:step(a,target,20.5,true); p:step(a,target,30.5,false)
+check(p.failures==0 and #a.commands==1
+    and math.abs(p:diagnostics().readback.age-0.39)<0.0001,
+    "repeated pauses exclude each interval once without resetting active age")
+
+a,p=actor(),Pose.new()
+check(p:step(a,target,0,true)=="paused" and p:step(a,target,12,true)=="paused",
+    "idle paused actor is observed without submission")
+check(#a.commands==0 and a.stops==0 and p.failures==0,
+    "idle pause performs no engine command work")
+check(p:step(a,target,12.1,false)=="pending" and #a.commands==1,
+    "idle actor submits once after resume")
+
+for _,unavailable in ipairs({"controller","origin","submission"}) do
+    a,p=actor(),Pose.new()
+    if unavailable=="controller" then a.ready=false
+    elseif unavailable=="origin" then a.position={x=0,y=0,z=0}
+    else a.accept=false end
+    p:step(a,target,0); p:step(a,target,0.4,true); p:step(a,target,10,true)
+    p:step(a,target,10.4,false)
+    check(p.fault==nil and #a.commands==0,unavailable.." grace excludes paused time")
+    a.ready=true; a.accept=true; a.position={x=1,y=2,z=3}
+    check(p:step(a,target,10.6,false)=="pending",unavailable.." resumes initialization normally")
+end
+
+-- Reset/replacement ends pause accounting with the old actor lifetime.
+a,p=actor(),Pose.new(); p:step(a,target,0); p:step(a,target,0.4,true)
+p:reset(); p:step(a,target,10,false); p:step(a,target,11.01,false)
+check(p.failures==1 and #a.commands==2,"reset does not carry old paused duration")
+a,p=actor(),Pose.new(); p:step(a,target,0); p:step(a,target,0.4,true)
+replacement=actor("9007199254740994ULL")
+p:step(replacement,target,10,true)
+check(a.stops==1 and #replacement.commands==0,
+    "replacement retires only old actor and does not submit on paused new actor")
+p:step(replacement,target,20,false); p:step(replacement,target,21.01,false)
+check(p.failures==1 and #replacement.commands==1,
+    "replacement counts pause only within its own lifetime")
+
+a,p=actor(),Pose.new()
+for _,now in ipairs({0,1.01,1.2,2.21,2.4,3.41}) do p:step(a,target,now) end
+local priorFailure=p:diagnostics().failure
+check(p:step(a,target,4,true)=="fault" and p:step(a,target,20,false)=="fault"
+    and p.fault=="readback_timeout" and #a.commands==3
+    and p:diagnostics().failure.at==priorFailure.at,
+    "pause never clears a genuine pre-existing fault")
+
+a,p=actor(),Pose.new(); p:step(a,target,0)
+check(p:step(a,target,0/0,true)=="fault" and p.pausedAt==nil
+    and p.fault=="invalid_pose" and a.stops==0,
+    "invalid clock never becomes a pause timestamp or cancels while paused")
+
 -- Run the real entrypoint: a silent TeleportationFacility NPC no-op must not
 -- freeze the remote actor again. Interpolation changes while a command is pending.
 local callbacks,hotkeys,logs={},{},{}
@@ -94,21 +194,45 @@ package.loaded.config={experimentalNpcReplication=false}
 a=actor(); local localPlayer=actor("101ULL")
 local remoteVisible,frameGeneration,wireEntity,desiredX=true,1,"2ULL",10
 local deleted,calls=0,0
+local unbound = {}
+local world,mapped={},{}
 local system={}
 function system:IsReady() return true end
-function system:GetTagged() return remoteVisible and {a} or {} end
-function system:DeleteTagged() deleted=deleted+1 end
+function system:GetTaggedIDs() return {} end
+function system:GetTagged() return {} end
+function system:DeleteTagged() error("cleanup must own exact entity IDs") end
+local function entity(id) return world[tostring(id.hash)] end
+function system:IsManaged(id) local e=entity(id); return e~=nil and e.live end
+function system:IsSpawning() return false end
+function system:IsSpawned(id) local e=entity(id); return e~=nil and e.live end
+function system:GetEntity(id) local e=entity(id); return e and e.live and e.actor or nil end
+function system:DeleteEntity(id) local e=assert(entity(id)); e.live=false; deleted=deleted+1; return true end
+local nextActor=900
+function localPlayer:CP2077Session_SpawnProxy()
+    nextActor=nextActor+1; a=actor(tostring(nextActor).."ULL")
+    local e={actor=a,live=true}; world[tostring(a:GetEntityID().hash)]=e
+    a.IsAttached=function() return e.live end
+    return a:GetEntityID()
+end
 Game={
     GetPlayer=function() return localPlayer end,
     GetSystemRequestsHandler=function() return nil end,
     GetDynamicEntitySystem=function() return system end,
+    FindEntityByID=function(id) return system:GetEntity(id) end,
     GetTeleportationFacility=function() return {Teleport=function() calls=calls+1 end} end,
     CP2077Session_ExperimentalStaticNpcProjection=function() return false end,
     CP2077Session_SetActive=function() end, CP2077Session_PushLocal=function() end,
     CP2077Session_BeginFrame=function() return remoteVisible and 1 or 0 end,
     CP2077Session_Generation=function() return frameGeneration end,
     CP2077Session_Session=function() return "10ULL" end, CP2077Session_Epoch=function() return 1 end,
-    CP2077Session_Phase=function() return 4 end, CP2077Session_Bind=function() return true end,
+    CP2077Session_Phase=function() return 4 end,
+    CP2077Session_Bind=function(session,id) mapped[tostring(id.hash)]=session; return true end,
+    CP2077Session_Resolve=function(id) return mapped[tostring(id.hash)] or "0ULL" end,
+    CP2077Session_Unbind=function(id)
+        unbound[#unbound+1]=id
+        for hash,session in pairs(mapped) do if session==id then mapped[hash]=nil end end
+        return true
+    end,
     CP2077Session_SelfEntity=function() return "1ULL" end,
     CP2077Session_BubbleRadius=function() return 100 end,
     CP2077Session_Select=function() return true end, CP2077Session_Player=function() return 2 end,
@@ -118,21 +242,55 @@ Game={
     CP2077Session_Self=function() return 1 end, CP2077Session_Host=function() return 1 end,
 }
 assert(loadfile(root.."/runtime/session/cet/CP2077Coop/init.lua"))()
-callbacks.onInit(); callbacks.onUpdate(0.01)
+callbacks.onInit(); callbacks.onUpdate(0.01); callbacks.onUpdate(0.01)
 check(#a.commands==1 and calls==0,"entrypoint uses AI actuator, not silent facility no-op")
 desiredX=13; callbacks.onUpdate(0.2)
 check(#a.commands==1,"entrypoint preserves pending command")
 a:complete(a.commands[1]); callbacks.onUpdate(0.2)
 check(#a.commands==2 and a.commands[2].x==13,"entrypoint follows latest native sample")
-remoteVisible=false; callbacks.onUpdate(0.2)
-check(a.stops==2 and deleted>=2,"interest removal retires pending handle before deletion")
-remoteVisible=true; callbacks.onUpdate(0.2)
-local before=a.stops; frameGeneration=2; callbacks.onUpdate(0.2)
-check(a.stops>before,"session generation reset retires old handle")
-before=a.stops; wireEntity="9007199254740993ULL"; callbacks.onUpdate(0.2)
-check(a.stops>before,"same PlayerId with different exact session identity retires old handle")
-before=a.stops; callbacks.onShutdown()
-check(a.stops>before,"shutdown retires owned handle")
+remoteVisible=false; callbacks.onUpdate(0.01); callbacks.onUpdate(0.01); callbacks.onUpdate(0.01)
+check(a.stops==2 and deleted==1,"interest removal retires pending handle before exact deletion")
+check(unbound[#unbound]=="2ULL", "departure unbinds the exact session entity")
+remoteVisible=true
+for _=1,30 do callbacks.onUpdate(0.01) end
+local previous=a; local before=previous.stops
+frameGeneration=2
+for _=1,30 do callbacks.onUpdate(0.01) end
+check(previous.stops>before,"session generation reset retires old handle")
+previous=a; before=previous.stops; wireEntity="9007199254740993ULL"
+for _=1,30 do callbacks.onUpdate(0.01) end
+check(previous.stops>before,"same PlayerId with different exact session identity retires old handle")
+callbacks.onShutdown()
 for _,line in ipairs(logs) do check(not line:find("BRIDGE_ERROR",1,true),line) end
+
+-- Shutdown has no subsequent game tick. Release a pending command only on its
+-- exact owner, retain its entity lifetime, and never issue early deletion.
+for _,mode in ipairs({"owned","binding_changed","identity_changed","cancel_rejected"}) do
+    callbacks,logs,world,mapped={},{},{},{}
+    remoteVisible=true
+    local bridge=assert(loadfile(root.."/runtime/session/cet/CP2077Coop/init.lua"))()
+    callbacks.onInit(); callbacks.onUpdate(0.01); callbacks.onUpdate(0.01)
+    check(#a.commands==1,mode..": fixture owns one pending pose command")
+    local beforeDeleted=deleted
+    if mode=="binding_changed" then mapped[tostring(a:GetEntityID().hash)]="999ULL"
+    elseif mode=="identity_changed" then a.GetEntityID=function() return {hash="999ULL"} end
+    elseif mode=="cancel_rejected" then a.cancel=false end
+    callbacks.onShutdown()
+    check(deleted==beforeDeleted and next(bridge.playerRetirementDiagnostics())~=nil,
+        mode..": shutdown retains the lifetime without deleting its actor")
+    if mode=="owned" then
+        check(a.stops==1 and a.commands[1].state==3,"shutdown releases the exact owned command")
+    elseif mode=="cancel_rejected" then
+        check(a.stops==1 and a.commands[1].state==1,"failed cancellation leaves the command unretired")
+    else
+        check(a.stops==0 and a.commands[1].state==1,mode..": no command is stopped on an uncertain owner")
+    end
+    local expected=mode=="owned" and "status=requested" or "status=unconfirmed"
+    local logged=false
+    for _,line in ipairs(logs) do
+        if line:find("PLAYER_SHUTDOWN_RELEASE",1,true) and line:find(expected,1,true) then logged=true end
+    end
+    check(logged,mode..": shutdown reports the verified release outcome")
+end
 print=originalPrint
 print("player_pose: PASS ("..checks.." checks; scheduling is not movement; bounded retries and exact lifecycle)")

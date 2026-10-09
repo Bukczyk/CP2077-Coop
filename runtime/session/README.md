@@ -57,3 +57,10 @@ Do not start PlayerFire/WorldStimulus/HitRequest/DamageApplied/EntityDeath as an
 A disposable `entEntityTemplate` asset is stored at `runtime/session/assets/CP2077Coop_Experimental.archive`, virtual path `base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent`. WolvenKit 9.0.1 `convert deserialize` generated the `.ent` from the source JSON and `convert serialize` round-tripped it; `pack` and archive listing confirmed the resource path. It has an `entEntity` root, one `entAnimatedComponent`, one `entSkinnedMeshComponent`, `entSkinningBinding` and `entHardTransformBinding`, with the `woman_base.rig`, humanoid animgraph and Judy proxy mesh. It contains no AI/gameplay components.
 
 This is behind `experimental_static_npc_projection=1` (packaging switch `-ExperimentalStaticNpcProjection`). It uses Codeware `StaticEntitySystem` for spawn/despawn, binds the returned `EntityID` to the exact network `SessionEntityId`, and moves the generic `Entity` with `SetWorldTransform`. Windows build, Lua lifecycle tests and JSON structure checks pass. Actual engine loading and visible rendering still require an in-game test; this prototype is not ambient suppression or a safe shared-world NPC authority cutover.
+
+## First-contact integration on protocol v5
+
+The latest main pose path remains the default. `experimentalPlayerMovement = true`
+in `config.lua` enables the preserved PR #5 locomotion experiment for comparison;
+it must not be presented as qualified smooth motion. Passive players and NPC
+replication stay independently opt-in. See [current validation](../../docs/validation/FIRST_CONTACT_2026-10-08.md).

@@ -5,4 +5,6 @@ return {
     -- Private diagnostic only: original idle-only static cosmetic players.
     -- Requires the experimental asset archive. No player hit collider or PvP.
     experimentalPassivePlayers = false,
+    -- Optional locomotion experiment; keep the latest main pose path by default.
+    experimentalPlayerMovement = false,
 }

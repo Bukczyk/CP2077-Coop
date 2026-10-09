@@ -208,8 +208,21 @@ do
     package.loaded.config={experimentalNpcReplication=false,experimentalPassivePlayers=true}
     local dyn={}
     function dyn:IsReady() return true end
-    function dyn:GetTagged() return f.dynamic end
-    function dyn:DeleteTagged() f.dynamicDeletes=(f.dynamicDeletes or 0)+1 end
+    local orphanId=id("201")
+    local orphan={visible=true,managed=true,spawned=true,tagged=true}
+    orphan.actor={GetEntityID=function() return orphanId end,
+        IsAttached=function() return orphan.visible end}
+    function dyn:GetTagged() return orphan.tagged and {orphan.actor} or {} end
+    function dyn:GetTaggedIDs() return orphan.tagged and {orphanId} or {} end
+    function dyn:IsManaged(token) return text(token.hash)=="201" and orphan.managed end
+    function dyn:IsSpawning() return false end
+    function dyn:IsSpawned(token) return text(token.hash)=="201" and orphan.spawned end
+    function dyn:GetEntity(token) return text(token.hash)=="201" and orphan.visible and orphan.actor or nil end
+    function dyn:DeleteEntity(token)
+        check(text(token.hash)=="201","startup cleanup deletes only the recovered exact dynamic ID")
+        orphan.tagged=false; f.dynamicDeletes=(f.dynamicDeletes or 0)+1; return true
+    end
+    function dyn:DeleteTagged() error("tag-wide cleanup cannot verify dynamic retirement") end
     local player={}
     function player:IsAttached() return true end
     function player:GetEntityID() return id("101") end
@@ -221,6 +234,7 @@ do
     Game.GetPlayer=function() return f.loaded and player or nil end
     Game.GetSystemRequestsHandler=function() return nil end
     Game.GetDynamicEntitySystem=function() return dyn end
+    Game.FindEntityByID=function(token) return dyn:GetEntity(token) end
     Game.CP2077Session_ExperimentalStaticNpcProjection=function() return false end
     Game.CP2077Session_SetActive=function(on) if not on then f.mapped={} end end
     Game.CP2077Session_PushLocal=function() end
@@ -240,9 +254,12 @@ do
         Game["CP2077Session_"..field]=function() return selected[field:lower()] end
     end
     assert(loadfile(root.."/runtime/session/cet/CP2077Coop/init.lua"))()
-    events.onInit(); f.dynamic={{old=true}}; events.onUpdate(0.01)
+    events.onInit(); for _=1,5 do events.onUpdate(0.01) end
     check(f.spawnCalls==0 and f.dynamicDeletes>0,"old dynamic handle must disappear before static activation")
-    f.dynamic={}; events.onUpdate(0.01)
+    for _=1,30 do events.onUpdate(0.01) end
+    check(f.spawnCalls==0 and not orphan.tagged,"empty tags cannot hide a still-visible dynamic actor")
+    orphan.visible,orphan.managed,orphan.spawned=false,false,false
+    for _=1,30 do events.onUpdate(0.01) end
     check(f.spawnCalls==2 and #f.system:GetTagged(Passive.tag)==2,"entrypoint selects only static players")
     local old={}; for hash in pairs(f.entries) do old[#old+1]=hash end
     f.generation=2; f.mapped={}; events.onUpdate(0.01)
