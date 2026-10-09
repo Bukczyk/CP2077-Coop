@@ -34,6 +34,11 @@ handles. Missing movement policies fail explicitly. Retirement verifies a
 terminal state before forgetting the handle; an unconfirmed cancellation raises
 an error for the existing lifetime cleanup to catch and retain ownership.
 
+The existing actor attachment/controller readiness check gates motor time,
+readback and submission. An exact actor with a nonzero spawn transform can still
+be unready; that interval cannot consume retries or pending-command deadlines.
+Existing owned commands remain retained if readiness temporarily disappears.
+
 Lua validates ticks, pose components, engine readback and Float representability
 before command submission. Turns wrap heading differences. Observed motion resets
 transient movement failures; terminal statuses without matching placement do not
@@ -55,13 +60,14 @@ actor-lifetime state machine.
 
 ## Verification
 
-- PASS: `player_motor_tests.lua`, 98 checks using the existing checksum-pinned Lua
+- PASS: `player_motor_tests.lua`, 103 checks using the existing checksum-pinned Lua
   runner with this worktree as its module root. Three simultaneous actors evolve
   their actual positions from admitted commands, rather than copying the network
   target into readback. Coverage includes walking/running/sprinting trajectories,
   stops, reversals, wrapped heading, malformed/non-finite data, Float overflow,
   rejected/pending/failed commands, false success, finite recovery bursts,
-  observed correction targets, stream grace and cancellation ownership.
+  observed correction targets, stream grace, delayed attachment/controller
+  readiness with nonzero readback, retained deadlines and cancellation ownership.
 - PASS: related Lua suites: player pose (112 checks), pose fixture (41), player
   lifetime (2,843), passive player (244), and the real session entrypoint lifecycle
   suite, including its existing pause gate and independent motor cleanup.

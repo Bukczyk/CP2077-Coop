@@ -20,8 +20,9 @@ local function copy(p) return {x=p.x, y=p.y, z=p.z} end
 -- This is a scheduling/motion model, not REDengine navigation or animation.
 local function actor(x, y)
     local a = {pos=target(x or 10, y), yaw=0, starts=0, stops=0, turns=0, snaps=0,
-        retargets=0, travel=0, accepted=0, reject={}, inert={}, maxOwned=0}
-    function a:GetWorldPosition() return copy(self.pos) end
+        retargets=0, travel=0, accepted=0, reject={}, inert={}, maxOwned=0, readbacks=0}
+    function a:CP2077Session_PoseReady() return self.attached ~= false and self.controllerReady ~= false end
+    function a:GetWorldPosition() self.readbacks=self.readbacks+1; return copy(self.pos) end
     function a:GetWorldOrientation() return {ToEulerAngles=function() return {yaw=self.yaw} end} end
     function a:submit(kind, x2, y2, z2, yaw, gait)
         assert(self.current == nil, "stacked actor commands")
@@ -66,6 +67,7 @@ local function actor(x, y)
         return self:submit("turn", self.pos.x, self.pos.y, self.pos.z, yaw, 0)
     end
     function a:advance(delta)
+        if not self:CP2077Session_PoseReady() then return end
         local c = self.current
         if not c then return end
         c.age = c.age+delta
@@ -102,6 +104,32 @@ local function run(a, m, frames, desired, delta)
         m:step(type(desired) == "function" and desired(frame) or desired, delta)
     end
 end
+
+-- Exact actor resolution can precede attachment/controller readiness even with
+-- a valid nonzero spawn transform. Neither interval consumes active time.
+local delayed=actor(); delayed.attached=false
+local delayedMotor=Motor.new(delayed)
+run(delayed,delayedMotor,240,target(11))
+check(delayed.starts == 0 and delayedMotor.clock == 0 and delayed.readbacks == 0 and not delayedMotor.fault,
+    "nonzero unready spawn must not exhaust movement admission")
+delayed.attached=true; delayed.controllerReady=false
+run(delayed,delayedMotor,240,target(11))
+check(delayed.starts == 0 and delayedMotor.clock == 0 and delayed.readbacks == 0 and not delayedMotor.fault,
+    "attached actor without controller must wait without budget/timer spend")
+delayed.controllerReady=true
+run(delayed,delayedMotor,180,target(11))
+check(delayed.starts == 1 and distance(delayed.pos,target(11)) < 0.2 and not delayedMotor.fault,
+    "first ready admission converges without replacement/reset")
+delayed=actor(); delayedMotor=Motor.new(delayed); delayedMotor:step(target(12),1/60)
+local held, activeTime, reads=delayedMotor.command,delayedMotor.clock,delayed.readbacks
+delayed.controllerReady=false
+run(delayed,delayedMotor,240,target(12))
+check(delayedMotor.command == held and delayed.current == held and delayedMotor.clock == activeTime and delayed.readbacks == reads,
+    "readiness loss retains exact admitted command and active deadline")
+delayed.controllerReady=true
+run(delayed,delayedMotor,180,target(12))
+check(delayed.starts == 1 and distance(delayed.pos,target(12)) < 0.2 and not delayedMotor.fault,
+    "readiness recovery continues retained command")
 
 -- Simultaneous command-driven walks/runs/sprints, stops and fast reversals.
 local actors, motors, errors = {}, {}, {}

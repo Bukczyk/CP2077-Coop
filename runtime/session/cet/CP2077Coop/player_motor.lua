@@ -84,6 +84,10 @@ function Motor:step(target, delta)
     -- A bad tick must not poison any timer, velocity estimate or engine input.
     if not finite(delta) or delta <= 0 or not finite(self.clock+delta) then return "invalid_delta" end
     if self.fault then return "fault" end
+    -- The entrypoint can resolve the exact actor before attachment or its AI
+    -- controller is ready, even when spawn readback is already nonzero. Do not
+    -- spend active-time deadlines or submission budgets during that interval.
+    if self.actor:CP2077Session_PoseReady() ~= true then return "waiting_attachment" end
     if not position(target) or not finite(target.yaw) then return self:invalid("invalid_target") end
     local current = self.actor:GetWorldPosition()
     local yaw = self.actor:GetWorldOrientation():ToEulerAngles().yaw
