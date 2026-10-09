@@ -1,6 +1,7 @@
 -- Matched typed-session bridge. No combat/world side effects or legacy native calls.
 local NpcRuntime = require("npc_runtime")
 local PlayerPose = assert(require("player_pose"), "player_pose module missing")
+local PlayerLifetime = assert(require("player_lifetime"), "player_lifetime module missing")
 local population = require("npc_population")
 local config = require("config")
 local PlayerMotor = require("player_motor")
@@ -31,22 +32,121 @@ local proxies = {} -- PlayerId -> { tag, SessionEntityId (opaque Uint64), nextSp
 local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
-local function clear()
-    if passivePlayers then passivePlayers:reset() end
-    for _, entry in pairs(proxies) do if entry.pose then entry.pose:reset() end; if entry.motor then entry.motor:stop() end end
-    ensureNpcProjection()
-    npcProjection:reset()
-    local system = Game.GetDynamicEntitySystem()
-    if system ~= nil and system:IsReady() then
-        system:DeleteTagged(CName.new(commonTag))
+local retiring, recoveryPending = {}, true
+local function own(entry, id)
+    entry.life = PlayerLifetime.new(id, function(status)
+        print("[CP2077Session] PLAYER_LIFETIME " .. status)
+    end, function()
+        -- Never unbind a different exact mapping after a session transition.
+        if entry.bound then
+            local resolved = tostring(Game.CP2077Session_Resolve(id)):gsub("[uUlL]+$", "")
+            local expected = tostring(entry.entity):gsub("[uUlL]+$", "")
+            if resolved == expected then
+                if not Game.CP2077Session_Unbind(entry.entity) then return false end
+            elseif resolved ~= "0" then return false end
+            entry.bound = false
+        end
+        if entry.pose and not entry.pose:release() then return false end
+        if entry.motor then entry.motor:stop(); entry.motor = nil end
+        return true
+    end)
+end
+local function retire(entry)
+    if entry.life then
+        entry.life:retire()
+        retiring[entry.life.key] = entry
     end
+end
+local function actorStatus(entry, status)
+    entry.actorState = status
+    entry.actorReports = entry.actorReports or {}
+    if not entry.actorReports[status] then
+        entry.actorReports[status] = true
+        print("[CP2077Session] PLAYER_ACTOR entity=" .. tostring(entry.entity)
+            .. " actor=" .. (entry.life and entry.life.key or "pending") .. " status=" .. status)
+    end
+end
+local function shutdownCommands(entry)
+    -- Shutdown has no later update callback. Release only commands we already
+    -- own, without trying to delete a not-yet-attached dynamic entity.
+    if entry.bound then
+        local resolved = tostring(Game.CP2077Session_Resolve(entry.life.id)):gsub("[uUlL]+$", "")
+        local expected = tostring(entry.entity):gsub("[uUlL]+$", "")
+        if resolved ~= "0" and resolved ~= expected then error("shutdown binding changed") end
+    end
+    local function exactCommandActor(command, actor)
+        if command == nil then return end
+        if actor == nil or tostring(actor:GetEntityID().hash):gsub("[uUlL]+$", "") ~= entry.life.key then
+            error("shutdown command actor identity mismatch")
+        end
+    end
+    local errors = {}
+    if entry.pose then
+        local ok, released = pcall(function()
+            exactCommandActor(entry.pose.command, entry.pose.actor)
+            return entry.pose:release()
+        end)
+        if not ok or released ~= true then errors[#errors+1] = "pose release: " .. tostring(released) end
+    end
+    if entry.motor then
+        local ok, reason = pcall(function()
+            exactCommandActor(entry.motor.command, entry.motor.actor)
+            entry.motor:stop()
+        end)
+        if not ok then errors[#errors+1] = "motor stop: " .. tostring(reason) end
+    end
+    if #errors > 0 then error(table.concat(errors, "; ")) end
+end
+local function pumpRetirement(paused)
+    -- Managed tags recover pending actors across reload. In-flight deletions
+    -- require draining before reload; tags alone cannot recover lost tombstones.
+    if recoveryPending then
+        local s = Game.GetDynamicEntitySystem()
+        if s and s:IsReady() then
+            for _, id in ipairs(s:GetTaggedIDs(CName.new(commonTag))) do
+                local entry = {}
+                own(entry, id); retire(entry)
+            end
+            recoveryPending = false
+        end
+    end
+    for key, entry in pairs(retiring) do
+        if entry.life:pump(time, paused) then
+            if entry.pose then entry.pose:reset() end
+            retiring[key] = nil
+        end
+    end
+end
+local function retainDynamicRetirement()
+    -- This part is independent of engine/native cleanup. Even a failed native
+    -- deactivation or a different representation's reset must retain our IDs.
+    for _, entry in pairs(proxies) do retire(entry) end
     proxies = {}
     joined = false
 end
+local function clear()
+    retainDynamicRetirement()
+    local errors = {}
+    if passivePlayers then
+        local ok, reason = pcall(function() passivePlayers:reset() end)
+        if not ok then errors[#errors+1] = "passive reset: " .. tostring(reason) end
+    end
+    local ok, reason = pcall(function()
+        ensureNpcProjection()
+        npcProjection:reset()
+    end)
+    if not ok then errors[#errors+1] = "NPC reset: " .. tostring(reason) end
+    if #errors > 0 then error(table.concat(errors, "; ")) end
+end
 local function stop()
-    Game.CP2077Session_SetActive(false)
-    clear()
+    retainDynamicRetirement()
     active, generation, localEntity = false, nil, nil
+    local deactivated, reason = pcall(function() Game.CP2077Session_SetActive(false) end)
+    local cleared, cleanupReason = pcall(clear)
+    local errors = {}
+    if not deactivated then errors[#errors+1] = "native deactivation: " .. tostring(reason) end
+    if not cleared then errors[#errors+1] = tostring(cleanupReason) end
+    if #errors > 0 then error(table.concat(errors, "; ")) end
 end
 local function update(delta)
     time = time + delta
@@ -55,6 +155,7 @@ local function update(delta)
     local player = Game.GetPlayer()
     local requests = Game.GetSystemRequestsHandler()
     local paused = requests ~= nil and requests:IsGamePaused()
+    pumpRetirement(paused)
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
@@ -87,9 +188,7 @@ local function update(delta)
     local system = Game.GetDynamicEntitySystem()
     local dynamicReady = system ~= nil and system:IsReady()
     if not dynamicReady then return end
-    if passivePlayers and #system:GetTagged(CName.new(commonTag)) > 0 then
-        -- DeleteTagged is asynchronous. Old dynamic bodies must disappear
-        -- before the experimental representation can be considered active.
+    if passivePlayers and (recoveryPending or next(retiring) ~= nil) then
         passivePlayers:reset()
         passivePlayers:status("dynamic_retirement_pending")
         return
@@ -118,10 +217,7 @@ local function update(delta)
             else
             local entry = proxies[id]
             if entry ~= nil and tostring(entry.entity) ~= tostring(entity) then
-                entry.pose:reset()
-                if entry.motor then entry.motor:stop() end
-                Game.CP2077Session_Unbind(entry.entity)
-                system:DeleteTagged(entry.tag)
+                retire(entry)
                 proxies[id], entry = nil, nil
             end
             if entry == nil then
@@ -132,25 +228,35 @@ local function update(delta)
                 proxies[id] = entry
             end
             entry.target = {x=x,y=y,z=z,yaw=yaw}
-            local entities = system:GetTagged(entry.tag)
-            local proxy = entities[1]
+            local proxy = entry.life and entry.life:actor()
             if proxy == nil then
-                if not paused and time >= entry.nextSpawn then
-                    player:CP2077Session_SpawnProxy(entry.tag, x, y, z)
+                if entry.life and entry.life.blocked then
+                    actorStatus(entry, entry.life.status)
+                elseif entry.localKey then
+                    actorStatus(entry, "actor_missing")
+                else
+                    actorStatus(entry, entry.life and "spawn_pending" or "spawn_waiting")
+                end
+                if not entry.life and not recoveryPending and next(retiring) == nil
+                    and not paused and time >= entry.nextSpawn then
+                    local created = player:CP2077Session_SpawnProxy(entry.tag, x, y, z)
+                    local key = created and tostring(created.hash):gsub("[uUlL]+$", "")
+                    if key and key ~= "0" then own(entry, created); actorStatus(entry, "spawn_pending") end
                     entry.nextSpawn = time + 1
                 end
             else
+                actorStatus(entry, proxy:IsAttached() and "actor_present" or "attachment_pending")
                 local localKey = tostring(proxy:GetEntityID().hash)
                 if entry.localKey ~= localKey then
                     entry.pose:reset()
                     if entry.motor then entry.motor:stop() end
-                    Game.CP2077Session_Unbind(entry.entity)
                     entry.localKey = localKey
                     if usePlayerMotor then entry.motor = PlayerMotor.new(proxy) end
                 end
                 if not Game.CP2077Session_Bind(entry.entity, proxy:GetEntityID()) then
                     error("Remote projection binding rejected for player " .. tostring(id))
                 end
+                entry.bound = true
                 bubble.exclusions[#bubble.exclusions+1] = proxy:GetEntityID()
                 -- Keep sampling interpolation while one owned engine command is
                 -- pending. Only actual transform readback confirms placement.
@@ -229,10 +335,7 @@ local function update(delta)
     end -- experimentalNpcReplication; player cleanup always runs
     for id, entry in pairs(proxies) do
         if not seen[id] then
-            entry.pose:reset()
-            if entry.motor then entry.motor:stop() end
-            Game.CP2077Session_Unbind(entry.entity)
-            system:DeleteTagged(entry.tag); proxies[id] = nil
+            retire(entry); proxies[id] = nil
         end
     end
 end
@@ -252,24 +355,55 @@ registerForEvent("onUpdate", function(delta)
     if failed then
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
+        time = time + delta
+        pcall(function()
+            local requests = Game.GetSystemRequestsHandler()
+            pumpRetirement(requests ~= nil and requests:IsGamePaused())
+        end)
         return
     end
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
-        pcall(stop)
-        print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason))
+        local stopped, cleanupReason = pcall(stop)
+        print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
+            .. (stopped and "" or "; cleanup: " .. tostring(cleanupReason)))
     end
 end)
-registerForEvent("onShutdown", function() if initialized then pcall(stop) end end)
+registerForEvent("onShutdown", function()
+    if not initialized then return end
+    local ok, reason = pcall(stop)
+    if not ok then
+        failed = true
+        print("[CP2077Session] BRIDGE_ERROR shutdown: " .. tostring(reason))
+    end
+    for key, entry in pairs(retiring) do
+        local released, reason = pcall(shutdownCommands, entry)
+        if not released then
+            failed = true
+            print("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key
+                .. " status=unconfirmed reason=" .. tostring(reason))
+        else
+            print("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key .. " status=requested")
+        end
+    end
+end)
 registerHotkey("cp2077_session_reconnect", "Reconnect coop session", function()
     if not initialized then return end
-    pcall(stop)
-    failed = false
+    local ok, reason = pcall(stop)
+    failed = not ok
+    if not ok then print("[CP2077Session] BRIDGE_ERROR reconnect: " .. tostring(reason)) end
 end)
 
 -- Value-only diagnostics for local test tooling. No engine handles or setters.
-return { playerDiagnostics = function()
+return { playerRetirementDiagnostics = function()
+    local result = {}
+    for key, entry in pairs(retiring) do
+        result[key] = {status=entry.life.status, blocked=entry.life.blocked,
+            deleteIssued=entry.life.deleteIssued, deleteAttempts=entry.life.deleteAttempts}
+    end
+    return result
+end, playerDiagnostics = function()
     local result = {}
     for id, entry in pairs(proxies) do
         local t, m = entry.target, entry.motor
@@ -278,6 +412,8 @@ return { playerDiagnostics = function()
             x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
             mode=m and "motor" or "pose", fault=entry.pose and entry.pose.fault,
             pose=entry.pose and entry.pose:diagnostics(),
+            lifecycle=entry.life and (entry.life.status == "owned" and entry.actorState or entry.life.status),
+            actorState=entry.actorState,
             error=m and m.error, speed=m and m.speed, gait=m and m.gait,
             commands=m and m.commands, snaps=m and m.snaps,
         }

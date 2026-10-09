@@ -1,10 +1,11 @@
 // Judy is a temporary, non-persistent player rendering projection.
 // NPC/world adoption must use server-issued SessionEntityId and authority records.
 @addMethod(PlayerPuppet)
-public func CP2077Session_SpawnProxy(tag: CName, x: Float, y: Float, z: Float) -> Void {
+public func CP2077Session_SpawnProxy(tag: CName, x: Float, y: Float, z: Float) -> EntityID {
+    let empty: EntityID;
     let system = GameInstance.GetDynamicEntitySystem();
     if !IsDefined(system) || !system.IsReady() || system.IsPopulated(tag) {
-        return;
+        return empty;
     }
     let position: Vector4;
     position.X = x;
@@ -21,7 +22,7 @@ public func CP2077Session_SpawnProxy(tag: CName, x: Float, y: Float, z: Float) -
     spec.spawnInView = true;
     spec.active = true;
     spec.tags = [n"CP2077Session.Projection", tag];
-    system.CreateEntity(spec);
+    return system.CreateEntity(spec);
 }
 
 // Exact player-proxy actor only. SendCommand acceptance is not proof that its

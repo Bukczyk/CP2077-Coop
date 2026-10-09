@@ -195,22 +195,44 @@ a=actor(); local localPlayer=actor("101ULL")
 local remoteVisible,frameGeneration,wireEntity,desiredX=true,1,"2ULL",10
 local deleted,calls=0,0
 local unbound = {}
+local world,mapped={},{}
 local system={}
 function system:IsReady() return true end
-function system:GetTagged() return remoteVisible and {a} or {} end
-function system:DeleteTagged() deleted=deleted+1 end
+function system:GetTaggedIDs() return {} end
+function system:GetTagged() return {} end
+function system:DeleteTagged() error("cleanup must own exact entity IDs") end
+local function entity(id) return world[tostring(id.hash)] end
+function system:IsManaged(id) local e=entity(id); return e~=nil and e.live end
+function system:IsSpawning() return false end
+function system:IsSpawned(id) local e=entity(id); return e~=nil and e.live end
+function system:GetEntity(id) local e=entity(id); return e and e.live and e.actor or nil end
+function system:DeleteEntity(id) local e=assert(entity(id)); e.live=false; deleted=deleted+1; return true end
+local nextActor=900
+function localPlayer:CP2077Session_SpawnProxy()
+    nextActor=nextActor+1; a=actor(tostring(nextActor).."ULL")
+    local e={actor=a,live=true}; world[tostring(a:GetEntityID().hash)]=e
+    a.IsAttached=function() return e.live end
+    return a:GetEntityID()
+end
 Game={
     GetPlayer=function() return localPlayer end,
     GetSystemRequestsHandler=function() return nil end,
     GetDynamicEntitySystem=function() return system end,
+    FindEntityByID=function(id) return system:GetEntity(id) end,
     GetTeleportationFacility=function() return {Teleport=function() calls=calls+1 end} end,
     CP2077Session_ExperimentalStaticNpcProjection=function() return false end,
     CP2077Session_SetActive=function() end, CP2077Session_PushLocal=function() end,
     CP2077Session_BeginFrame=function() return remoteVisible and 1 or 0 end,
     CP2077Session_Generation=function() return frameGeneration end,
     CP2077Session_Session=function() return "10ULL" end, CP2077Session_Epoch=function() return 1 end,
-    CP2077Session_Phase=function() return 4 end, CP2077Session_Bind=function() return true end,
-    CP2077Session_Unbind=function(id) unbound[#unbound+1]=id; return true end,
+    CP2077Session_Phase=function() return 4 end,
+    CP2077Session_Bind=function(session,id) mapped[tostring(id.hash)]=session; return true end,
+    CP2077Session_Resolve=function(id) return mapped[tostring(id.hash)] or "0ULL" end,
+    CP2077Session_Unbind=function(id)
+        unbound[#unbound+1]=id
+        for hash,session in pairs(mapped) do if session==id then mapped[hash]=nil end end
+        return true
+    end,
     CP2077Session_SelfEntity=function() return "1ULL" end,
     CP2077Session_BubbleRadius=function() return 100 end,
     CP2077Session_Select=function() return true end, CP2077Session_Player=function() return 2 end,
@@ -220,22 +242,55 @@ Game={
     CP2077Session_Self=function() return 1 end, CP2077Session_Host=function() return 1 end,
 }
 assert(loadfile(root.."/runtime/session/cet/CP2077Coop/init.lua"))()
-callbacks.onInit(); callbacks.onUpdate(0.01)
+callbacks.onInit(); callbacks.onUpdate(0.01); callbacks.onUpdate(0.01)
 check(#a.commands==1 and calls==0,"entrypoint uses AI actuator, not silent facility no-op")
 desiredX=13; callbacks.onUpdate(0.2)
 check(#a.commands==1,"entrypoint preserves pending command")
 a:complete(a.commands[1]); callbacks.onUpdate(0.2)
 check(#a.commands==2 and a.commands[2].x==13,"entrypoint follows latest native sample")
-remoteVisible=false; callbacks.onUpdate(0.2)
-check(a.stops==2 and deleted>=2,"interest removal retires pending handle before deletion")
+remoteVisible=false; callbacks.onUpdate(0.01); callbacks.onUpdate(0.01); callbacks.onUpdate(0.01)
+check(a.stops==2 and deleted==1,"interest removal retires pending handle before exact deletion")
 check(unbound[#unbound]=="2ULL", "departure unbinds the exact session entity")
-remoteVisible=true; callbacks.onUpdate(0.2)
-local before=a.stops; frameGeneration=2; callbacks.onUpdate(0.2)
-check(a.stops>before,"session generation reset retires old handle")
-before=a.stops; wireEntity="9007199254740993ULL"; callbacks.onUpdate(0.2)
-check(a.stops>before,"same PlayerId with different exact session identity retires old handle")
-before=a.stops; callbacks.onShutdown()
-check(a.stops>before,"shutdown retires owned handle")
+remoteVisible=true
+for _=1,30 do callbacks.onUpdate(0.01) end
+local previous=a; local before=previous.stops
+frameGeneration=2
+for _=1,30 do callbacks.onUpdate(0.01) end
+check(previous.stops>before,"session generation reset retires old handle")
+previous=a; before=previous.stops; wireEntity="9007199254740993ULL"
+for _=1,30 do callbacks.onUpdate(0.01) end
+check(previous.stops>before,"same PlayerId with different exact session identity retires old handle")
+callbacks.onShutdown()
 for _,line in ipairs(logs) do check(not line:find("BRIDGE_ERROR",1,true),line) end
+
+-- Shutdown has no subsequent game tick. Release a pending command only on its
+-- exact owner, retain its entity lifetime, and never issue early deletion.
+for _,mode in ipairs({"owned","binding_changed","identity_changed","cancel_rejected"}) do
+    callbacks,logs,world,mapped={},{},{},{}
+    remoteVisible=true
+    local bridge=assert(loadfile(root.."/runtime/session/cet/CP2077Coop/init.lua"))()
+    callbacks.onInit(); callbacks.onUpdate(0.01); callbacks.onUpdate(0.01)
+    check(#a.commands==1,mode..": fixture owns one pending pose command")
+    local beforeDeleted=deleted
+    if mode=="binding_changed" then mapped[tostring(a:GetEntityID().hash)]="999ULL"
+    elseif mode=="identity_changed" then a.GetEntityID=function() return {hash="999ULL"} end
+    elseif mode=="cancel_rejected" then a.cancel=false end
+    callbacks.onShutdown()
+    check(deleted==beforeDeleted and next(bridge.playerRetirementDiagnostics())~=nil,
+        mode..": shutdown retains the lifetime without deleting its actor")
+    if mode=="owned" then
+        check(a.stops==1 and a.commands[1].state==3,"shutdown releases the exact owned command")
+    elseif mode=="cancel_rejected" then
+        check(a.stops==1 and a.commands[1].state==1,"failed cancellation leaves the command unretired")
+    else
+        check(a.stops==0 and a.commands[1].state==1,mode..": no command is stopped on an uncertain owner")
+    end
+    local expected=mode=="owned" and "status=requested" or "status=unconfirmed"
+    local logged=false
+    for _,line in ipairs(logs) do
+        if line:find("PLAYER_SHUTDOWN_RELEASE",1,true) and line:find(expected,1,true) then logged=true end
+    end
+    check(logged,mode..": shutdown reports the verified release outcome")
+end
 print=originalPrint
 print("player_pose: PASS ("..checks.." checks; scheduling is not movement; bounded retries and exact lifecycle)")
