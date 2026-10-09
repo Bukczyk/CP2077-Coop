@@ -12,12 +12,14 @@ The immediate priority remains smooth player movement and fixing readback_timeou
 ## Agreed direction
 
 - Keep presentation state separate from PlayerPose and PlayerState.
-- The first presentation MVP covers Standing/Crouching, Drawn/Holstered, and the identifier of a supported held weapon.
-- The contract may include logical aiming state. Its presence does not promise remote ADS, weapon alignment, or visible aim animation.
-- Do not add aimPitch now.
-- Send a complete state immediately after an observed local change, then send periodic full snapshots to repair loss. Start by evaluating a configurable 1–2 Hz repair rate; do not assume 10 Hz.
-- The server validates membership, ownership, exact player/entity identity, session, epoch, revision, and values. It caches the newest accepted state and provides a current baseline to joining clients.
+- The first presentation MVP covers Standing/Crouching, Drawn/Holstered, and the exact identifier of a supported held weapon.
+- The contract may carry local logical aiming state. Remote ADS and sight alignment are experimental and are not promised by this state.
+- Do not add aimPitch in this stage.
+- Send a complete state immediately after an observed and locally accepted state change, then send periodic complete repair snapshots. Use 2 Hz as the initial test proposal; this rate is not validated.
+- The server validates membership, ownership, exact player/entity identity, session, epoch, transport sequence, state revision, and values. It caches the latest accepted state and provides a current baseline to joining clients.
+- Distinguish state revision (semantic content change) from transport sequence and local receipt freshness (a fresh copy of unchanged state).
 - One-shot actions remain events, separate from persistent state.
+- Keep smooth movement and readback_timeout work independent and higher priority.
 
 ## Existing implementation boundary
 
@@ -31,33 +33,43 @@ References: [v5 protocol types](https://github.com/Bukczyk/CP2077-Coop/blob/main
 
 ## Proposed semantic schema
 
-Each update is one coherent full state, not a patch. Identity and revision use the existing header; the body describes the current observed presentation of the player's exact session entity.
+Each update is one coherent full state, not a patch. Identity and transport ordering use the existing packet header; a separate body revision identifies semantic state changes.
 
 | Field | Proposed type | Meaning and validation |
 | --- | --- | --- |
 | Header session | Existing SessionId | Must be the sender's active session. |
 | Header epoch | Existing uint32 world epoch | Must match the active session epoch. |
-| Header sender | Existing PlayerId | Authenticated member who owns the state. |
-| Header sequence | Existing uint32 sequence | Revision for this player/entity presentation stream; use the protocol's modular sequence comparison. |
-| Header event | Existing uint64 | Zero for a snapshot. Event IDs are for reliable one-shot/control events. |
+| Header sender | Existing PlayerId | Authenticated member that owns the state. |
+| Header sequence | Existing uint32 transport sequence | Advances for every transmitted snapshot, including identical repair snapshots. Reject duplicate/older datagrams by the existing modular sequence rule. |
+| Header event | Existing uint64 | Zero for a state snapshot. Event IDs are for reliable one-shot/control events. |
 | entity | SessionEntityId / uint64 | Must resolve to the exact player entity owned by sender. Never infer from position. |
-| stance | uint8 enum | Proposed values: Unavailable, Standing, Crouching. |
-| weaponState | uint8 enum | Proposed values: Unavailable, Holstered, DrawnSupported, DrawnUnsupported. |
-| weaponRecord | uint64 | Portable canonical weapon record for DrawnSupported; zero otherwise. |
-| aiming | uint8 enum | Proposed values: Unavailable, NotAiming, Aiming. Logical state only; no promise of rendered ADS. |
+| stateRevision | uint32 | Advances only when observed presentation values or their availability change. Uses modular ordering; same revision is valid only with byte-equivalent semantic state. |
+| stance | uint8 enum | Proposed values: Unavailable, Standing, Crouching. Failed or timed-out crouch read-back is Unavailable, never Standing by default. |
+| weaponState | uint8 enum | Holstered, DrawnSupported, DrawnUnsupported, Unavailable. |
+| weaponRecord | uint64 | Exact native TweakDBID value when capture has one; zero when no ID is available. Never an inventory instance ID or guessed replacement. |
+| aiming | uint8 enum | Unavailable, NotAiming, Aiming. Local logical capture may be sent; this does not assert remote ADS or sight alignment. |
 
-Enum names and values are proposed semantics only. They do not assign a packet type number. The body is 19 bytes; with the current 40-byte header the record would fit within the current 1200-byte packet ceiling. Exact byte encoding, packet type, and protocol compatibility are open decisions.
+The enum labels and numeric assignments are proposed semantics only. They do not allocate a packet type number. The body is 23 bytes; with the current 40-byte header the record fits within the current 1200-byte packet ceiling. Exact byte encoding, packet type, and protocol compatibility remain open.
 
-For weaponRecord, the preferred candidate is a portable canonical TweakDB record identity, not an inventory instance ID, pointer, or local runtime offset. The NPC contract already represents canonical TweakDB names in uint64 form; Kyle must confirm the action hook can expose the same stable identifier for supported weapons. Report DrawnUnsupported rather than inventing a stand-in weapon. A receiver may use a neutral fallback for unknown records.
+### Lossless weapon ID path
 
-The producer sends observed/read-back state, not merely a requested command. Unavailable is not equivalent to standing, holstered, or not aiming. A command timeout must never be reported as a successful observed state.
+The capture API provides a native TweakDBID. Preserve its full 64-bit value end-to-end:
+
+1. RED4ext/C++ keeps the native TweakDBID value as uint64_t without masking, narrowing, or converting through float/double.
+2. The network codec serializes exactly 8 bytes using the protocol's explicit byte order; never serialize native struct memory.
+3. Across Lua/CET, expose the ID as a decimal or fixed-width hexadecimal string and parse it with checked integer conversion in C++. Lua/CET must not call tonumber or otherwise route the value through an imprecise floating-point number.
+4. The receiver may render only records it recognizes and supports. An unknown ID remains that exact ID with DrawnUnsupported; never substitute a guessed record.
+
+Kyle must confirm that the full native TweakDBID value is stable and meaningful on both game installations for the supported records. Lossless representation prevents numeric corruption; it does not itself guarantee the recipient has the corresponding asset. Inventory instance IDs, runtime handles, pointers, and local offsets are never transmitted.
 
 Proposed cross-field rules:
 
-- Holstered, DrawnUnsupported, and Unavailable carry weaponRecord=0.
-- DrawnSupported requires a nonzero canonical supported record.
-- Aiming=Aiming is accepted only for combinations Kyle confirms are observable locally. Whether aiming requires DrawnSupported is still an engine-contract question.
-- Unknown enums, noncanonical records, invalid combinations, invalid future numeric fields, and oversized packets are explicitly rejected.
+- Holstered and Unavailable carry weaponRecord=0.
+- DrawnSupported requires a nonzero record on the supported-record allowlist.
+- DrawnUnsupported may carry the exact nonzero native ID if it was read successfully; use zero only if no ID was available. Never map it to another weapon.
+- Unavailable stance/weapon/aim values mean the source could not reliably read that field. A timeout must not become a successful default.
+- Aiming=Aiming is accepted only for combinations Kyle confirms are observable. Whether aiming requires DrawnSupported is still an engine-contract question.
+- Unknown enum values, invalid combinations, truncated or oversized packets are explicitly rejected.
 
 No pitch or camera direction is included. Body yaw is not aiming direction and must not be repurposed.
 
@@ -65,13 +77,23 @@ No pitch or camera direction is included. Body yaw is not aiming direction and m
 
 ### Live state
 
-Use unreliable UDP. Send a full state when local read-back changes, followed by configurable 1–2 Hz full-state repair snapshots. A periodic snapshot repairs a lost change. These are configuration values, not protocol constants.
+Use unreliable UDP. Send a full state immediately after the local adapter observes and accepts a semantic change, then send complete repair snapshots at a configurable 2 Hz for the initial test. This is a starting proposal, not a validated rate. Any later rate change is configuration, not a protocol constant.
 
-The client retains at most one coalesced pending full state for its local player. If a newer full state supersedes an unsent state, retain the newest and expose queue pressure through the API. Persistent state is replaceable; one-shot events are not.
+The client retains at most one coalesced pending full state for its local player. If a newer semantic state supersedes an unsent value, retain the newest and expose queue pressure through the API. Persistent state is replaceable; one-shot events are not.
 
-The server validates the authenticated connection, active membership, role policy, session, epoch, exact owner/entity mapping, and revision. It stores one latest state per active player in the bounded session membership collection. It routes accepted updates only to active, relevant same-session peers using the existing interest policy, never unconditional all-player broadcast. Player ownership covers only that player's cosmetic presentation; HOST remains authority for Night City simulation.
+The server validates the authenticated connection, active membership, role policy, session, epoch, exact owner/entity mapping, transport sequence, state revision, and field invariants. It stores one latest state per active player in the bounded session membership collection. A fresh repair packet with a newer transport sequence and the same stateRevision is accepted only if its semantic body is identical; it updates receipt freshness and may be forwarded without reapplying game commands. A packet with an older stateRevision, or changed contents under the same revision, is rejected.
 
-The revision uses the existing header sequence for the sender/entity/presentation stream. Reject duplicate and stale sequence values using the existing modular uint32 rule. Epoch/member retirement clears sequence state. Keep server receive time locally; do not rely on unsynchronized sender clocks for one-way age.
+The server routes accepted state only to active, relevant same-session peers using the existing interest policy, never unconditional all-player broadcast. Player ownership covers only that player's cosmetic presentation; HOST remains authority for Night City simulation.
+
+### State revision versus receipt freshness
+
+These values have different jobs:
+
+- **Transport sequence** advances for every emitted UDP snapshot. It orders datagrams and rejects duplicated/reordered packets.
+- **State revision** advances only when the complete observed state changes, including a transition to or from Unavailable. It tells the game adapter whether a new state must be applied.
+- **Receipt freshness** is local monotonic time recorded whenever a newer transport sequence carrying the current or newer state is accepted. It tells the receiver how recently a valid copy arrived.
+
+An unchanged but fresh repair snapshot refreshes receipt freshness but does not trigger equip, stance, or aiming commands. Apply command changes once per new stateRevision and exact actor/session generation. A stale transport sequence does not refresh freshness. A newer transport sequence carrying an older stateRevision is rejected. A repeated stateRevision with different contents is invalid.
 
 ### Join baseline and reconnect
 
@@ -83,11 +105,20 @@ Reconnect receives current state for active players and a fresh PlayerId. Retire
 
 If state arrives before its exact projection is ready, retain only the newest value under SessionId + epoch + PlayerId + SessionEntityId, bounded by active membership count. Apply it only after exact identity binding. Never search for a nearby actor.
 
-### Freshness and membership lifetime
+### Freshness, stale interval, and membership lifetime
 
-Agree on the maximum presentation freshness interval and receiver behavior at expiry. The receiver must not leave an old weapon or posture latched indefinitely; it may preserve a neutral/default projection while marking the state stale.
+Make the stale interval configurable, for example as presentation_stale_after_ms, and evaluate it in the client using local monotonic receipt time. Candidate values for the first test are 1500–3000 ms; a 2500 ms initial candidate gives about five missed repair intervals at 2 Hz. These values are not final and require agreement with Kyle and observation under real network jitter/loss.
 
-The server must not reuse PlayerId within an epoch. SessionBridge generation is a local activation fence, not a wire membership generation. If the server cannot guarantee PlayerId non-reuse for a membership lifetime, the joint contract must add a membership-generation field before implementation.
+Trade-off: a shorter interval stops showing stale weapon/stance sooner but can mark valid state stale during brief packet loss or a hitch. A longer interval tolerates jitter but can leave an old visual state displayed longer after a disconnect or stalled sender.
+
+Proposed safe fallback when the interval expires:
+
+1. Keep the remote player's movement transform and body projection alive; presentation staleness must not block movement.
+2. Mark presentation fields Unavailable/stale in the game-thread frame, stop treating the last values as current, and do not issue commands from an expired snapshot.
+3. Release or neutralize only presentation overrides owned by the exact adapter/session generation, and only through a reversible cleanup hook Kyle verifies. Do not force Standing, equip a guessed weapon, mutate inventory, or invoke gameplay authority as a generic fallback.
+4. If an owned reversible cleanup cannot be verified, keep the player visible, mark the presentation degraded/stale, and do not retry commands on every repair tick. Exact neutralization versus retaining the last rendered visual until a fresh state or projection removal is an open game-side decision.
+
+The server must not reuse PlayerId within an epoch. SessionBridge generation is a local activation fence, not a wire membership generation. If the server cannot guarantee PlayerId non-reuse for a membership lifetime, the joint contract must add a membership-generation value before implementation.
 
 ## One-shot actions remain separate
 
@@ -106,14 +137,16 @@ Suggested semantic types:
 - PresentationStance: Unavailable, Standing, Crouching.
 - PresentationWeaponState: Unavailable, Holstered, DrawnSupported, DrawnUnsupported.
 - PresentationAim: Unavailable, NotAiming, Aiming.
-- PlayerPresentation: those values, weaponRecord, and accepted revision.
-- RenderPlayer: PlayerId, SessionEntityId, interpolated Transform, optional PlayerPresentation, freshness flag, and local presentationAgeMs.
+- PlayerPresentation: these observed values, exact uint64 weaponRecord, and stateRevision.
+- RenderPlayer: PlayerId, SessionEntityId, interpolated Transform, optional PlayerPresentation, last transport sequence, stateRevision, freshness status, and local presentationAgeMs.
 
 Suggested entry points:
 
-- SetLocalPresentation(scope, observedState): checks current SessionId, epoch, local SessionBridge generation, ownership, invariants, and bounded queue admission. Accepts read-back, never a requested state.
-- ReadFrame(localMonotonicNow): returns the newest exact-identity remote state alongside the existing transform; no REDengine object crosses the worker boundary.
+- SetLocalPresentation(scope, observedState): checks current SessionId, epoch, local SessionBridge generation, ownership, invariants, and bounded queue admission. Accepts read-back, never a requested command. The bridge owns stateRevision and increments it only when semantic content changes.
+- ReadFrame(localMonotonicNow): returns the newest exact-identity remote state alongside the existing transform. A fresh repeated stateRevision updates age/sequence only; it does not replay game commands.
 - ReadNetworkDiagnostics(): returns separate server RTT and per-player snapshot age with validity and measurement-age fields.
+
+Across the Lua/CET boundary, represent weaponRecord as an exact decimal or fixed-width hexadecimal string. Keep it a string in Lua and parse it with checked uint64_t conversion in C++; do not use Lua numbers or floating-point JSON numbers for TweakDBID. Prefer passing/holding the RED4ext native TweakDBID entirely in C++ where practical.
 
 SetActive(false), epoch changes, membership removal, and disconnect clear associated pending/remote state. Presentation queues remain separate from movement snapshots and reliable gameplay queues. Presentation overflow may coalesce to the newest full state and must be observable. It must not stall SetLocal, ReadFrame, movement snapshots, or active session state.
 
@@ -146,35 +179,41 @@ No version number or packet type number is chosen in this proposal. Existing v5 
 - HOST and JOINER can publish only their own current server-owned player entity.
 - Spoofed PlayerId, SessionEntityId, owner, session, epoch, token, retired membership, or role is rejected without cache mutation/fanout.
 - A player presentation update cannot target NPC/world entities.
-- Supported values round-trip exactly; unknown enums, invalid weapon IDs, invalid combinations, truncation, oversized data, and invalid revisions are rejected.
-- Duplicate and reordered snapshots cannot replace newer state; sequence wrap and epoch reset behave correctly.
+- Supported values round-trip exactly, including TweakDBID values across the high and low uint32 ranges; tests prove no float/double or narrowing conversion occurs.
+- Inventory instance IDs, guessed weapon records, unknown enums, invalid combinations, truncation, oversized data, and invalid revisions are rejected or handled by the explicit unsupported state.
+- Duplicate and reordered transport sequences cannot refresh freshness or replace state. Sequence wrap and epoch reset behave correctly.
+- A newer transport sequence with identical stateRevision and identical content updates receipt freshness only; same revision with different content and a newer packet carrying an older stateRevision are rejected.
 - Wrong protocol version/capability fails explicitly.
 
 ### Recovery and bounded behavior
 
 - Late join receives latest active-player baselines plus a completion fence; no old shot/reload event is replayed.
-- UDP loss is repaired by the next periodic full snapshot; a newer live update racing an older baseline remains authoritative.
+- UDP loss is repaired by the next periodic 2 Hz full snapshot proposal; a newer live update racing an older baseline remains authoritative.
 - State arriving before projection binding is retained only in the bounded exact-identity cache and applied only to that projection.
 - Leave, timeout, reconnect/new PlayerId, session close, and epoch reset remove prior cache, revisions, and bindings.
+- Stale interval is configurable. Tests cover just-before/at/after expiry and verify presentation falls back safely while movement continues.
 - Baseline or presentation queue failure does not block movement. Coalescing/capacity outcomes are observable and bounded.
 
 ### Game-side behavior and diagnostics
 
-- Kyle's adapter publishes read-back; readback_timeout is not treated as success.
-- Aiming state does not assert visible ADS.
+- Kyle's adapter publishes read-back; failed crouch/stance readback is Unavailable, not Standing. readback_timeout is not treated as success.
+- Aiming state does not assert visible ADS or sight alignment.
+- A fresh unchanged snapshot updates age but does not replay equip, stance, or aiming commands; a changed stateRevision is applied once.
+- Unknown weapon IDs remain exact and unsupported; they are never replaced by guessed records. Inventory instance IDs never cross the network.
 - Multiple remote player projections keep separate state/bindings.
 - Human in-game review verifies posture, weapon, and aim rendering; unit tests and state flags alone cannot prove animation.
 - RTT requires a matching heartbeat echo and local monotonic timestamps. Snapshot age is per-player local receive age. Neither is described as one-way latency; reconnect invalidates old diagnostics.
 
 ## Questions for KyleBuildsAI
 
-1. Does the game-side hook provide stable Standing/Crouching and Drawn/Holstered read-back, with a clear unavailable/timeout result?
-2. Can it expose a portable canonical TweakDB weapon record for the exact supported held firearm? Which models are supported and what should unknown weapons render as?
-3. Can it observe logical aim on the owning player? Can a remote projection apply any aim state today? The wire must not claim ADS until visibly verified.
-4. Are the proposed unavailable states and field invariants representable by the current action adapter? Which combinations can the game actually produce?
-5. Is PlayerId + SessionEntityId unique for a membership lifetime, and can the server guarantee no PlayerId reuse in an epoch? Does the game adapter require a separate wire membership generation?
-6. Is 1 Hz sufficient for repair, or should the first test use 2 Hz? What stale interval and receiver fallback are acceptable?
-7. Which one-shot actions are visual-only and which require HOST validation as gameplay intent/result? What expiry is acceptable?
+1. Does the local hook provide stable Standing/Crouching and Drawn/Holstered read-back, with a distinct Unavailable result for failure and readback_timeout?
+2. Can the bridge preserve the full native TweakDBID as uint64_t, and can CET/Lua receive it as an exact string? Is the raw value stable and meaningful on both installations for the supported weapons?
+3. Which exact weapon records are supported? For a recognized-but-unsupported record, should the receiver retain the exact ID and use a neutral visual, or hide only the weapon projection? No guessed mapping is acceptable.
+4. Can the hook observe logical aim on the owning player? What does the remote experimental hook actually apply today? The wire must not claim ADS or sight alignment.
+5. Are Unavailable stance/weapon/aim values and the proposed field invariants representable by the current action adapter? Which combinations can the engine actually produce?
+6. Is 2 Hz a suitable initial repair proposal under expected two-player and 8–16-player use? It is not validated. What stale interval and reversible fallback are acceptable? Should a stale held-weapon visual be hidden, reset only through an owned adapter cleanup, or retained with a degraded marker?
+7. Is PlayerId + SessionEntityId unique for a membership lifetime, and can the server guarantee no PlayerId reuse in an epoch? Does the game adapter require a separate wire membership generation?
+8. Which one-shot actions are visual-only and which require HOST validation as gameplay intent/result? What expiry is acceptable?
 
 ## Staged implementation plan
 
