@@ -410,7 +410,8 @@ end, playerDiagnostics = function()
         result[tostring(id)] = {
             entity=tostring(entry.entity), actor=entry.localKey,
             x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
-            mode=m and "motor" or "pose", fault=entry.pose and entry.pose.fault,
+            mode=m and "motor" or "pose", fault=m and m.fault or entry.pose and entry.pose.fault,
+            motorLastFailure=m and m.lastFailure, observedSnaps=m and m.observedSnaps,
             pose=entry.pose and entry.pose:diagnostics(),
             lifecycle=entry.life and (entry.life.status == "owned" and entry.actorState or entry.life.status),
             actorState=entry.actorState,
