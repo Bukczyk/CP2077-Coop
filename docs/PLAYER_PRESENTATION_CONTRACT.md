@@ -7,9 +7,9 @@ It complements the movement adapter using the existing position/yaw interface.
 ## Offline preparation checkpoint, 2026-10-09 UTC
 
 The current base is `b1f054ed67c0bb03f1b8e290c2b5fd62a621307c`, protocol v5,
-on the player movement/presentation contribution. The older v3 references below
-describe the original proposal. Protocol v5 has a generic reliable GameplaySubmit
-route, but that is **not an agreed player action or appearance contract**.
+on the player movement/presentation contribution. Protocol v5 has a generic
+reliable GameplaySubmit route, but that is **not an agreed player action or
+appearance contract**.
 No packet, backend, native declaration, current runtime or installed game file
 changes in this preparation.
 
@@ -83,7 +83,7 @@ Use reliable state changes with bounded coalescing and explicit overflow policy,
 or an agreed periodic snapshot route. Select the wire packet number, protocol
 version/capability behavior and rate with Bukczyk before changing both ends.
 Older incompatible clients must reject the session rather than parse new bytes
-as old fields. This document does not reserve a packet number or change v3.
+as old fields. This document does not reserve a packet number or change protocol v5.
 
 One-shot fire/reload/melee emotes require separate sequenced events. A persistent
 `firing=true` flag is insufficient for exactly-once events. Visual muzzle/aim
@@ -104,7 +104,7 @@ animation is distinct from host-authoritative projectile/hit/damage resolution.
 
 ## Immediate independent work
 
-Player movement can be improved now with unchanged v3 position/yaw data. Weapon,
+Player movement can be improved now with unchanged v5 position/yaw data. Weapon,
 stance and aiming engine hooks can be exercised using a private local fixture,
 but must not be advertised as multiplayer sync until the accepted route exists.
 Keep the v0.0.37 package as the tested rollback while the typed preview is qualified.
