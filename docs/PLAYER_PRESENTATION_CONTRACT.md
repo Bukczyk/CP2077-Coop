@@ -4,6 +4,49 @@ KyleBuildsAI owns the game-side hooks. Bukczyk owns the shared wire, client and
 server route. This is a review proposal, not an implemented or accepted contract.
 It complements the movement adapter using the existing position/yaw interface.
 
+## Offline preparation checkpoint, 2026-10-09 UTC
+
+The current base is `b1f054ed67c0bb03f1b8e290c2b5fd62a621307c`, protocol v5,
+on the player movement/presentation contribution. The older v3 references below
+describe the original proposal. Protocol v5 has a generic reliable GameplaySubmit
+route, but that is **not an agreed player action or appearance contract**.
+No packet, backend, native declaration, current runtime or installed game file
+changes in this preparation.
+
+KyleBuildsAI owns these preparation files:
+
+- `experiments/player-presentation/action_hooks.reds`: local capture, firearm
+  allowlist, exact right-hand slot readback, stance request/readback and owned
+  equip/unequip command release.
+- `experiments/player-presentation/actions.lua`: game-thread local adapter.
+- `tests/player_actions_tests.lua` and its `tests/CMakeLists.txt` registration.
+- This contract note and `experiments/player-presentation/README.md`.
+
+Read the experiment README for API, evidence and limitations. Capturing held aim
+is implemented. Applying remote ADS animation, sight alignment or pitch is **not
+implemented**. A true aiming state returns `partial / ads_unavailable` after
+supported equipment/stance readback; it cannot produce an observed ADS result.
+
+## Information and decisions needed from Bukczyk
+
+These are requirements to agree together, not a request to adopt a Lua wire format:
+
+| Boundary | Needed data / decision | Direction and recovery |
+| --- | --- | --- |
+| Persistent actions | Drawn/holstered, exact supported weapon record, standing/crouched, held aim; agree valid combinations, record encoding, units/ranges for any future pitch | Local owning player -> authenticated accepted state -> relevant peers; specify reliable changes or periodic repair snapshots, order and freshness |
+| Appearance | Canonical supported player descriptor, appearance/equipment slot identities and revisions, asset/capability mismatch behavior | Owning player's supported appearance -> agreed validation -> peer projection; include latest baseline on late join, reconnect and restream |
+| Identity | Session, epoch, membership generation, PlayerId and owned SessionEntityId, accepted revision | State may wait before exact projection binding; despawn/removal invalidates it; stale generations must not affect a replacement |
+| Reliability | Delivery channel, coalescing/rate/queue bounds, overload outcome, loss deadline and resync trigger | Latest held state must recover after loss; define what peer hides/neutralizes/removes when freshness expires |
+| One-shot actions | Separate shot/reload/melee identity, ordering/expiry and correlation to accepted gameplay | Do not derive shots from held aiming or persist `firing=true`; reconnect does not replay expired animation or gameplay |
+
+Please provide the supported field/descriptor schema and native snapshot or event
+read/write entry points, their direction, lifetime/order guarantees and baseline
+recovery semantics. KyleBuildsAI can then connect these game-side hooks to the
+accepted interface. GameplaySubmit's generic body and reliable delivery alone do
+not specify those meanings. No new gameplay kind or private network message is
+allocated here. Body/face/clothing matching, full animation and inventory parity
+remain separate engine and contract work.
+
 ## Why guns and crouching disappeared
 
 The older playable prototype carried weapon/stance flags. The current typed
