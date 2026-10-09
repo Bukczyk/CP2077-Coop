@@ -3,8 +3,10 @@
 KyleBuildsAI owns `session_ui.lua`, its CET event integration, configuration and
 tests. This is a development overlay, not a new networking/session manager.
 `showSessionUI = true` shows the panel only while the existing CET overlay is
-open. No controls or bindings are changed. The reconnect button calls the same
-existing cleanup/deactivation path as `cp2077_session_reconnect`.
+open. No controls or bindings are changed. The reconnect button queues the same
+existing cleanup/deactivation path as `cp2077_session_reconnect` for the next
+`onUpdate`; the drawing callback never invokes engine cleanup. Repeated clicks
+before that update coalesce into one request.
 
 The display uses the actual `ClientPhase` values in `shared/include/coop/client.hpp`:
 Disconnected, Connecting, Joining session, Synchronizing, Connected, and

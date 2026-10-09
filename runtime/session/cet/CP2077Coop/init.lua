@@ -7,6 +7,7 @@ local config = require("config")
 local PlayerMotor = require("player_motor")
 local sessionUI = require("session_ui").new()
 local overlayOpen = false
+local reconnect, reconnectRequested
 local usePlayerMotor = config.experimentalPlayerMovement == true
 local markers = require("player_markers").new(function(status)
     print("[CP2077Session] PLAYER_MARKER " .. status)
@@ -374,6 +375,7 @@ registerForEvent("onInit", function()
 end)
 registerForEvent("onUpdate", function(delta)
     if not initialized then return end
+    if reconnectRequested then reconnectRequested=false; reconnect() end
     if failed then
         sessionUI:update({loaded=Game.GetPlayer()~=nil,error=true})
         -- A latched bridge failure must not discard still-owned static tokens.
@@ -413,7 +415,7 @@ registerForEvent("onShutdown", function()
         end
     end
 end)
-local function reconnect()
+reconnect = function()
     if not initialized then return end
     sessionUI:reconnect()
     local ok, reason = pcall(stop)
@@ -425,7 +427,11 @@ registerForEvent("onOverlayOpen", function() overlayOpen=true end)
 registerForEvent("onOverlayClose", function() overlayOpen=false end)
 registerForEvent("onDraw", function()
     if not initialized or not overlayOpen or config.showSessionUI~=true then return end
-    sessionUI:draw(ImGui,reconnect)
+    sessionUI:draw(ImGui,function()
+        -- Draw only requests the action. Engine cleanup stays on onUpdate.
+        reconnectRequested=true
+        sessionUI:reconnect()
+    end)
 end)
 
 -- Value-only diagnostics for local test tooling. No engine handles or setters.

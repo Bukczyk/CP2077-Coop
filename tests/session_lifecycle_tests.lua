@@ -37,7 +37,7 @@ local function fixture(role, experimental, motor, passive, markers)
     package.loaded.config = nil
     if experimental ~= nil then package.loaded.config={experimentalNpcReplication=experimental,
         experimentalPlayerMovement=motor == true,experimentalPassivePlayers=passive == true,
-        experimentalPlayerMarkers=markers==true} end
+        experimentalPlayerMarkers=markers==true,showSessionUI=true} end
     print = function(message) state.logs[#state.logs+1] = tostring(message) end
     registerForEvent = function(name, callback)
         assert(events[name] == nil, "duplicate lifecycle registration")
@@ -193,6 +193,8 @@ local function fixture(role, experimental, motor, passive, markers)
     end
     state.reconnect=hotkeys.cp2077_session_reconnect
     state.shutdown=events.onShutdown
+    state.draw=events.onDraw
+    state.overlayOpen=events.onOverlayOpen
     return state
 end
 
@@ -453,6 +455,12 @@ s=fixture("HOST",false,false,false,false)
 s.phase=1; s.markers[77]={x=123}; s.init(); s.tick()
 assert(next(s.markers)==nil,"disabled/disconnected reload clears retained owned pins")
 s.shutdown()
+s=fixture("HOST",false,false,false,false); s.init(); s.tick()
+ImGui={Begin=function() return true end,Text=function() end,End=function() end,Button=function() return true end}
+s.overlayOpen(); local activations=#s.activations; s.draw(); s.draw()
+assert(#s.activations==activations,"UI draw must not run engine/session cleanup")
+s.tick(); assert(#s.activations==activations+2,"queued UI reconnect runs once on update")
+ImGui=nil; s.shutdown()
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")
