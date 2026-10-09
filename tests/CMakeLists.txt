@@ -51,3 +51,5 @@ add_test(NAME player_markers COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/
 set_tests_properties(player_markers PROPERTIES TIMEOUT 15)
 add_test(NAME session_ui COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/session_ui_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(session_ui PROPERTIES TIMEOUT 15)
+add_test(NAME marker_facing COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/marker_facing_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(marker_facing PROPERTIES TIMEOUT 15)

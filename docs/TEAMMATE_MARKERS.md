@@ -10,8 +10,9 @@ launched, no install was changed, no public package/release was promoted.
 This game-side preparation gives each remote PlayerId one owned position mappin.
 The minimap and full-map icon override uses the shipped person symbol when the
 existing widget atlas can resolve it. Actual appearance is not live qualified.
-The facing arrow is not implemented or qualified: body heading is retained as
-data pending map-relative rotation calibration.
+An explicitly invoked facing-arrow calibration fixture is implemented. Automatic
+facing remains disabled: no authoritative world-to-minimap transform was found,
+and neither icon appearance nor arrow direction has live qualification.
 
 ## Ownership and interface
 
@@ -21,6 +22,8 @@ Source files owned by this subtask:
 
 - `runtime/session/redscript/CP2077Coop/marker.reds`
 - `docs/TEAMMATE_MARKERS.md`
+- `experiments/player-presentation/marker_facing.lua`,
+  `tests/marker_facing_tests.lua` and its registration in `tests/CMakeLists.txt`.
 - `runtime/session/cet/CP2077Coop/player_markers.lua`, marker integration in
   `init.lua` and `config.lua`, `tests/player_markers_tests.lua`, marker cases in
   `tests/session_lifecycle_tests.lua`, test registration and package inclusion.
@@ -48,10 +51,13 @@ It must remove the old lifetime before reusing PlayerId, exclude the local
 player, and remove players absent from the native frame. These markers follow received player
 positions independently of proxy visibility, spawning or streaming. This can
 differ from a delayed avatar pose; it does not measure display latency.
-There is no raw per-player receive-age accessor in the inspected CET bridge.
-Reading the same interpolated pose each frame must not be treated as a fresh
-packet. Frame membership and session/epoch transitions drive cleanup; an
-independent stale-packet badge is deferred pending a measured age interface.
+`SessionBridge::ReadFrame` already excludes uninitialized remote transforms,
+future receive timestamps and transforms received more than 1000 ms ago
+(`shared/src/game_bridge.cpp:276-282`). Missing native-frame membership therefore
+retires a stale marker. There is no raw per-player receive-age accessor in the
+inspected CET bridge; rereading an interpolated pose is not a fresh packet.
+An independent age badge needs a measured age interface. See
+[the player data audit](PLAYER_DATA_AVAILABILITY.md).
 
 The Lua controller preserves Uint64 identities as opaque strings, updates each
 pin at most 10 times per second, and bounds failed updates/removals to three
@@ -99,10 +105,104 @@ shipped record maps `npc` to
 no CPO controller cast is introduced. An unavailable record/part leaves the
 standard marker intact. The in-world marker retains generic presentation.
 
-No UI rotation is applied. The exposed widget rotation function alone does not
-establish correct body heading relative to a rotating minimap. Arrow work needs
-stationary turns, strafing, backward walking, angle wraparound, map rotation and
-zoom, seated orientation, stale-state handling and both-peer evidence.
+Normal marker updates apply no UI rotation. The calibration fixture described
+below affects only a newly created child of an owned marker's controller root.
+It does not rotate or reparent the existing icon, compass, map or clamp arrow.
+
+## Facing calibration fixture, disabled by default
+
+`experiments/player-presentation/marker_facing.lua` is developer-only. It is not
+loaded by `init.lua`, is outside the package's runtime Lua directory, and installs
+no hooks, polling loop or view provider. Every `preview(controller, sample)` call
+requires `sample.enabled = true` and a complete new sample. Enabling position
+markers does not enable the arrow.
+
+The basis columns `(xx, xy)` and `(yx, yy)` must describe world +X and world +Y
+in **that exact controller root's local coordinates** at the sampled view. Three
+synchronized, unclamped projected points can mathematically define this basis;
+`basis_from_points` computes their differences. It does not create probe mappins
+or obtain projections. Screen coordinates need a proven conversion to the
+parent's local space before use. A compass widget angle, player camera yaw or
+remote movement direction is not accepted as an automatic substitute.
+
+The inspected `MinimapSystem` exposes settings and vehicle-radius overrides,
+without a view/projection matrix. `MinimapContainerController` exposes compass,
+player-icon and geometry widgets but no documented world-to-map conversion.
+`IMappin` provides world position, not projected position. `GetScreenPosition`
+and `inkCompoundWidget.GetChildPosition` describe existing widgets, so one marker
+cannot establish a 2D world basis. `worlduiIGameController.ProjectWorldToScreen`,
+`CameraSystem.ProjectPoint` and `inkScreenProjection` are HUD/camera projection
+interfaces; their declarations do not establish minimap projection. No automatic
+map orientation, cardinal-axis convention, zoom convention or ancestor-transform
+correction is claimed from these declarations.
+
+The native calculation uses received body yaw in radians, converts it once with
+`Rad2Deg`, then calls `Quaternion.GetForward(EulerAngles.ToQuat(rotation))`.
+It maps that vector through the supplied basis and calculates
+`rotationSign * Rad2Deg(AtanF(dx, -dy)) + zeroDegrees`. The preview's unrotated
+shape points up in its parent space. `rotationSign` must be +1 or -1 and
+`zeroDegrees` must be within +/-180; these explicitly calibrate the widget angle
+convention rather than assuming its rendered handedness. The vector conversion
+comes from the engine, never position differences or velocity. Uniform zoom
+cancels from the angle; nonuniform scale and view rotation remain in the basis.
+
+Capture all of these before measuring a sample: the exact controller root
+(`GetRootWidget()`), its current custom data (`GetMappin().GetScriptData()`), that
+data's `poseRevision`, and `CP2077Session_GetFacingPreviewGeneration()`.
+The Lua sample fields are `expected_root`, `expected_data`, `pose_revision`,
+`generation`, `basis = {xx=..., xy=..., yx=..., yy=...}`, `rotation_sign`,
+`zero_degrees`, and explicit `enabled = true`. Supply the same controller when
+calling `preview`. A basis from the minimap must never be reused for the full map.
+There is deliberately no example with guessed live basis values.
+
+Both `MinimapPOIMappinController` and `BaseWorldMapMappinController` expose:
+
+```reds
+public func CP2077Session_GetFacingPreviewGeneration() -> Uint32
+public func CP2077Session_ClearFacingPreview() -> Void
+public func CP2077Session_PreviewFacingBasis(expectedRoot: wref<inkWidget>, expectedData: ref<CP2077SessionPlayerMarkerData>, expectedPoseRevision: Uint32, sampleToken: Uint32, worldXx: Float, worldXy: Float, worldYx: Float, worldYy: Float, rotationSign: Float, zeroDegrees: Float) -> Bool
+```
+
+The generation changes on every normal `UpdateIcon` and explicit clear; each
+generation permits one attempt that reaches the preview helper. The exact root
+and script-data references reject cross-surface/controller and PlayerId-lifetime
+reuse. Pose revision rejects samples captured before another marker update.
+Generation and pose counters saturate and then reject previews rather than
+wrapping. Clamped markers and world-map groups/collections reject facing.
+Missing ownership, detached owners, nonfinite/degenerate bases and invalid
+calibration reject the preview while keeping the position icon unchanged.
+
+The arrow is an owned `inkCanvas` containing three `inkRectangle` strokes.
+Normal icon refresh, pose update, explicit clear, retirement and detach remove
+only that canvas by reference. Preview registration uses weak references; Hide
+unregisters itself and bulk clear snapshots its list before callbacks. A 150 ms
+fade is configured with `dependsOnTimeDilation = false` and removes the child on
+completion. This is declared playback configuration, **not live proof of pause
+behavior**. No game/simulation-clock expiry is assumed. The normal refresh also
+invalidates the preview, so a continuing experiment requires a fresh measured
+sample after each refresh. A native view change that does not trigger that
+refresh remains an unqualified timing boundary. Stop the experiment with
+`marker_facing.clear(controller)`; its caller must clear on its own unload.
+
+Offline tests exercise cardinal vectors, radian conversion through an injected
+engine-conversion interface, wrap, arbitrary rotating views, zoom, anisotropic
+scale, reflection, invalid inputs and independent per-surface forwarding.
+The tests' synthetic yaw convention is explicitly not a native-engine result.
+Compilation validates engine declarations; neither it nor pure math validates
+rendered arrows, update cadence, clipping, fade while paused, or map calibration.
+Live gates still include stationary turns, strafing/backward walking, wrap,
+map rotation/zoom, paused menus, seated body orientation, stale transforms,
+marker/controller recreation, cleanup/reload and both-peer evidence.
+
+2026-10-09 05:08 UTC handoff: the marker-facing subtask owns and hands off the
+five scoped source/doc/test files above to the parent for combined build and PR
+review. 192 fixture assertions and all 31 local CTests passed against the existing
+native build. Final isolated compilation at 05:07:44 UTC, including installed
+Codeware, passed with all inputs hash-verified unchanged. Independent review
+identified and verified fixes for captured-pose and cross-root sample races.
+Private evidence is under `D:\Downloads\syncfix\bench-artifacts\20261009-marker-facing`.
+This extends the offline-only checkpoint above; no game, deployment or public
+package promotion occurred.
 
 ## Local API evidence
 
@@ -121,6 +221,15 @@ Inspected installed game sources under
 | `tools/redmod/scripts/core/ui/widgetReference.script:156-157,382-385` | Widget rotation is in degrees; texture-part existence/set and atlas APIs. |
 | `tools/redmod/scripts/cyberpunk/UI/mappins/minimapMappins.script:985-1026` | CPO controller casts to RemotePlayerMappin and reads vitals/mission data. |
 | `red4ext/plugins/Codeware/Scripts/Codeware.Global.reds:362-365,22307-22310` | iconOrientation supports Upright/Entity only, not arbitrary position-marker heading. |
+| `tools/redmod/scripts/core/systems/minimapSystem.script` | Minimap settings/radius API, no exposed view/projection transform. |
+| `red4ext/plugins/Codeware/Scripts/Codeware.Global.reds:2436-2455` | Reflected minimap container widget references; these do not establish a map basis. |
+| `tools/redmod/scripts/core/ui/baseControllers/widgetController.script:1,312-315` | Widget screen bounds and generic world UI projection. |
+| `tools/redmod/scripts/core/ui/screenProjection.script:16-23` and `core/ui/baseControllers/hudGameController.script:136-143` | Screen-projection positions belong to the projected HUD interface. |
+| `tools/redmod/scripts/core/math/rot.script:10-14`, `core/math/quat.script:13`, `core/math/scalar.script:42` | Engine Euler/quaternion forward conversion and two-argument AtanF. |
+| `tools/redmod/scripts/core/ui/baseWidgets/abstractWidgets.script:61-85,140-163,180,213,222` | Dynamic widget geometry, degree rotation, parent/child ownership and child position. |
+| `tools/redmod/scripts/core/ui/baseWidgets/shapeWidget.script` | Native inkRectangle shape widget. |
+| `tools/redmod/scripts/core/ui/animationPlaybackOptions.script:12-24`, `animationInterpolators.script:12-13,63-69`, `animationProxy.script:12-21` | Fade duration, time-dilation option, exact animation stop/callback APIs. |
+| `red4ext/plugins/Codeware/Scripts/Codeware.UI.reds:313-321,474-481` | Script-created canvas/rectangle and Reparent examples. |
 
 Protocol validation bounds are from `shared/src/protocol.cpp:72-77` in this
 checkout. The installed source inspection establishes declarations and routing;
