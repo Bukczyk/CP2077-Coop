@@ -46,7 +46,9 @@ count as success. A stalled actor is detected outside the 0.2 m arrival toleranc
 including the former 0.2-0.75 m gap.
 
 Pending admission and correction/turn readback have one active-second deadline.
-Move, correction and turn failures stop after three attempts of the same kind.
+Move admission, retarget, correction and turn failures stop after three attempts
+of the same kind. Retarget failures have their own budget: brief actual motion
+from a new command cannot erase repeated movement-policy refresh rejection.
 Corrections remain at least one second apart and require observed position plus
 heading against the admitted target, even as newer targets arrive. Three
 corrections exhaust the recovery burst until one second of observed locomotion
@@ -60,7 +62,7 @@ actor-lifetime state machine.
 
 ## Verification
 
-- PASS: `player_motor_tests.lua`, 103 checks using the existing checksum-pinned Lua
+- PASS: `player_motor_tests.lua`, 105 checks using the existing checksum-pinned Lua
   runner with this worktree as its module root. Three simultaneous actors evolve
   their actual positions from admitted commands, rather than copying the network
   target into readback. Coverage includes walking/running/sprinting trajectories,

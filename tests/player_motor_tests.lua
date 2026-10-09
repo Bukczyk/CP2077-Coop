@@ -214,6 +214,15 @@ a=actor(); a.reject.move=true; m=Motor.new(a); m:step(target(11),1/60)
 a.reject.move=false
 run(a,m,180,target(11))
 check(a.starts == 2 and m.failures.move == 0 and not m.fault, "observed motion clears transient submission failure")
+a=actor(); a.rejectRetarget=true; m=Motor.new(a)
+run(a,m,3600,function(frame) return target(11+frame/60*0.15) end)
+check(a.starts == 3 and m.fault == "move_retarget_failed" and m.failures.retarget == 3 and a.travel > 0,
+    "brief actual movement cannot erase persistent retarget rejection")
+a=actor(); a.rejectRetarget=true; m=Motor.new(a)
+run(a,m,12,target(11)); a.rejectRetarget=false
+run(a,m,180,target(11))
+check(a.starts == 2 and m.failures.retarget == 0 and distance(a.pos,target(11)) < 0.2 and not m.fault,
+    "successful retarget clears transient policy refresh failure")
 
 -- A successful command status without transform change is not correction success.
 for _, mode in ipairs({"rejected", "unobserved", "false_success", "failed"}) do

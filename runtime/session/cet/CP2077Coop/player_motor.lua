@@ -25,7 +25,7 @@ function Motor.new(actor)
     return setmetatable({actor=actor, clock=0, speed=0, nextCommand=0, nextSnap=0,
         nextTurn=0, commands=0, snaps=0, turns=0, observedSnaps=0, stalled=0,
         spawnWait=0, recoveryTime=0, correctionAttempts=0,
-        failures={move=0, correction=0, turn=0}}, Motor)
+        failures={move=0, retarget=0, correction=0, turn=0}}, Motor)
 end
 
 function Motor:stop()
@@ -179,7 +179,10 @@ function Motor:step(target, delta)
     if self.command ~= nil then
         if self.commandState == 0 or self.commandState == 1 then return "pending" end
         local state = self.actor:CP2077Session_RetargetMove(self.command, target.x, target.y, target.z, gaitValue)
-        if state ~= 2 then return self:fail("move", "move_retarget_failed") end
+        if state ~= 2 then return self:fail("retarget", "move_retarget_failed") end
+        -- Brief motion from each new command cannot erase persistent policy
+        -- refresh rejection. Only an accepted retarget resets this budget.
+        self.failures.retarget = 0
         self.gait, self.nextCommand = gait, self.clock+0.08
         return "tracking"
     end
