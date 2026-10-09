@@ -5,6 +5,11 @@ installation. The current runtime does not require this Lua file or load these
 REDscript hooks. Work branch: `feat/player-action-preparation`; base:
 `b1f054ed67c0bb03f1b8e290c2b5fd62a621307c`.
 
+Follow-up: [`aim_probe.lua` / `aim_probe.reds`](../../docs/validation/PLAYER_AIM_PROBE.md)
+provide an explicitly enabled, local logical Aim-state fixture. They do not add
+remote ADS support. Its actor-local lease blocks competing stance/equip requests;
+pending stance and equipment work must finish before it can acquire the actor.
+
 ## What the boundary does
 
 `actions.lua` captures local standing/crouched, held aim and exact native weapon
@@ -45,6 +50,11 @@ A fresh nonempty opaque scope string is required for every epoch or membership
 generation. The resolver must be scoped to that same generation. Calls use a
 finite nondecreasing monotonic clock; this API is not thread-safe. Callback
 reentry into mutations is rejected.
+
+Probe reservation additionally requires a fresh, fully read-back weapon/stance
+state with held aim requested. While reserved, staging, unbinding and resetting
+that actor fail closed. On clean probe release the old desired state is cleared;
+stage a newer serial before using the normal adapter again.
 
 `step` reports `queued`, `observed`, `partial` or `failed`, plus a reason. A queued
 command and a changed blackboard are not proof of animation. Equipment reaches
@@ -96,6 +106,12 @@ reason is `inventory_capacity`. No removal of equipped items has been qualified,
 so no inventory is deleted by this adapter. Temporary granted items remain owned
 by the exact projection until its separately verified retirement. Do not retain
 these experiment actors as persistent world NPCs or use this API for other actors.
+
+Actor-local equipment command ownership and pending stance flags now also block
+probe acquisition. Equipment ownership clears only after confirmed command
+retirement. A stance signal has no cancellation handle: its pending flag clears
+only when its requested stance is read back, or with exact actor retirement.
+Timeout or Lua reset is not proof that a pending engine signal was cancelled.
 
 ## Validation and handoff
 

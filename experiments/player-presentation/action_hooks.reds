@@ -30,7 +30,10 @@ public func CP2077Session_HeldWeapon() -> TweakDBID {
 
 @addMethod(NPCPuppet)
 public func CP2077Session_ApplyStance(crouched: Bool) -> Bool {
-    if !this.IsAttached() { return false; }
+    if !this.IsAttached() || this.CP2077Session_PresentationProbeLocked
+        || this.CP2077Session_PresentationStancePending { return false; }
+    this.CP2077Session_PresentationStancePending = true;
+    this.CP2077Session_PresentationCrouched = crouched;
     if crouched { NPCPuppet.ChangeStanceState(this, gamedataNPCStanceState.Crouch); }
     else { NPCPuppet.ChangeStanceState(this, gamedataNPCStanceState.Stand); }
     return true; // State request only, not proof of a visible crouch.
@@ -39,9 +42,24 @@ public func CP2077Session_ApplyStance(crouched: Bool) -> Bool {
 @addMethod(NPCPuppet)
 public func CP2077Session_StanceMatches(crouched: Bool) -> Bool {
     let actual = this.GetStanceStateFromBlackboard();
+    if this.CP2077Session_PresentationStancePending {
+        if (this.CP2077Session_PresentationCrouched && Equals(actual, gamedataNPCStanceState.Crouch))
+            || (!this.CP2077Session_PresentationCrouched && Equals(actual, gamedataNPCStanceState.Stand)) {
+            this.CP2077Session_PresentationStancePending = false;
+        }
+    }
     if crouched { return Equals(actual, gamedataNPCStanceState.Crouch); }
     return Equals(actual, gamedataNPCStanceState.Stand);
 }
+
+@addField(NPCPuppet)
+private let CP2077Session_PresentationProbeLocked: Bool;
+@addField(NPCPuppet)
+private let CP2077Session_PresentationStancePending: Bool;
+@addField(NPCPuppet)
+private let CP2077Session_PresentationCrouched: Bool;
+@addField(NPCPuppet)
+private let CP2077Session_PresentationCommand: ref<AICommand>;
 
 public class CP2077PlayerPresentation {
     public static func SupportedWeapon(record: TweakDBID) -> Bool {
@@ -102,11 +120,13 @@ public func CP2077Session_HasPresentationItem(record: TweakDBID) -> Bool {
 @addMethod(NPCPuppet)
 public func CP2077Session_EquipPresentation(record: TweakDBID, drawn: Bool) -> ref<AICommand> {
     let controller = this.GetAIControllerComponent();
-    if !this.IsAttached() || !IsDefined(controller) { return null; }
+    if !this.IsAttached() || !IsDefined(controller) || this.CP2077Session_PresentationProbeLocked
+        || IsDefined(this.CP2077Session_PresentationCommand) { return null; }
     if !drawn {
         let holster = new AIUnequipCommand();
         holster.slotId = t"AttachmentSlots.WeaponRight";
-        if !controller.SendCommand(holster) { return null; }
+        this.CP2077Session_PresentationCommand = holster;
+        if !controller.SendCommand(holster) { this.CP2077Session_PresentationCommand = null; return null; }
         return holster;
     }
     if !CP2077PlayerPresentation.SupportedWeapon(record) { return null; }
@@ -124,13 +144,15 @@ public func CP2077Session_EquipPresentation(record: TweakDBID, drawn: Bool) -> r
     let equip = new AIEquipCommand();
     equip.slotId = t"AttachmentSlots.WeaponRight";
     equip.itemId = record;
-    if !controller.SendCommand(equip) { return null; }
+    this.CP2077Session_PresentationCommand = equip;
+    if !controller.SendCommand(equip) { this.CP2077Session_PresentationCommand = null; return null; }
     return equip; // Queued only. The owner retains and retires this command.
 }
 
 @addMethod(NPCPuppet)
 public func CP2077Session_StopPresentation(command: ref<AICommand>) -> Bool {
     if !IsDefined(command) { return true; }
+    if this.CP2077Session_PresentationCommand != command { return false; }
     let controller = this.GetAIControllerComponent();
     if !IsDefined(controller) { return false; }
     let state = controller.GetCommandState(command);
@@ -140,6 +162,10 @@ public func CP2077Session_StopPresentation(command: ref<AICommand>) -> Bool {
         controller.CancelCommand(command);
         state = controller.GetCommandState(command);
     }
-    return Equals(state, AICommandState.Cancelled) || Equals(state, AICommandState.Interrupted)
-        || Equals(state, AICommandState.Success) || Equals(state, AICommandState.Failure);
+    if Equals(state, AICommandState.Cancelled) || Equals(state, AICommandState.Interrupted)
+        || Equals(state, AICommandState.Success) || Equals(state, AICommandState.Failure) {
+        this.CP2077Session_PresentationCommand = null;
+        return true;
+    }
+    return false;
 }

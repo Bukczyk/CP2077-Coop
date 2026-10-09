@@ -11,11 +11,14 @@ local function actor(id)
     function a:CP2077Session_HeldPresentationMatches(weapon,drawn)
         return self.drawn==drawn and (not drawn or self.weapon==weapon)
     end
-    function a:CP2077Session_ApplyStance(crouched) self.stances=self.stances+1; self.requestedCrouch=crouched; return true end
+    function a:CP2077Session_ApplyStance(crouched)
+        if self.probeLocked then return false end
+        self.stances=self.stances+1; self.requestedCrouch=crouched; return true
+    end
     function a:CP2077Session_HasPresentationItem(weapon) return self.items[weapon]==true end
     function a:CP2077Session_PresentationGrantCount() return self.grants end
     function a:CP2077Session_EquipPresentation(weapon,drawn)
-        if self.reject then return nil end
+        if self.reject or self.probeLocked then return nil end
         if self.throw then error("uncertain queue result") end
         if drawn and not self.items[weapon] then self.items[weapon]=true; self.grants=self.grants+1 end
         local command={weapon=weapon,drawn=drawn}; self.commands[#self.commands+1]=command; return command
@@ -190,4 +193,155 @@ p=assert(Actions.new({resolve=function() end,supported=function()
 end}))
 p:reset(scope,0); p:stage(scope,"a",1,state("Items.Pistol"),0)
 check(reentry and p:size()==1,"callback cannot recursively mutate the controller")
+local Probe=assert(loadfile(root.."/experiments/player-presentation/aim_probe.lua"))()
+local function aimActor(key)
+    local a=actor(key); a.weapon,a.drawn,a.upper="Items.Pistol",true,0
+    a.aimRequests,a.restoreRequests=0,0
+    function a:CP2077Session_AcquireAimProbe(record)
+        if self.lease or self.upper~=0 or not self.attached or self.weapon~=record then return nil end
+        self.lease={}; self.probeLocked=true
+        if self.throwAcquire then error("after acquiring native lease") end
+        return self.lease
+    end
+    function a:CP2077Session_ReadAimProbe(lease)
+        if self.lease~=lease or not self.attached then return -1 end
+        if self.upper==1 and lease.requested then lease.seen=true end
+        return self.upper
+    end
+    function a:CP2077Session_RequestAimProbe(lease,aim)
+        local actual=self:CP2077Session_ReadAimProbe(lease)
+        if aim then
+            if actual~=0 or lease.requested then return false end
+            lease.requested=true; self.aimRequests=self.aimRequests+1
+            self.probeLocked=true
+        else
+            if actual~=1 or not lease.seen or lease.restore then return false end
+            lease.restore=true; self.restoreRequests=self.restoreRequests+1
+        end
+        if self.throwAim then error("after possible mutation") end
+        return true
+    end
+    function a:CP2077Session_ReleaseAimProbe(lease)
+        if self:CP2077Session_ReadAimProbe(lease)~=0 or (lease.requested and not lease.restore) then return false end
+        if self.refuseRelease then return false end
+        self.lease=nil; self.probeLocked=false; return true
+    end
+    return a
+end
+local function prepareProbe(a,entity,controller,mapping)
+    if not controller then controller,mapping=fixture() end
+    mapping[entity]=a
+    assert(controller:stage(scope,entity,1,state("Items.Pistol",false,true),0))
+    assert(controller:bind(scope,entity,a,0))
+    assert(controller:step(scope,entity,0)=="partial")
+    local probe=assert(Probe.new({enabled=true,actions=controller,resolve=function(k) return mapping[k] end,hold=0.5}))
+    return probe,controller,mapping
+end
+check(Probe.new({})==nil,"aim probe requires explicit opt-in")
+local probe
+p,map=fixture()
+local trials={}
+for i=1,3 do
+    local entity="aim"..i
+    local a=aimActor("700"..i.."ULL")
+    probe=prepareProbe(a,entity,p,map)
+    trials[i]={probe=probe,actor=a,entity=entity}
+    check(probe:start(scope,entity,0),"three independent aim leases")
+    check(probe:step(0)=="queued" and not probe:inspect().logicalAimObserved,"submission is not readback")
+end
+probe,a=trials[1].probe,trials[1].actor
+check(not p:stage(scope,"aim1",2,state(),0),"probe reservation blocks state changes")
+check(not p:unbind(scope,"aim1",a.id,0),"probe reservation blocks projection release")
+check(not p:reset("replacement scope",0),"probe reservation blocks reset")
+a.upper=1
+check(probe:step(0.1)=="partial" and probe:inspect().logicalAimObserved,"logical Aim remains partial")
+check(probe:inspect().visual=="unverified","logical readback never claims visible ADS")
+map.aim1=setmetatable({}, {__index=a})
+check(probe:step(0.6)=="queued" and a.restoreRequests==1,"same-ID wrapper churn permits bounded restore")
+a.upper=0
+check(probe:step(0.7)=="queued","Normal first readback does not release early")
+check(probe:step(1)=="complete" and probe:inspect().cleanupConfirmed,"stable Normal releases exact lease")
+check(a.lease==nil and trials[2].actor.lease~=nil,"other actors retain their leases")
+check(p:inspect("aim1").reason=="awaiting_fresh_state","after probe old desired state is invalidated")
+check(not probe:start(scope,"aim1",1),"one fixture instance cannot restart itself")
+
+-- A second independent Actions controller cannot bypass the native actor lease.
+a=aimActor("800ULL"); local first,firstActions=prepareProbe(a,"a")
+check(first:start(scope,"a",0),"first fixture gets actor lease")
+local second,secondActions=prepareProbe(a,"a")
+check(not second:start(scope,"a",0) and a.aimRequests==1,"second controller cannot command the leased actor")
+check(not second:inspect().retirementRequired and not second:inspect().reservationHeld,
+    "known lease rejection cannot retire another controller's actor")
+check(secondActions:inspect("a").reason=="awaiting_fresh_state","safe lease rejection clears only its own reservation")
+secondActions:stage(scope,"a",2,state("Items.Rifle",true),0.1)
+check(secondActions:step(scope,"a",0.1)=="failed" and a.stances==0 and #a.commands==0,
+    "a second controller cannot submit stance or equipment while actor probe lease is held")
+local _,thirdActions=prepareProbe(a,"a")
+thirdActions:stage(scope,"a",2,state("Items.Rifle",false),0.1)
+check(thirdActions:step(scope,"a",0.1)=="failed" and #a.commands==0,
+    "actor probe lease also blocks equipment when no stance change was requested")
+
+-- Stop before queued Aim drains must not force Normal or fabricate cancellation.
+check(first:stop(),"early stop requested")
+check(first:step(0.4)=="queued" and a.restoreRequests==0,"pending Aim cannot be cancelled through equal Normal setter")
+a.upper=1
+check(first:step(0.5)=="queued" and a.restoreRequests==1,"early stop restores only after Aim readback")
+a.upper=0; first:step(0.6)
+check(first:step(0.9)=="complete","early stop can finish after verified restoration")
+
+-- Pause and timeout: no signal flood, no detached or replacement actor mutation.
+probe,p,map=prepareProbe(aimActor("801ULL"),"a"); a=map.a
+probe:start(scope,"a",0); probe:step(0.1,true); probe:step(50,true); probe:step(50.1,false)
+check(probe:inspect().phase=="awaiting_aim" and a.aimRequests==1,"pause does not consume probe deadline")
+check(probe:step(51.2)=="failed" and probe:inspect().retirementRequired,"unobserved queued Aim requires exact retirement")
+check(a.restoreRequests==0 and not p:reset("new scope",51.2),"timeout retains ownership rather than falsely canceling")
+for _,mode in ipairs({"different_actor","detached","external_state","weapon_change"}) do
+    probe,p,map=prepareProbe(aimActor("802ULL"),"a"); a=map.a
+    probe:start(scope,"a",0); a.upper=1; probe:step(0.1)
+    if mode=="different_actor" then map.a=aimActor("803ULL")
+    elseif mode=="detached" then a.attached=false
+    elseif mode=="external_state" then a.upper=2
+    else a.weapon="Items.Rifle" end
+    check(probe:step(0.2)=="failed" and a.restoreRequests==0,"competing state/identity is never overwritten: "..mode)
+    check(probe:inspect().retirementRequired,"uncertain cleanup retains retirement barrier")
+end
+probe,p,map=prepareProbe(aimActor("804ULL"),"a"); a=map.a
+probe:start(scope,"a",0); a.upper=1; probe:step(0.1); probe:step(0.6)
+check(probe:step(1.7)=="failed" and a.restoreRequests==1,"restore timeout is bounded without repeated Normal signals")
+check(not p:unbind(scope,"a",a.id,1.7),"unconfirmed restoration retains projection ownership")
+probe,p,map=prepareProbe(aimActor("805ULL"),"a"); a=map.a; a.throwAim=true
+check(not probe:start(scope,"a",0) and probe:inspect().retirementRequired,"throw after possible signal retains native lease")
+check(not p:stage(scope,"a",2,state(),0),"uncertain submission cannot be overwritten")
+probe,p,map=prepareProbe(aimActor("806ULL"),"a"); a=map.a; a.upper=2
+check(not probe:start(scope,"a",0) and a.aimRequests==0,"non-Normal baseline is rejected before mutation")
+check(not probe:inspect().retirementRequired,"rejected non-Normal actor is not ours to retire")
+probe,p,map=prepareProbe(aimActor("807ULL"),"a")
+check(not probe:start("old epoch","a",0),"old scope cannot reserve current actor")
+check(not probe:start(scope,"a",5),"stale desired state cannot start an aim probe")
+probe,p,map=prepareProbe(aimActor("808ULL"),"a"); a=map.a
+probe:start(scope,"a",0); a.upper=1; probe:step(0.1); probe:step(0.6)
+a.upper=0; probe:step(0.7)
+check(probe:step(3)=="failed" and probe:inspect().reason=="late_restore_readback",
+    "gapped late restoration never reports an on-time cycle")
+check(probe:inspect().cleanupConfirmed and not probe:inspect().retirementRequired,
+    "late observed cleanup may release safely while recording the missed deadline")
+probe,p,map=prepareProbe(aimActor("809ULL"),"a"); a=map.a; a.upper=2
+function p:releaseAimProbe() return false end
+check(not probe:start(scope,"a",0) and probe:inspect().reason=="reservation_release_unconfirmed",
+    "known rejection still reports an unconfirmed action reservation release")
+check(probe:inspect().reservationHeld and not probe:inspect().retirementRequired,
+    "controller reservation failure does not authorize retiring an actor we never leased")
+probe,p,map=prepareProbe(aimActor("810ULL"),"a"); a=map.a
+probe:start(scope,"a",0); a.upper=1; probe:step(0.1); probe:step(0.6); a.upper=0; probe:step(0.7)
+function p:releaseAimProbe() return false end
+check(probe:step(1)=="failed" and probe:inspect().cleanupConfirmed and not probe:inspect().retirementRequired,
+    "verified native cleanup followed by local reservation failure does not request actor retirement")
+probe,p,map=prepareProbe(aimActor("811ULL"),"a"); a=map.a; a.throwAcquire=true
+check(not probe:start(scope,"a",0) and probe:inspect().reason=="lease_uncertain",
+    "throw after possible lease acquisition is explicitly uncertain")
+check(probe:inspect().reservationHeld and probe:inspect().retirementRequired and a.lease~=nil,
+    "uncertain native acquisition retains both ownership barriers")
+check(a.aimRequests==0 and a.restoreRequests==0 and not p:reset("new scope",0),
+    "uncertain acquisition does not submit Aim/Normal or reset ownership")
+check(not p:unbind(scope,"a",a.id,0),"uncertain acquisition blocks exact actor unbind")
 print("player action checks: "..checks)

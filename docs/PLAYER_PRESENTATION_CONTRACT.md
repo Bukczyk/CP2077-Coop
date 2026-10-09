@@ -27,6 +27,13 @@ is implemented. Applying remote ADS animation, sight alignment or pitch is **not
 implemented**. A true aiming state returns `partial / ads_unavailable` after
 supported equipment/stance readback; it cannot produce an observed ADS result.
 
+The [opt-in local Aim-state probe](validation/PLAYER_AIM_PROBE.md) now exercises
+the installed NPC upper-body signal and logical readback under an exclusive
+actor lease. This adds no remote aim direction or ADS guarantee. Normal/Aim
+blackboard values, command submission and visible weapon/sight pose are separate
+evidence. The normal action adapter still returns `partial / ads_unavailable` for
+held aim; probe completion cannot upgrade that to observed ADS.
+
 ## Information and decisions needed from Bukczyk
 
 These are requirements to agree together, not a request to adopt a Lua wire format:

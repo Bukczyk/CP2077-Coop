@@ -52,6 +52,7 @@ function M.new(config)
     end
     local function fault(e,reason) e.status,e.reason="failed",reason; return "failed",reason end
     local function release(e)
+        if e.probe then fault(e,"aim_probe_owned"); return false end
         if e.uncertain then return false end
         if e.command~=nil then
             local ok, stopped=invoke(function()
@@ -76,6 +77,7 @@ function M.new(config)
             or type(state.crouched)~="boolean" or type(state.aiming)~="boolean"
             or type(state.drawn)~="boolean" or state.weapon==nil then return false,"invalid_state" end
         local e=entries[entity]
+        if e and e.probe then return false,"aim_probe_owned" end
         if e and serial<=e.serial then return false,"stale_serial" end
         if state.drawn then
             local valid,value=invoke(validate,state.weapon)
@@ -123,6 +125,7 @@ function M.new(config)
     function self:step(s,entity,now,paused)
         local ok,reason=context(s,now); if not ok then return "failed",reason end
         local e=entries[entity]; if not e then return "failed","unknown_entity" end
+        if e.probe then return "partial","aim_probe_owned" end
         if not paused and not e.paused then e.active=e.active+now-e.last end
         e.last,e.paused=now,paused==true
         if e.status=="failed" then return "failed",e.reason end
@@ -196,6 +199,30 @@ function M.new(config)
         return {serial=e.serial,localKey=e.localKey,status=e.status,reason=e.reason,
             stance=e.stance,weapon=e.weapon,aim=e.aim,commandOwned=e.command~=nil,
             activeAge=e.freshAt and e.active-e.freshAt or nil,uncertain=e.uncertain==true}
+    end
+    -- Opt-in local probe reservation. No engine aim is enabled by this API.
+    function self:reserveAimProbe(s,entity,now)
+        local valid,reason=context(s,now); if not valid then return nil,reason end
+        local e=entries[entity]
+        if not e or e.probe or not e.actor or e.command or e.admitted or e.status~="partial"
+            or e.reason~="ads_unavailable" or not e.latest.drawn or not e.latest.aiming then
+            return nil,"presentation_not_ready"
+        end
+        if not e.paused then e.active=e.active+now-e.last end
+        e.last=now
+        if e.active-e.freshAt>=maxAge then return nil,"state_expired" end
+        e.probe={}
+        return {token=e.probe,localKey=e.localKey,weapon=e.latest.weapon},"reserved"
+    end
+    function self:releaseAimProbe(s,entity,token)
+        if busy or scope~=s then return false,"wrong_scope_or_busy" end
+        local e=entries[entity]
+        if not e or e.probe~=token or token==nil then return false,"wrong_probe" end
+        e.probe=nil
+        -- Probe evidence remains separate; ADS is still unqualified.
+        e.latest=nil
+        e.status,e.reason="queued","awaiting_fresh_state"
+        return true,"released"
     end
     function self:size() return count end
     return self
