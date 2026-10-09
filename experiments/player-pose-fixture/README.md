@@ -26,6 +26,12 @@ a 90-degree turn, ten seconds of moving targets, and settling. It stops after
 32 seconds, retires its owned command and requests deletion of its tagged actor.
 `GetMod("zz_PlayerPoseFixture").stop()` stops early. Deletion requested or an empty
 tag list is not proof that no visible body remains; inspect cleanup separately.
+The fixture retains the exact returned EntityID and checks engine attachment,
+managed status and pending spawn status after deletion. `retired` requires all
+three to be false. A three-second timeout or lookup error blocks another trial
+for this loaded fixture; it does not declare cleanup successful. Do not reload
+to bypass that block. Preserve the ID and investigate it first. Shutdown cannot
+confirm retirement because update callbacks stop.
 Do not run in combat, vehicles, or a live collaboration session.
 
 `POSE_FIXTURE` records in CET's `scripting.log` include the admitted command,

@@ -69,3 +69,34 @@ state, exact actor ID and admitted command. Diagnose delayed AI execution versus
 position-only/heading-only failure before choosing recovery. Independently verify
 exact actor retirement and duplicates; a missing tag alone is insufficient.
 Then measure continuous following in both directions and human-observed animation.
+
+## Exact retirement follow-up (2026-10-09 00:23 UTC)
+
+KyleBuildsAI owns the fixture, its focused test and this record. Protocol v5,
+production player bridge, REDscript and native/backend code are unchanged.
+The loaded Test B diagnostic now retains CreateEntity's exact EntityID through
+retirement and checks Game.FindEntityByID(...):IsAttached(), IsManaged and
+IsSpawning. It blocks another trial on timeout/error rather than silently
+forgetting the unresolved actor. The check runs on CET's game update callback.
+
+Live local trial: actor `10737732ULL` was created at 00:20:40 UTC and stopped
+at 00:21:10 UTC. At 17.54 ms after deletion, it remained attached despite
+`tagged=0`, `managed=false`, `spawning=false`. At 37.38 ms, attachment, management
+and pending spawn were all absent. This actor retired successfully. An older
+Judy body remained visible, so this does not explain or fix the older body.
+Its identity/provenance is still unknown. No arbitrary nearby NPC was deleted.
+
+Windows Release build and 27/27 local CTests passed. The new fixture suite has
+29 checks covering exact ID retention, asynchronous detachment, pending spawn,
+managed state, timeout and lookup-error blocking. Raw private evidence and
+installed/source fixture hashes: `bench-artifacts/20261008-player-cleanup`.
+
+Next: identify the older body's exact engine ID before attributing it to a
+specific path. During the next connected test, record enriched pose diagnostics
+for the original readback_timeout. This local cleanup test is not a WAN freeze
+fix, disconnect/reconnect qualification or animation pass.
+
+Test B remains open with the overlay closed and session closed. The diagnostic
+is idle. Production runtime, controls, configuration, saves and the public/local
+v0.0.37 alpha.5 package are preserved. No new release was created. The expired
+Discord monitoring automation remains paused; no new Discord message was sent.
