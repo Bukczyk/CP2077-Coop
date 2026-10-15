@@ -52,6 +52,8 @@ public func CP2077VehicleProbe_MountSlot() -> String {
 @addField(VehicleObject)
 private let CP2077VehicleProbe_owned: Bool;
 @addField(VehicleObject)
+private let CP2077VehicleProbe_recordFault: Bool;
+@addField(VehicleObject)
 private let CP2077VehicleProbe_player: EntityID;
 @addField(VehicleObject)
 private let CP2077VehicleProbe_serial: Uint32;
@@ -63,11 +65,14 @@ private let CP2077VehicleProbe_events: array<ref<CP2077VehicleSeatEvent>>;
 @addMethod(VehicleObject)
 public func CP2077VehicleProbe_Owned(player: ref<PlayerPuppet>) -> Bool {
     let dynamic = GameInstance.GetDynamicEntitySystem();
-    if !IsDefined(player) || !player.IsAttached() || !this.IsAttached()
+    if this.CP2077VehicleProbe_recordFault || !IsDefined(player) || !player.IsAttached() || !this.IsAttached()
         || !IsDefined(dynamic) || !dynamic.IsReady() || !dynamic.IsManaged(this.GetEntityID())
         || !dynamic.IsSpawned(this.GetEntityID()) || dynamic.IsSpawning(this.GetEntityID())
-        || !dynamic.IsTagged(this.GetEntityID(), n"CP2077VehicleSeatFixture")
-        || this.GetRecordID() != t"Vehicle.v_standard2_archer_hella_player" { return false; }
+        || !dynamic.IsTagged(this.GetEntityID(), n"CP2077VehicleSeatFixture") { return false; }
+    if this.GetRecordID() != t"Vehicle.v_standard2_archer_hella_player" {
+        this.CP2077VehicleProbe_recordFault = true;
+        return false;
+    }
     if this.CP2077VehicleProbe_owned && this.CP2077VehicleProbe_player != player.GetEntityID() { return false; }
     this.CP2077VehicleProbe_owned = true;
     this.CP2077VehicleProbe_player = player.GetEntityID();
@@ -109,20 +114,40 @@ public func CP2077VehicleProbe_CanRetire(player: ref<PlayerPuppet>) -> Bool {
 }
 
 @addMethod(VehicleObject)
-public func CP2077VehicleProbe_Request(player: ref<PlayerPuppet>, slot: CName, mounting: Bool) -> Bool {
+public func CP2077VehicleProbe_Request(player: ref<PlayerPuppet>, slot: CName, mounting: Bool, expectedAppearance: CName) -> Bool {
     let current: MountingInfo;
     let info: MountingInfo;
     let data: ref<MountEventData>;
     let mount: ref<MountingRequest>;
     let unmount: ref<UnmountingRequest>;
+    let matches: Int32;
+    let record: ref<Vehicle_Record>;
+    let requests = GameInstance.GetSystemRequestsHandler();
+    // Also protect direct helper calls and changes since Lua's preflight.
+    if !IsDefined(requests) || requests.IsGamePaused() || requests.IsPreGame() { return false; }
     if !this.CP2077VehicleProbe_Owned(player) || !this.CP2077VehicleProbe_HasSeat(slot)
         || Vector4.Length(this.GetLinearVelocity()) >= 0.20 { return false; }
     current = player.CP2077VehicleProbe_MountInfo();
     if mounting {
+        record = TweakDBInterface.GetVehicleRecord(t"Vehicle.v_standard2_archer_hella_player");
+        if !IsDefined(record) || Equals(expectedAppearance, n"") || Equals(expectedAppearance, n"None")
+            || NotEquals(record.AppearanceName(), expectedAppearance)
+            || NotEquals(this.GetCurrentAppearanceName(), expectedAppearance)
+            || NotEquals(this.GetCurrentColorVariantName(), n"None") { return false; }
         if !player.CP2077VehicleProbe_OnFoot() || !VehicleComponent.IsSlotAvailable(this.GetGame(), this, slot) { return false; }
     } else {
         if current.parentId != this.GetEntityID() || current.childId != player.GetEntityID()
             || NotEquals(current.slotId.id, slot) { return false; }
+        // Cosmetics do not authorize a mount, but also cannot prevent a safe exit.
+        // Check the vehicle side again, not only the player's or Lua's last sample.
+        for occupant in this.CP2077VehicleProbe_Mounts() {
+            if occupant.parentId != this.GetEntityID() { return false; }
+            if occupant.childId == player.GetEntityID() || Equals(occupant.slotId.id, slot) {
+                if occupant.childId != player.GetEntityID() || NotEquals(occupant.slotId.id, slot) { return false; }
+                matches += 1;
+            }
+        }
+        if matches != 1 { return false; }
     }
     info.parentId = this.GetEntityID();
     info.childId = player.GetEntityID();
@@ -191,4 +216,58 @@ protected cb func OnVehicleFinishedMountingEvent(evt: ref<VehicleFinishedMountin
     let vehicle = this.GetVehicle();
     if IsDefined(vehicle) { vehicle.CP2077VehicleProbe_Finished(evt); }
     return result;
+}
+
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseGeneration: Uint32;
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseRequest: Uint32;
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseOrigin: Vector4;
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseOrientation: Quaternion;
+
+@addMethod(VehicleObject)
+public func CP2077VehicleProbe_ApplyPose(player: ref<PlayerPuppet>, generation: Uint32,
+    request: Uint32, position: Vector4, orientation: Quaternion, expectedAppearance: CName) -> Bool {
+    let currentPosition: Vector4;
+    let currentOrientation: Quaternion;
+    let dot: Float;
+    let record: ref<Vehicle_Record>;
+    let requests = GameInstance.GetSystemRequestsHandler();
+    // Direct calls and changes since Lua's preflight must satisfy the same
+    // loaded/unpaused context and lifetime-frozen appearance contract.
+    if !IsDefined(requests) || requests.IsGamePaused() || requests.IsPreGame() { return false; }
+    if generation == 0u || generation > 1000000000u || request == 0u || request > 16u
+        || request <= this.CP2077VehicleProbe_poseRequest
+        || (this.CP2077VehicleProbe_poseGeneration != 0u && generation != this.CP2077VehicleProbe_poseGeneration)
+        || !this.CP2077VehicleProbe_CanRetire(player) { return false; }
+    if !(AbsF(position.X) < 100000.0 && AbsF(position.Y) < 100000.0 && AbsF(position.Z) < 100000.0)
+        || !(AbsF(Quaternion.MagnitudeSq(orientation) - 1.0) <= 0.001) { return false; }
+    record = TweakDBInterface.GetVehicleRecord(t"Vehicle.v_standard2_archer_hella_player");
+    if !IsDefined(record) || Equals(expectedAppearance, n"") || Equals(expectedAppearance, n"None")
+        || NotEquals(record.AppearanceName(), expectedAppearance)
+        || NotEquals(this.GetCurrentAppearanceName(), expectedAppearance)
+        || NotEquals(this.GetCurrentColorVariantName(), n"None") { return false; }
+    currentPosition = this.GetWorldPosition();
+    currentOrientation = Quaternion.Normalized(this.GetWorldOrientation());
+    orientation = Quaternion.Normalized(orientation);
+    dot = AbsF(Quaternion.Dot(currentOrientation, orientation));
+    // Maximum single jump 0.5 m / 10 degrees. Reject no-op requests below
+    // the probe's independent readback resolution (0.1 m / 2 degrees).
+    if !(Vector4.Distance(currentPosition, position) <= 0.5 && dot >= 0.996194698)
+        || (Vector4.Distance(currentPosition, position) < 0.1 && dot > 0.999847695) { return false; }
+    if this.CP2077VehicleProbe_poseGeneration == 0u {
+        this.CP2077VehicleProbe_poseOrigin = currentPosition;
+        this.CP2077VehicleProbe_poseOrientation = currentOrientation;
+    }
+    if !(Vector4.Distance(this.CP2077VehicleProbe_poseOrigin, position) <= 2.0
+        && AbsF(position.Z - this.CP2077VehicleProbe_poseOrigin.Z) <= 0.25
+        && AbsF(Quaternion.Dot(this.CP2077VehicleProbe_poseOrientation, orientation)) >= 0.965925826) { return false; }
+    this.CP2077VehicleProbe_poseGeneration = generation;
+    this.CP2077VehicleProbe_poseRequest = request;
+    // Vanilla vehicleTransition uses this exact whole-vehicle API and converts
+    // the full quaternion to all three Euler angles. It returns Void.
+    GameInstance.GetTeleportationFacility(this.GetGame()).Teleport(this, position, Quaternion.ToEulerAngles(orientation));
+    return true; // Submission only; the Lua probe independently observes settling.
 }

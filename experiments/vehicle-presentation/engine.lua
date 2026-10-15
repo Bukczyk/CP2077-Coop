@@ -14,10 +14,10 @@ local function key(value)
 end
 local function system()
     local value=Game.GetDynamicEntitySystem()
-    assert(value and value:IsReady(),"dynamic_system_unavailable")
+    assert(value and value:IsReady()==true,"dynamic_system_unavailable")
     return value
 end
-function Engine.new() return setmetatable({},Engine) end
+function Engine.new(generation) return setmetatable({generation=generation or 1},Engine) end
 function Engine:descriptor()
     local player=assert(Game.GetPlayer(),"player_unavailable")
     assert(player:IsAttached() and player:CP2077VehicleProbe_OnFoot(),"player_not_on_foot")
@@ -42,41 +42,69 @@ function Engine:create(descriptor,pose)
     spec.orientation=Quaternion.new(pose.qx,pose.qy,pose.qz,pose.qw)
     spec.persistState=false; spec.persistSpawn=false; spec.alwaysSpawned=true
     spec.spawnInView=true; spec.active=true; spec.tags={CName.new(tag)}
+    self.appearance=descriptor.appearance -- Frozen for this car's lifetime, not a later record default.
+    self.system=s -- Retain the exact creator even while native creation is pending.
     self.id=s:CreateEntity(spec)
     self.key=assert(key(self.id),"create_identity_unavailable")
     return self.key,self.creator
 end
 function Engine:_actor(expected)
     assert(expected==self.key and self.id~=nil,"not_owned_identity")
-    local s=system()
+    local s=self.system
+    assert(s and s:IsReady()==true,"creator_system_unavailable")
     local world=Game.FindEntityByID(self.id)
     local population=s:GetEntity(self.id)
-    if world then assert(key(world:GetEntityID())==expected,"world_identity_mismatch") end
-    if population then assert(key(population:GetEntityID())==expected,"population_identity_mismatch") end
-    if self.retained then assert(key(self.retained:GetEntityID())==expected,"retained_identity_mismatch") end
-    if world and world:IsAttached() then self.retained=world
-    elseif population and population:IsAttached() then self.retained=population end
-    local actor=world or population or self.retained
-    if self.retained and self.retained:IsAttached() then actor=self.retained end
-    return actor,s,population,world
+    local function attached(candidate,label)
+        if candidate==nil then return false end
+        assert(key(candidate:GetEntityID())==expected,label.."_identity_mismatch")
+        local value=candidate:IsAttached()
+        assert(type(value)=="boolean",label.."_attachment_unavailable")
+        return value
+    end
+    local worldAttached=attached(world,"world")
+    local populationAttached=attached(population,"population")
+    local retainedAttached=attached(self.retained,"retained")
+    -- Validate before changing ownership. A later exact-ID wrapper cannot erase
+    -- evidence that the first observed actor is still attached.
+    if self.retained==nil then
+        if worldAttached then self.retained=world;retainedAttached=true
+        elseif populationAttached then self.retained=population;retainedAttached=true end
+    end
+    local actor,actorAttached
+    if retainedAttached then actor=self.retained;actorAttached=true
+    elseif world~=nil then actor=world;actorAttached=worldAttached
+    elseif population~=nil then actor=population;actorAttached=populationAttached
+    else actor=self.retained;actorAttached=false end
+    return actor,s,population,world,actorAttached,retainedAttached
 end
 function Engine:observe(expected)
-    local actor,s,population,world=self:_actor(expected)
+    local actor,s,population,world,attached,retainedAttached=self:_actor(expected)
     local o={id=expected,managed=s:IsManaged(self.id),spawning=s:IsSpawning(self.id),spawned=s:IsSpawned(self.id),
-        worldPresent=world~=nil,populationPresent=population~=nil,attached=actor~=nil and actor:IsAttached(),
-        retainedAttached=self.retained~=nil and self.retained:IsAttached()}
+        worldPresent=world~=nil,populationPresent=population~=nil,attached=attached,
+        retainedAttached=retainedAttached}
     if not o.attached then return o end
     local player=assert(Game.GetPlayer(),"player_unavailable")
     -- After deletion, the entity may remain attached briefly but no longer be managed.
     o.player=assert(key(player:GetEntityID()),"player_identity_unavailable")
+    -- Read before Owned: its native record guard can reject before a full sample
+    -- exists. A hard record mismatch is not a recoverable cosmetic quarantine.
+    if actor:GetRecordID()~=TweakDBID.new(record) then self.recordFault=true end
+    if self.recordFault then o.recordFault=true; return o end
     if o.managed and o.player==self.creator then assert(actor:CP2077VehicleProbe_Owned(player),"ownership_unavailable") end
     o.onFoot=player:CP2077VehicleProbe_OnFoot()
     local position=actor:GetWorldPosition(); local q=actor:GetWorldOrientation(); local v=actor:GetLinearVelocity()
     o.pose={x=position.x,y=position.y,z=position.z,qx=q.i,qy=q.j,qz=q.k,qw=q.r}
     o.speed=math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z)
     o.velocity={x=v.x,y=v.y,z=v.z}
-    o.record=actor:GetRecordID()==TweakDBID.new(record) and record or "unsupported_record"
-    o.appearance=actor:CP2077VehicleProbe_Appearance(); o.color=actor:CP2077VehicleProbe_ColorVariant()
+    o.record=record
+    -- Missing cosmetics quarantine new mounts/motion, but must not erase otherwise
+    -- valid identity/seat observations required to safely leave an owned car.
+    local appearanceOk,appearance=pcall(function()return actor:CP2077VehicleProbe_Appearance()end)
+    local colorOk,color=pcall(function()return actor:CP2077VehicleProbe_ColorVariant()end)
+    o.appearanceAvailable=appearanceOk and type(appearance)=="string" and appearance~=""
+    o.colorAvailable=colorOk and type(color)=="string" and color~=""
+    o.appearance=o.appearanceAvailable and appearance or nil
+    o.color=o.colorAvailable and color or nil
     -- No unnamed or customized variant is silently treated as the requested default.
     o.occupants={}; o.slots={}; o.events={}
     for _,mount in ipairs(actor:CP2077VehicleProbe_ReadSeats()) do
@@ -100,17 +128,86 @@ function Engine:acknowledge(expected,serial)
     return actor:CP2077VehicleProbe_AcknowledgeEvents(serial)
 end
 function Engine:request(expected,child,operation,slot)
-    local actor,s=self:_actor(expected)
-    local player=Game.GetPlayer()
-    assert(actor and s:IsManaged(self.id) and player and key(player:GetEntityID())==self.creator
-        and child==self.creator,"request_identity_unavailable")
-    return actor:CP2077VehicleProbe_Request(player,CName.new(slot),operation=="mount")
+    -- Last observation can predate pause or save/menu changes. These reads are
+    -- before the native request, so failure is a definite rejection, not an
+    -- ambiguous submitted outcome that would quarantine the pending request.
+    local ok,actor,player=pcall(function()
+        assert(not self.recordFault,"request_record_fault")
+        local handler=assert(Game.GetSystemRequestsHandler(),"request_context_unavailable")
+        assert(handler:IsGamePaused()==false and handler:IsPreGame()==false,"request_context_inactive")
+        local current,s,_,_,attached=self:_actor(expected)
+        local creator=Game.GetPlayer()
+        assert(current and attached==true and s:IsManaged(self.id)==true
+            and s:IsSpawned(self.id)==true and s:IsSpawning(self.id)==false
+            and creator and creator:IsAttached()==true
+            and key(creator:GetEntityID())==self.creator and child==self.creator,
+            "request_identity_unavailable")
+        if current:GetRecordID()~=TweakDBID.new(record) then
+            self.recordFault=true;error("request_record_mismatch")
+        end
+        if operation=="mount" then
+            assert(type(self.appearance)=="string" and self.appearance~="" and self.appearance~="None"
+                and creator:CP2077VehicleProbe_DefaultAppearance()==self.appearance
+                and current:CP2077VehicleProbe_Appearance()==self.appearance
+                and current:CP2077VehicleProbe_ColorVariant()=="None","request_cosmetics_unavailable")
+        elseif operation=="unmount" then
+            local info=creator:CP2077VehicleProbe_MountInfo()
+            assert(key(info.parentId)==expected and key(info.childId)==self.creator
+                and creator:CP2077VehicleProbe_MountSlot()==slot,"request_player_relationship_changed")
+            local matches=0
+            for _,occupant in ipairs(current:CP2077VehicleProbe_ReadSeats()) do
+                local occupantId=key(occupant.child)
+                assert(key(occupant.parent)==expected and occupantId,"request_occupant_identity_unavailable")
+                if occupantId==self.creator or occupant.slot==slot then
+                    assert(occupantId==self.creator and occupant.slot==slot,"request_vehicle_relationship_changed")
+                    matches=matches+1
+                end
+            end
+            assert(matches==1,"request_vehicle_relationship_changed")
+        else error("request_operation_invalid") end
+        return current,creator
+    end)
+    if not ok then return false end
+    -- Keep the actual mutation outside that pcall: an exception after entering
+    -- the native request still has an unknown outcome and must retain ownership.
+    return actor:CP2077VehicleProbe_Request(player,CName.new(slot),operation=="mount",CName.new(self.appearance))
 end
 function Engine:delete(expected)
+    if self.recordFault then return false end
     local actor,s=self:_actor(expected)
     local player=Game.GetPlayer()
     if not actor or not player or key(player:GetEntityID())~=self.creator
         or not actor:CP2077VehicleProbe_CanRetire(player) then return false end
     return s:DeleteEntity(self.id)
+end
+function Engine:applyPose(expected,child,generation,request,target)
+    -- The cached ready sample may predate a save/menu, lifecycle or cosmetic
+    -- change. Every failure here is before native entry: reject without creating
+    -- an ambiguous pending movement or replacing the frozen creation descriptor.
+    local ok,actor,player,position,orientation,appearance=pcall(function()
+        assert(not self.recordFault,"pose_record_fault")
+        assert(generation==self.generation and child==self.creator,"pose_scope_mismatch")
+        local handler=assert(Game.GetSystemRequestsHandler(),"pose_context_unavailable")
+        assert(handler:IsGamePaused()==false and handler:IsPreGame()==false,"pose_context_inactive")
+        local current,s,_,_,attached=self:_actor(expected)
+        local creator=Game.GetPlayer()
+        assert(current and attached==true and s:IsManaged(self.id)==true
+            and s:IsSpawned(self.id)==true and s:IsSpawning(self.id)==false
+            and creator and creator:IsAttached()==true
+            and key(creator:GetEntityID())==self.creator,"pose_identity_unavailable")
+        if current:GetRecordID()~=TweakDBID.new(record) then
+            self.recordFault=true;error("pose_record_mismatch")
+        end
+        assert(type(self.appearance)=="string" and self.appearance~="" and self.appearance~="None"
+            and creator:CP2077VehicleProbe_DefaultAppearance()==self.appearance
+            and current:CP2077VehicleProbe_Appearance()==self.appearance
+            and current:CP2077VehicleProbe_ColorVariant()=="None","pose_cosmetics_unavailable")
+        return current,creator,Vector4.new(target.x,target.y,target.z,1),
+            Quaternion.new(target.qx,target.qy,target.qz,target.qw),CName.new(self.appearance)
+    end)
+    if not ok then return false end
+    -- Do not catch exceptions from the native mutation. Its outcome may already
+    -- be submitted, so the existing movement controller must retain ownership.
+    return actor:CP2077VehicleProbe_ApplyPose(player,generation,request,position,orientation,appearance)
 end
 return Engine

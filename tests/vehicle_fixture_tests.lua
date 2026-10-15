@@ -164,4 +164,48 @@ do
     f:step(0.1,nil);check(not f:request("mount","seat_front_left"));check(e.requests==0)
     f:stop();f:step(1/0,false);check(e.deleted==0)
 end
+-- Cosmetic quarantine is sticky until cleanup, but an exact safe exit remains
+-- possible. Wrong/unknown record and creator faults are never cosmetic.
+for _,field in ipairs({"appearance","color"}) do
+    local f,e,o=harness();ready(f);mounted(o);f:step(0.1,false)
+    o[field]=nil;f:step(0.1,false)
+    check(f.state=="appearance_mismatch" and f.unsupported)
+    check(not f:request("mount","seat_front_left") and e.requests==0)
+    check(f:request("unmount","seat_front_left") and e.requests==1)
+    event(o,1,false);f:step(0.1,false);check(f.pending,"event alone completed quarantined exit")
+    o.onFoot=true;o.playerMount={};o.occupants={};f:step(0.1,false)
+    check(not f.pending and f.state=="appearance_mismatch")
+    o[field]=descriptor[field];f:step(0.1,false)
+    check(not f:request("mount","seat_front_left") and f.unsupported,"restoration cleared quarantine")
+    f:stop();f:step(0.1,false);check(e.deleted==1,"empty cosmetically quarantined car cannot retire")
+end
+for _,change in ipairs({function(o)o.record="wrong_record"end,function(o)o.record=nil end,
+    function(o)o.player="200"end,function(o)o.attached=false end,function(o)o.managed=false end,
+    function(o)o.spawned=false end,function(o)o.spawning=true end,function(o)o.speed=0.2 end,
+    function(o)o.playerMount.parent="200"end,function(o)o.occupants={}end,
+    function(o)o.slots.seat_front_left=false end}) do
+    local f,e,o=harness();ready(f);mounted(o);o.color="custom";f:step(0.1,false)
+    change(o);f:step(0.1,false)
+    check(not f:request("unmount","seat_front_left") and e.requests==0,"cosmetic exit bypassed safety gate")
+end
+do
+    local f,e,o=harness();ready(f);mounted(o);o.record="wrong_record";f:step(0.1,false)
+    check(f.identityFault and f.state=="record_mismatch")
+    o.record=descriptor.record;o.color="custom";f:step(0.1,false)
+    check(not f:request("unmount","seat_front_left") and e.requests==0)
+    o.onFoot=true;o.playerMount={};o.occupants={};f:stop();f:step(1,false)
+    check(e.deleted==0,"record fault was cleared for cleanup")
+end
+do
+    local f,e,o=harness();ready(f);mounted(o);o.appearance="custom";f:step(0.1,false)
+    o.appearance=descriptor.appearance;f:step(0.1,false)
+    check(f.state=="appearance_mismatch" and f:request("unmount","seat_front_left"),"restored cosmetics blocked exact exit")
+    f:stop();f:step(1,false);check(f.pending and e.deleted==0)
+end
+do
+    local f,e,o=harness();ready(f);mounted(o);o.color="custom";f:step(0.1,false)
+    function e:request()error("unknown native exit outcome")end
+    check(not f:request("unmount","seat_front_left") and f.pending)
+    f:stop();f:step(1,false);check(e.deleted==0,"uncertain cosmetic exit released ownership")
+end
 print("vehicle_fixture: "..checks.." checks passed")
