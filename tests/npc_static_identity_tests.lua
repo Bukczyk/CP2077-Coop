@@ -533,7 +533,8 @@ function static:DespawnEntity(value)
     return tokenRemoved or entityRemoved
 end
 local dynamic={IsReady=function() return true end,DeleteTagged=function() end,
-    GetTagged=function() return {} end,IsTagged=function() return false end}
+    GetTagged=function() return {} end,GetTaggedIDs=function() return {} end,
+    IsTagged=function() return false end}
 local player={IsAttached=function() return true end,GetEntityID=function() return id("player") end,
     GetWorldPosition=function() return {x=0,y=0,z=0} end,
     GetWorldOrientation=function() return {ToEulerAngles=function() return {yaw=0} end} end}
