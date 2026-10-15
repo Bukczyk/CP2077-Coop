@@ -17,10 +17,10 @@ This branch combines the following reviewable source slices on upstream main
 | 23 | feat/vehicle-pose-application | cc66fb9ae1683d3bf5b7384e45578ffcbf9f8a5b |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | d6ae28f4018ddf2f95f385270759e6c638997d70 |
+| 26 | feat/passive-model-fixture | e8bd1d913b35125015c386915b229fb16ee00897 |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `41a24f69511e83000cebe6287d2d9de38fc7e5ab`.
+Combined source tested: `8329c8e78395d175db3d411abc10dc4535478501`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -99,11 +99,22 @@ exact cleanup continue when only cosmetic readback fails; unknown native removal
 is not automatically retried. Both follow-ups merged without conflicts, leaving
 all existing suites and shared contracts intact.
 
+The next PR26 follow-up adds a pure historical comparison between PR27 source
+observations and an explicit local fixture slot. Exact record/template/appearance
+identifiers establish only the reviewed Judy/Mitch resource relationship; source
+and proxy appearance names deliberately differ. Contradictory or unsupported
+tuples and stale slot generations cannot become candidates. Observed color
+equality remains separate from visual qualification. Copied snapshots are neither
+authenticated nor simultaneous/current evidence. No model selection, engine call,
+native helper, lifecycle mutation, shared interface or asset changed. This merged
+without conflicts; the seven contributed files match the exact PR26 source.
+
 ## Passed offline
 
 - Windows x64 Release plugin, session server and core build at the preceding
   checkpoint. C++ source and target definitions are unchanged by this follow-up;
-  CMake was regenerated for the new test and matching existing binaries were used.
+  Matching existing binaries were used; this comparison follow-up did not change
+  test registrations or require CMake regeneration.
 - 47/47 CTests, including existing real-socket/core tests and the new suites.
 - 24 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
@@ -116,8 +127,8 @@ all existing suites and shared contracts intact.
   Private WolvenKit builds of both profiles passed serialization roundtrip,
   single-resource archive listing and extracted-byte parity. The existing Judy
   entity, authored idle graph and production builders remain unchanged.
-- 479 focused model-fixture checks in Lua 5.4 and 481 in LuaJIT: 60 controller,
-  248/250 actual adapter and 171 real entrypoint checks. Independent review covered
+- 582 focused model-fixture checks in Lua 5.4 and 584 in LuaJIT: 140 controller,
+  248/250 actual adapter and 194 real entrypoint checks. Independent review covered
   per-slot failure isolation, late callbacks, unknown/duplicate creation,
   stale generations, wrong templates, observed pose and bounded diagnostics.
   Current-name mismatch/unavailability, sibling isolation, recovery, exact
@@ -127,6 +138,9 @@ all existing suites and shared contracts intact.
   The original a105a22 retirement regression deletes a different same-ID actor;
   the corrected actual entrypoint refuses that deletion in both Lua runtimes.
   The real Lua resource catalog matches the Python builder for both profiles.
+  The comparison adds 54 independent actual-PR27-producer-to-PR26-consumer checks
+  per runtime, with mocked native boundaries. Four audited resource SHA256s and
+  seven computed native identifiers agree with metadata and the pinned SDK.
 - Vehicle follow-up: 3655 adapter, 544 fixture, 111 movement and 69 integration
   checks per Lua interpreter, including retained creator/actor recovery and the
   actual-entrypoint paused-request regression. Five additional cosmetic/record
@@ -143,7 +157,17 @@ all existing suites and shared contracts intact.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current combined logs:
+Current comparison logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-passive-appearance-comparison`,
+`combined-validation.json`, `combined-ctest.log` and `combined-luajit.log`:
+47 CTests and 24 LuaJIT suites pass at `8329c8e`. Branch validation passes 30
+CTests. Native, build-definition and REDscript inputs are unchanged from
+`cfa8c38362ac8ff0b0be96cd6c156877ab9fb4d2`; its matching Release build and the
+prior isolated compilation apply without repeating them. Hosted final-head
+results are recorded separately in GitHub and the vault. The focused and
+independent comparison evidence and frozen hashes are in this same folder.
+
+Previous coherent-color combined logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-passive-profile-color-observation`,
 `combined-validation.json`, `combined-ctest.log` and `combined-luajit.log`:
 47 CTests and 24 LuaJIT suites pass at `41a24f6`. Native source, runtime and target
