@@ -137,6 +137,29 @@ Four focused suites pass under Lua 5.4 and LuaJIT 2.1; evidence is in
 No native rebuild, asset change, installation or live-game test was needed for
 this source/test follow-up.
 
+### Error cleanup ordering follow-up
+
+2026-10-15T07:49:39Z: a two-NPC regression exposed a remaining ordering gap
+in the earlier exception fix. Retirement can return early on the first NPC,
+leaving the second NPC's previous attachment sample at an older timestamp.
+If the next update fails before its pause pump, `stop()` can revisit that second
+NPC with cached unpaused context and submit deletion before the post-stop
+invalidation runs. Repeated calls at one timestamp do not prevent this case.
+
+The exception handler now supplies unknown context before `stop()` as well as
+after it. Both use the update's existing timestamp; neither advances time.
+The actual CET entrypoint fixture seeds two real runtime/adapter retirements,
+exercises the early-return order, then throws from `GetPlayer()`. It verifies
+zero deletion during the failed frame, retention of both IDs, and fresh first
+and second unpaused attachment samples before deletion after recovery. The new
+regression fails against `5f94f7e` at the premature-deletion assertion.
+
+The lifecycle, dynamic identity, dynamic population and static identity suites
+pass under both Lua 5.4 and LuaJIT 2.1. Logs are
+`build/dynamic-npc/catch-order-ctest.log` and `catch-order-luajit.log`.
+Only the CET entrypoint, its fixture and this note changed; no native rebuild,
+installed game change or new live-game qualification was performed.
+
 ## Remaining gates and limitations
 
 A never-attached token, lost ownership or an exhausted deletion retry stays

@@ -56,6 +56,12 @@ local function fixture(role, experimental, motor, passive)
         events[name] = callback
     end
     registerHotkey = function(name, _, callback) hotkeys[name] = callback end
+    local runtime = require("npc_runtime")
+    local newRuntime = runtime.new
+    runtime.new = function(adapter)
+        state.npcProjection = newRuntime(adapter)
+        return state.npcProjection
+    end
     state.bridge=assert(loadfile(root .. "/runtime/session/cet/CP2077Coop/init.lua"))()
     local population=package.loaded.npc_population
     local observe=population.observe
@@ -540,9 +546,12 @@ for _,phase in ipairs({"attachment","absence","early-engine-error"}) do
         local count=#s.npcClocks
         local before=s.npcClocks[count].now
         s.rawTick(5)
-        assert(#s.npcClocks==count+1,"error before pause lookup must invalidate NPC observations")
+        assert(#s.npcClocks>count,"error before pause lookup must invalidate NPC observations")
         local sample=s.npcClocks[#s.npcClocks]
         assert(sample.paused==nil and math.abs(sample.now-before-5)<1e-9)
+        for index=count+1,#s.npcClocks do
+            assert(s.npcClocks[index].now==sample.now,"cleanup invalidation never advances the clock twice")
+        end
         assert(not population.remove(id) and deletes==0,"early engine error cannot qualify deletion")
         s.playerUnavailable=false
     end
@@ -692,6 +701,62 @@ for _,kind in ipairs({"handler","pause","nil-handler","nil-pause","malformed-pau
         kind..": retirement recovers only after a new quiet interval")
     state.shutdown()
 end
+-- Cleanup can return early on one NPC, leaving a second NPC's last sample at
+-- an older clock. A failed frame must invalidate BEFORE stop/reset samples it.
+do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local system=Game.GetDynamicEntitySystem()
+    local actors,nextId,deletes={},100,0
+    function system:CreateEntity()
+        nextId=nextId+1
+        local id={hash=tostring(nextId).."ULL"}
+        actors[id.hash]={GetEntityID=function() return id end,IsAttached=function() return true end}
+        return id
+    end
+    function system:GetEntity(id) return actors[id.hash] end
+    function system:IsManaged(id) return actors[id.hash]~=nil end
+    function system:IsSpawning() return false end
+    function system:IsSpawned(id) return actors[id.hash]~=nil end
+    function system:DeleteEntity() deletes=deletes+1; return true end
+    Game.FindEntityByID=function(id) return actors[id.hash] end
+    Game.CP2077Session_Resolve=function() return "0ULL" end
+    Game.GetTeleportationFacility=function() return {Teleport=function() end} end
+    TweakDB={GetRecord=function() return {} end}
+    DynamicEntitySpec={new=function() return {} end}
+    Vector4={new=function() return {} end}
+    Quaternion={new=function() return {} end}
+    EulerAngles={new=function() return {} end}
+    local c=s.npcProjection
+    local identity=c.identity
+    local bubble={radius=100,centers={{x=0,y=0,z=0}}}
+    local a={entity="456ULL",record=123,x=0,y=0,z=0,yaw=0}
+    local b={entity="789ULL",record=123,x=0,y=0,z=0,yaw=0}
+    local byId={[a.entity]=a,[b.entity]=b}
+    assert(c:step(identity,bubble,{a,b}))
+    -- Choose the runtime's iteration order rather than relying on hash order.
+    local first=next(c.owned)
+    local second=first==a.entity and b.entity or a.entity
+    assert(not c:step(identity,bubble,{byId[first]}))
+    s.rawTick(1)
+    assert(not c:step(identity,bubble,{byId[second]}))
+    assert(deletes==0,"both retirements have only one attachment observation")
+    local count=#s.npcClocks
+    local before=s.npcClocks[count].now
+    s.playerUnavailable=true
+    s.rawTick(1)
+    assert(deletes==0,"early failure must invalidate cached NPC context before reset deletes")
+    assert(c.owned[first] and c.owned[second],"failed frame retains both owned IDs")
+    for index=count+1,#s.npcClocks do
+        assert(s.npcClocks[index].paused==nil and math.abs(s.npcClocks[index].now-before-1)<1e-9,
+            "pre/post cleanup invalidation uses one unknown timestamp")
+    end
+    s.playerUnavailable=false
+    s.rawTick(0.01)
+    assert(deletes==0,"recovery must collect a fresh first attachment sample")
+    s.rawTick(0.01)
+    assert(deletes==2,"only fresh second attachment samples may submit deletion")
+end
+
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")
