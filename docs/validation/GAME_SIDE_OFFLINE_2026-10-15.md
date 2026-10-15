@@ -14,12 +14,13 @@ This branch combines the following reviewable source slices on upstream main
 | 20 | fix/player-diagnostic-recovery | 4d12c1c270eff26f152afda2a57ed39fb745bc15 |
 | 21 | fix/dynamic-npc-lifecycle | bd6d941e785b418f5e32370f0258a67241a759eb |
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
-| 23 | feat/vehicle-pose-application | f95caccb62f0f46ecb48d0b74749c084f4121f38 |
+| 23 | feat/vehicle-pose-application | c129eb384e96b0d780c9f6a56bcdd2ce0959935d |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
 | 26 | feat/passive-model-fixture | a105a228d2fd5505f071f0e6dd11d05d6493cedd |
+| 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `5f4e409c7422afde60a0762cfa92a3c4f343be10`.
+Combined source tested: `d2ea1709505a15618c7355a00632185c242dd2ff`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -74,13 +75,27 @@ missing/wrong names block readiness and movement while exact retirement remains
 available. The final mutation actor is rechecked, and rejected preflight clears
 cached qualification. A current name is not proof of visible mesh/animation.
 
+PR27 adds a separate read-only observation tool, not a production selector. It
+captures an explicit NPC's exact record/template/current appearance/color on
+the game thread, preserves native-produced decimal identifiers and copies
+historical samples. Exact native references distinguish fresh Lua wrappers from
+real replacement. Invalid scope/identity/readback cannot qualify a sample.
+The only integration conflict was adjacent additions in tests/CMakeLists.txt;
+both the four vehicle tests and new NPC observation registration were retained.
+
+The vehicle seat follow-up checks fresh pause/menu/creator/spawn context before
+native submission, with a second native pause/menu guard. Definite preflight
+failure leaves no pending transition; a native exception still retains unknown
+ownership. A separate reproduced stale cosmetic-state case remains open and
+must preserve safe unmount when corrected.
+
 ## Passed offline
 
 - Windows x64 Release plugin, session server and core build at the preceding
-  checkpoint. Native source/build definitions are unchanged by this Lua/REDscript
-  follow-up; existing matching binaries were used for the repeated CTests.
-- 46/46 CTests, including existing real-socket/core tests and the new suites.
-- 23 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
+  checkpoint. C++ source and target definitions are unchanged by this follow-up;
+  CMake was regenerated for the new test and matching existing binaries were used.
+- 47/47 CTests, including existing real-socket/core tests and the new suites.
+- 24 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
@@ -98,23 +113,33 @@ cached qualification. A current name is not proof of visible mesh/animation.
   Current-name mismatch/unavailability, sibling isolation, recovery, exact
   cleanup and final-actor appearance changes are covered by the actual modules.
   The real Lua resource catalog matches the Python builder for both profiles.
-- Vehicle follow-up: 596 adapter, 353 fixture, 111 movement and 69 integration
-  checks per Lua interpreter, including retained creator/actor recovery.
+- Vehicle follow-up: 1645 adapter, 353 fixture, 111 movement and 69 integration
+  checks per Lua interpreter, including retained creator/actor recovery and the
+  actual-entrypoint paused-request regression. The new regression fails the
+  preceding f95cacc and passes the correction under both interpreters.
+- NPC observation: 431 focused Lua 5.4 and 434 LuaJIT checks passed on its branch,
+  plus 14 independent probes per interpreter. The new actual-entrypoint suite is
+  also included in the combined CTest/LuaJIT runs. Its separate branch passed a
+  fresh Windows Release build and 26 CTests; native execution remains untested.
 - Isolated current session, vehicle, player action/aim, map capture and the new
-  passive-model current-appearance helper REDscript
+  passive-model current-appearance and exact NPC observation helpers' REDscript
   compilation together against copied installed 2.31 cache/Codeware inputs.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
 Current combined logs:
-`D:/Downloads/syncfix/bench-artifacts/20261015-passive-model-appearance`,
-`combined-ctest.log` and `combined-luajit.log`: 46 CTests and 23 LuaJIT suites pass
-again at the current tested source. The prior native Release build is recorded
-in `20261015-passive-model-fixture-audit/combined-build.log`.
-That folder also contains `combined-compile-20261015T094012683483Z.json` and `.log`:
+`D:/Downloads/syncfix/bench-artifacts/20261015-npc-appearance-observation`,
+`combined-ctest.log` and `combined-luajit.log`: 47 CTests and 24 LuaJIT suites pass
+at the current tested source. The prior native Release build is recorded
+in `20261015-passive-model-fixture-audit/combined-build.log`. The current folder
+contains `combined-compile-20261015T101444214928Z.json` and `.log`:
 all current session and selected experiment REDscript sources compile together,
 with distinct experiment folders preventing same-name source overwrites.
 Original inputs remained unchanged. Compilation does not execute engine behavior.
+
+Previous appearance checkpoint logs remain in `20261015-passive-model-appearance`
+(46 CTests/23 LuaJIT suites), with its compiler evidence in
+`20261015-passive-model-fixture-audit/combined-compile-20261015T094012683483Z.*`.
 
 Earlier static cleanup logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
 `combined-static-cleanup-build.log`, `combined-static-cleanup-ctest-final.log`,
@@ -139,6 +164,8 @@ PR26 supplies the separate explicit local profile selection fixture. It still
 needs deferred live model/idle/cleanup qualification and an agreed supported
 HOST descriptor mapping before connected production use. Resource presence and
 an exact template hash do not certify the installed mesh or visible appearance.
+PR27 must still sample real NPCs in a future authorized test. Its local scope is
+not a network epoch; network-only reconnect requires an explicit harness reset.
 Unknown never-completed static spawns remain held if terminal cancellation cannot
 be established; no timeout is treated as evidence of safe cleanup. Actual callback
 scheduling, scene teardown and recovery still need the deferred live validation.
