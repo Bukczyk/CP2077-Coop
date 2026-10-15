@@ -43,7 +43,7 @@ foreach ($role in @('HOST','JOINER')) {
     Get-ChildItem -LiteralPath "$root/runtime/session/cet/CP2077Coop" -Filter '*.lua' -File | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $cet
     }
-    Copy-Item -LiteralPath "$root/runtime/session/redscript/CP2077Coop/natives.reds","$root/runtime/session/redscript/CP2077Coop/remote.reds" -Destination $reds
+    Copy-Item -LiteralPath "$root/runtime/session/redscript/CP2077Coop/natives.reds","$root/runtime/session/redscript/CP2077Coop/remote.reds","$root/runtime/session/redscript/CP2077Coop/marker.reds" -Destination $reds
     # Replace the prior combat bridge explicitly if a future installer overlays files.
     [IO.File]::WriteAllText((Join-Path $reds 'combat.reds'), '// Combat hooks disabled in session foundation; legacy sentinel hooks must not run.' + "`n", $utf8)
     [IO.File]::WriteAllText((Join-Path $plugin 'access.key'), $key + "`n", $utf8)
