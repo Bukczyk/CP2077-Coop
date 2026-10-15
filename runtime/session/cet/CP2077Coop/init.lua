@@ -251,6 +251,9 @@ registerForEvent("onUpdate", function(delta)
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
+        -- stop/reset can revisit an NPC skipped by an earlier cleanup retry.
+        -- Invalidate its cached context before any cleanup side effect.
+        if npcProjection then pcall(function() npcProjection:pump(time, nil) end) end
         pcall(stop)
         -- An earlier engine call may have failed before the normal pause pump.
         -- Invalidate that missing observation without advancing the clock again.
