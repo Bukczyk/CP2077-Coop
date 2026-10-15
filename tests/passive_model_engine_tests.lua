@@ -6,23 +6,54 @@ local function check(value,why) checks=checks+1;assert(value,why) end
 local function id(value) return {hash=value} end
 local function make()
     local f={native=0,creates=0,moves=0,deletes=0,tokens={},actors={},globals={},tags={},logs={},paused=false,
-        ready=true,resources={},nextId=0,playerId="9007199254740997ULL",requests=true}
+        ready=true,resources={},nextId=0,playerId="9007199254740997ULL",playerNative={},requests=true}
     local refs,serial={},0
     local function ref(path)
         if not refs[path] then serial=serial+1;refs[path]="18014398509482"..string.format("%03d",serial).."ULL" end
         return {path=path,hash=refs[path]}
     end
-    local function native() f.native=f.native+1 end
+    local function native()
+        if f.requireUpdate then assert(f.inUpdate,"engine access outside onUpdate") end
+        f.native=f.native+1
+    end
     local function actor(value,spec)
-        local a={attached=true,id=value,template=spec.templatePath,root=true,
+        local a={attached=true,id=value,template=spec.templatePath,root=true,nativeRef={},
             position={x=spec.position.x,y=spec.position.y,z=spec.position.z},orientation=spec.orientation,
-            appearance=spec.appearanceName}
+            appearance=spec.appearanceName,appearanceHash="9007199254740995",color="None",colorHash="0"}
         function a:GetEntityID() native();return id(self.id) end
         function a:IsAttached() native();return self.attached end
         function a:GetTemplatePath() native();return self.template end
         function a:IsExactlyA(name) native();assert(name=="entEntity");return self.root end
-        function a:CP2077PassiveModelFixture_CurrentAppearance()
-            native();if self.appearanceError then error("appearance_read_failed") end;return self.appearance
+        function a:CP2077PassiveModelFixture_OwnedIdentity(context,original,expected)
+            native()
+            if f.identityThrows then error("identity_read_failed") end
+            if f.identityUnknown then return 0 end
+            if not original or not expected then return 0 end
+            if self.nativeRef~=original.nativeRef or self.id~=expected.hash or original.id~=expected.hash then return -1 end
+            if not context or not self.attached or not f.globals[self.id] then return 0 end
+            if f.globals[self.id].nativeRef~=original.nativeRef then return -1 end
+            return 1
+        end
+        function a:CP2077PassiveModelFixture_CurrentVisualState(context,originalContext,originalActor,expected)
+            native()
+            assert(expected.hash==self.id,"opaque exact ID passed unchanged")
+            if self.appearanceError then error("appearance_read_failed") end
+            if self.colorError then error("color_read_failed") end
+            local function same(left,right) return left and right and left.nativeRef==right.nativeRef end
+            if not same(context,originalContext) or not same(self,originalActor)
+                or not self.attached or not same(f.globals[self.id],self) then return {valid=false} end
+            local raw={valid=true,entityDecimal=self.id:gsub("ULL$",""),
+                contextDecimal=f.playerId:gsub("ULL$",""),appearance=self.appearance,
+                appearanceHash=self.appearanceHash,color=self.color,colorHash=self.colorHash}
+            if f.visualHook then f.visualHook(self,raw) end
+            -- Mock of the compiled native contract, not execution of REDscript.
+            if not self.attached or not same(f.globals[self.id],self) or not same(self,originalActor)
+                or not same(context,originalContext) or context.nativeRef~=f.playerNative
+                or self.appearance~=raw.appearance
+                or self.color~=raw.color or self.appearanceHash~=raw.appearanceHash
+                or self.colorHash~=raw.colorHash then return {valid=false} end
+            if f.visualTransform then return f.visualTransform(raw) end
+            return raw
         end
         function a:GetWorldPosition() native();if self.readError then error("pose_read_failed") end;return self.position end
         function a:GetWorldOrientation() native();return self.orientation end
@@ -59,6 +90,7 @@ local function make()
         native();f.deletes=f.deletes+1
         assert(f.actors[value.hash] and not f.tokens[value.hash],"pending token was cancelled")
         f.actors[value.hash].disposed=true
+        if f.despawnThrows then error("despawn_outcome_unknown") end
         return true
     end
     f.system=s
@@ -79,8 +111,10 @@ local function make()
             return {IsGamePaused=function() native();return f.paused end,IsPreGame=function() native();return false end}
         end,
         GetPlayer=function()
-            native();return {IsAttached=function() return true end,GetEntityID=function() return id(f.playerId) end,
-                GetWorldPosition=function() return {x=0,y=0,z=0} end}
+            native();return {nativeRef=f.playerNative,id=f.playerId,
+                IsAttached=function() native();return true end,
+                GetEntityID=function(self) native();return id(self.id) end,
+                GetWorldPosition=function() native();return {x=0,y=0,z=0} end}
         end,
         GetResourceDepot=function()
             native();return {ResourceExists=function(_,r)
@@ -206,8 +240,8 @@ end
 -- Appearance is an actual readback, separate from lifecycle and visual quality.
 for _,fault in ipairs({"missing","throwing","nil","None","empty","number","boolean","table","wrong"}) do
     local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
-    local getter=a.CP2077PassiveModelFixture_CurrentAppearance
-    if fault=="missing" then a.CP2077PassiveModelFixture_CurrentAppearance=nil
+    local getter=a.CP2077PassiveModelFixture_CurrentVisualState
+    if fault=="missing" then a.CP2077PassiveModelFixture_CurrentVisualState=nil
     elseif fault=="throwing" then a.appearanceError=true
     elseif fault=="nil" then a.appearance=nil
     elseif fault=="None" then a.appearance="None"
@@ -222,7 +256,7 @@ for _,fault in ipairs({"missing","throwing","nil","None","empty","number","boole
     check(not o.visualQualified,"appearance never proves visible quality")
     check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0}) and f.moves==0 and not e.moveAttempted,
         "bad appearance cannot submit movement: "..fault)
-    a.CP2077PassiveModelFixture_CurrentAppearance=getter;a.appearanceError=false;a.appearance="default"
+    a.CP2077PassiveModelFixture_CurrentVisualState=getter;a.appearanceError=false;a.appearance="default"
     o=f.engine:observe(e)
     check(o.observedAppearance=="default" and o.appearanceVerified and not o.visualFault,"appearance recovery")
     check(f.engine:move(e,{x=3,y=0,z=0,yaw=0}) and f.moves==1,"recovered exact appearance can submit")
@@ -241,6 +275,92 @@ do
     end
     check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0})
         and f.moves==0 and not e.moveAttempted,"final exact-ID actor appearance revalidated before mutation")
+end
+-- Native-produced hash strings retain full precision; None is observed data,
+-- while an absent/throwing getter or malformed pair is not a coherent sample.
+for _,color in ipairs({"None","","variant_blue"}) do
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
+    a.color=color;a.colorHash=color=="None" and "0" or "18446744073709551615"
+    local o=f.engine:observe(e)
+    check(o.visualStateObserved and o.colorObserved and o.appearanceVerified,"coherent tuple observed")
+    check(o.observedColor==color and o.observedColorHash==a.colorHash,"exact current color and Uint64 string")
+    check(o.observedAppearanceHash=="9007199254740995","appearance hash above 2^53 preserved")
+    check(o.colorNameAvailable==(color~="") and not o.colorMatchVerified and not o.visualQualified,
+        "symbol availability is not a supported color or visual match")
+end
+local colorFaults={
+    function(a) a.colorError=true end,
+    function(a) a.color=nil end,
+    function(a) a.color=3 end,
+    function(a) a.color=false end,
+    function(a) a.color={} end,
+    function(a) a.colorHash=nil end,
+    function(a) a.colorHash=9007199254740992 end,
+    function(a) a.colorHash="00" end,
+    function(a) a.colorHash="-1" end,
+    function(a) a.colorHash="18446744073709551616" end,
+    function(a) a.colorHash="123ULL" end,
+    function(a) a.appearanceHash=nil end,
+    function(a) a.appearanceHash={} end,
+    function(a) a.appearanceHash="1.5" end,
+}
+for _,fault in ipairs(colorFaults) do
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash);fault(a)
+    local o=f.engine:observe(e)
+    check(o.ready and not o.visualStateObserved and not o.colorObserved and not o.appearanceVerified,
+        "bad pair readback does not erase owned lifecycle readiness")
+    check(o.observedAppearance==nil and o.observedColor==nil and not o.colorMatchVerified,
+        "malformed pair cannot publish a partial or matching tuple")
+    check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0}) and f.moves==0,
+        "unknown color prevents coherent default movement qualification")
+    check(not f.engine:retire(e) and f.deletes==1,"color readback cannot block exact retirement")
+    f.finish(e.id.hash);check(f.engine:retire(e),"color-fault cleanup finishes")
+end
+for _,fault in ipairs({"appearance","color","identity","detach"}) do
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
+    f.visualHook=function(target)
+        if fault=="appearance" then target.appearance="changed"
+        elseif fault=="color" then target.color="changed"
+        elseif fault=="identity" then f.globals[target.id]=setmetatable({nativeRef={}},{__index=target})
+        else target.attached=false end
+    end
+    local o=f.engine:observe(e)
+    check(not o.visualStateObserved and not o.appearanceVerified,"incoherent pair not admitted: "..fault)
+    check(not o.colorObserved and not o.observedColor,"no partial color from rejected native sample")
+end
+for _,fault in ipairs({"valid","entity","context"}) do
+    local f=make();local e=f.entry();f.engine:create(e);f.complete(e.id.hash)
+    f.visualTransform=function(raw)
+        if fault=="valid" then raw.valid=1
+        elseif fault=="entity" then raw.entityDecimal="9007199254740992"
+        else raw.contextDecimal="9007199254740992" end
+        return raw
+    end
+    local o=f.engine:observe(e)
+    check(not o.visualStateObserved and not o.appearanceVerified,"strict native sample identity/validity")
+end
+do
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
+    local lookups=0
+    f.lookupHook=function()
+        lookups=lookups+1
+        if lookups==2 then a.color="changed_before_move";a.colorHash="9007199254740997" end
+        return a
+    end
+    check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0}) and f.moves==0 and not e.moveAttempted,
+        "same exact actor color changing before final mutation rejects move")
+    f.lookupHook=nil
+    local o=f.engine:observe(e)
+    check(o.observedColor=="changed_before_move" and o.colorObserved and not o.colorMatchVerified,
+        "later coherent changed color remains observed without claiming a match")
+end
+local ffiOk,ffi=pcall(require,"ffi")
+if ffiOk then
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
+    a.colorHash=ffi.new("uint64_t",9007199254740992)+ffi.new("uint64_t",1)
+    check(not f.engine:observe(e).visualStateObserved,"do not parse CName hash cdata in Lua")
+    a.colorHash="9007199254740993"
+    check(f.engine:observe(e).observedColorHash=="9007199254740993","accept exact native decimal export")
 end
 -- Readable source drift guard for the reviewed Python builder's exact catalogs.
 do

@@ -5,7 +5,10 @@ local checks=0
 local function check(v,why) checks=checks+1;assert(v,why) end
 local function pose(x) return {x=x or 2,y=0,z=0,yaw=0} end
 local function observed(x) return {ready=true,templateVerified=true,rootVerified=true,visualQualified=false,
-    observedAppearance="default",appearanceVerified=true,
+    identityVerified=true,identityFault=false,
+    observedAppearance="default",appearanceVerified=true,visualStateObserved=true,
+    observedAppearanceHash="9007199254740995",observedColor="None",observedColorHash="0",
+    colorObserved=true,appearanceNameAvailable=true,colorNameAvailable=true,colorMatchVerified=false,
     pose={x=x or 2,y=0,z=0,qx=0,qy=0,qz=0,qw=1}} end
 local function fixture()
     local engine={calls=0,creates=0,moves=0,deletes=0,world={}}
@@ -134,5 +137,25 @@ do
     o.appearanceVerified=true;c:pump()
     check(c:status("one").state=="ready" and c:status("one").appearanceVerified,"later appearance can recover")
     check(not c:status("one").visualQualified,"correct name is not visible qualification")
+end
+do
+    local c,e,logs=fixture();local _,gen=c:start("color","judy_default",pose());c:pump();c:pump()
+    local s=c:status("color")
+    check(s.visualStateObserved and s.colorObserved and s.observedColor=="None" and s.observedColorHash=="0",
+        "copied coherent color is exposed")
+    check(not s.colorMatchVerified and not s.visualQualified,"color observation never becomes a visual match")
+    s.observed.observedColor="mutated";s.observedColor="mutated"
+    check(c:status("color").observedColor=="None","color status cannot mutate owned evidence")
+    local o=e.world.color.o;o.visualStateObserved="true";c:pump()
+    check(not c:status("color").appearanceVerified and not c:status("color").placementVerified
+        and not c:move("color",gen,pose(3)),"strict coherent-capture Boolean required")
+    o.visualStateObserved=true;o.colorMatchVerified=true;c:pump()
+    check(c:status("color").state=="ready" and not c:status("color").colorMatchVerified,
+        "no backend/caller flag can invent supported color matching")
+    local lines=#logs;o.observedColorHash="18446744073709551615";c:pump()
+    check(#logs==lines+1,"changed color hash logged even with unchanged name/state")
+    c:pump();check(#logs==lines+1,"unchanged pair silent")
+    o.observedAppearanceHash="9007199254740997";c:pump()
+    check(#logs==lines+2,"changed appearance hash also logged")
 end
 print("Passive model fixture state/queue checks: "..checks)

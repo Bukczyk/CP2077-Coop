@@ -5,6 +5,9 @@ on `2a8bb541d59ba47596e5f66a65ad2fc38e77e197` (reviewed profile assets).
 This is a separate source experiment, not a new runtime or package version.
 The appearance follow-up starts from fixture checkpoint
 `e291b75799d7a4db8aff661829343f1f7ae791eb` and retains its scope/defaults.
+The coherent color follow-up starts from
+`a105a228d2fd5505f071f0e6dd11d05d6493cedd`, reusing this fixture and adding
+original-native identity checks needed to keep replacement actors safe.
 
 ## Scope and ownership
 
@@ -28,13 +31,13 @@ spawning replacements. Stop all slots and observe `closed` before unloading.
 | --- | --- |
 | Windows x64 Release portable core, session server and test build | Passed at fixture baseline, MSVC 19.41 / Windows SDK 10.0.22621.0; unchanged native source, no redundant rebuild |
 | Complete CTest suite on this branch | 30/30 passed |
-| Actual engine adapter tests | 153 checks, Lua 5.4 and LuaJIT 2.1 |
-| Pure queue/state controller tests | 52 checks, both runtimes |
-| Real `init.lua` with real adapter/controller and mocked native APIs | 94 checks, both runtimes |
+| Actual engine adapter tests | 248 checks in Lua 5.4; 250 in LuaJIT 2.1 |
+| Pure queue/state controller tests | 60 checks, both runtimes |
+| Real `init.lua` with real adapter/controller and mocked native APIs | 171 checks, both runtimes |
 | Parent independent Python-builder to Lua catalog comparison | Both profiles match all seven fields in both runtimes; returned copies isolated |
 | Independent lifecycle/source review | Passed; additional per-slot failure, paused/unknown retirement, native spawn throw and duplicate-ID cases passed |
 | REDscript API signature sandbox | Passed against installed 2.31/Codeware declarations; inputs unchanged |
-| Exact appearance helper sandbox compile | Passed against copied Test B 2.31 cache and Codeware; source/game/compiler inputs unchanged |
+| Exact coherent appearance/color and identity helpers sandbox compile | Passed against copied Test B 2.31 cache and Codeware; source/game/compiler inputs unchanged |
 | Installed game or two-PC test | Not performed |
 
 The native mocks exercise the actual Lua modules and actual registered event
@@ -75,6 +78,19 @@ contracts; passing them is not a new multiplayer-capacity claim.
   frames stay silent. A final lookup returning the same exact EntityID with a
   changed appearance cannot receive a transform, and the rejected preflight
   clears cached qualification until fresh readback recovers.
+- Joint appearance/color capture, exact hash strings above 2^53 and up to Uint64
+  max, malformed/overflow/cdata values rejected rather than parsed through Lua.
+  Observed `None`, empty symbols and zero hashes remain data; missing or failed
+  getters remain unknown. Changing either CName during capture rejects the pair.
+- Changing color on the same original actor before final movement preflight
+  rejects mutation. Later coherent evidence can recover without claiming a match.
+- Native identity differs from Lua wrappers and decimal IDs. Fresh wrappers pass;
+  a different same-ID native actor cannot receive movement or retirement, including
+  replacement immediately before the deletion call. Positive foreign identity is
+  sticky; unknown identity blocks mutation and may recover when verified.
+- Exact cleanup works with failed cosmetic readback. A false/throwing/unknown
+  native removal attempt is never automatically reissued; actual later terminal
+  disappearance can complete retirement.
 
 ## Engine evidence
 
@@ -84,17 +100,25 @@ Declarations were checked in installed `Codeware.Global.reds`: ResourceDepot
 `Entity.GetTemplatePath`, inherited `ISerializable.IsExactlyA`, actual world
 position/orientation and `SetWorldTransform`. Native quaternion fields remain
 separate from requested yaw. The verified base `Entity.GetCurrentAppearanceName`
-returns CName; `NameToString` converts it without mutation. The exact new
-`@addMethod(Entity)` helper compiled in isolation, and a separate signature probe
-also compiled its call through `ref<Entity>`. No `Entity:GetAppearanceName` getter
-or GameObject-only assumption is used.
+returns CName, as does `GetCurrentColorVariantName`. `NameToString` and
+`NameToHash` export readable symbols and exact hashes without mutation.
+`CurrentVisualState` checks original native actor/player references, global
+lookup, IDs, attachment and both CNames before/after sampling. `OwnedIdentity`
+independently returns exact/unknown/foreign identity without cosmetic reads.
+The actual helpers compile against copied cache/Codeware. No Lua wrapper equality,
+unverified `Entity:GetAppearanceName` getter or GameObject-only actor is assumed.
 
 Lifecycle readiness remains separate from appearance qualification. Failed
 appearance readback does not suppress an otherwise exact owned actor's removal.
-The current name is verified again on the final mutation actor before
+The coherent pair is verified again on the final mutation actor before
 `SetWorldTransform`; the expected appearance is never inferred from template,
 profile name or HOST record. Observing `default` still leaves
 `visualQualified=false` and does not prove visible mesh/animation correctness.
+`colorMatchVerified` is always false: no color, including `None`, is declared
+supported or matched to another NPC. Replacing the original player invalidates
+visual/movement evidence, while cleanup may use a valid current context to retire
+the exact original actor. Positive native actor replacement is a sticky ownership
+fault, not a cosmetic failure, and never authorizes cleanup or slot reuse.
 
 The lifetime rules follow the reviewed [Codeware v1.18.0 static system source](https://github.com/psiberx/cp2077-codeware/blob/v1.18.0/src/App/World/StaticEntitySystem.cpp)
 and the corrected game-side PR20/PR21 adapters: pending token removal does not
@@ -119,6 +143,24 @@ Appearance follow-up evidence is separately retained under
 unchanged inputs. Independent review reran all three updated suites under both
 Lua runtimes and approved the appearance/cleanup boundary.
 
+Coherent color/identity follow-up evidence is under
+`D:\Downloads\syncfix\bench-artifacts\20261015-passive-profile-color-observation`:
+
+- `lua-validation.json`: source hashes and 479 Lua 5.4 / 481 LuaJIT checks. The
+  extra LuaJIT checks reject cdata hash payloads and accept exact decimal strings.
+- `branch-ctest.log`: 30/30 passed. C++ inputs are unchanged; no redundant rebuild.
+- `passive-compile-20261015T104427943852Z.json` / `.log`: parent compiled the exact
+  final helpers plus session scripts against copied cache/Codeware, inputs unchanged.
+  The earlier `passive-compile-20261015T103702883896Z.*` predates identity extension.
+- `retirement-reference-probe.lua` and negative-control results in
+  `lua-validation.json`: actual original `a105a22` entrypoint/adapter/controller
+  deleted a different same-ID native actor (`deletes=1`) while the original handle
+  remained attached. Patched source issues no removal (`deletes=0`) in both
+  runtimes. This is a mocked reproduction, not a live race.
+- `independent-focused-suites.json` and `independent-passive-tuple-review.json`:
+  independent review reran the focused suites and 30 separate actual-entrypoint
+  scenarios in each runtime; no source blocker remained.
+
 ## Reproduce offline checks
 
 From the source root with a configured Windows Release test build:
@@ -130,8 +172,8 @@ ctest --test-dir build/passive-model-fixture -C Release --output-on-failure
 
 Each focused Lua suite also accepts the repository root as its first script
 argument. Run `tests/passive_model_{fixture,engine,entrypoint}_tests.lua` in
-fresh Lua 5.4 and LuaJIT 2.1 states. The three suites total 299 checks per
-runtime. Python profile tests and existing asset contract tests run through
+fresh Lua 5.4 and LuaJIT 2.1 states. The suites total 479 and 481 checks,
+respectively. Python profile tests and existing asset contract tests run through
 CTest as before.
 
 ## Remaining qualification

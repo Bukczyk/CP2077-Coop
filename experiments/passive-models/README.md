@@ -100,9 +100,14 @@ A future manual test requires Codeware, CET, both reviewed authored entities,
 the authored idle graph and the installed vanilla dependencies listed above.
 Stage this experiment's `engine_hooks.reds` separately under `r6/scripts` and
 confirm successful REDscript compilation before using the CET fixture. Its
-uniquely named `CP2077PassiveModelFixture_CurrentAppearance` helper on `Entity`
-returns the engine's current appearance name as a String and changes nothing.
-Without that helper, appearance readback stays unverified and movement is blocked.
+uniquely named `CP2077PassiveModelFixture_CurrentVisualState` helper on `Entity`
+returns a coherent current appearance/color pair and exact native CName hash
+strings. It double-reads the CNames and checks the original native actor/player,
+IDs, attachment and global lookup before/after. The separate read-only
+`CP2077PassiveModelFixture_OwnedIdentity` helper verifies the original native
+actor without depending on cosmetic getters. Neither helper changes state.
+Use matching Lua and REDscript files; unavailable identity or coherent readback
+cannot qualify movement.
 The runtime presence check is not an archive hash or visual-quality check. Use
 the builder's verified outputs and manifest; do not install unreviewed assets.
 No installation or package changes are made by this source change.
@@ -132,14 +137,22 @@ Yaw is in radians, between minus pi and pi. Readback retains all quaternion
 components; the input deliberately supports yaw only. There are eight named
 diagnostic slots, a local resource budget unrelated to multiplayer capacity.
 
-Each slot pins its profile, generation, original creator system, opaque exact
-EntityID and first observed exact handle. Creation is considered complete only after
+Each slot pins its profile, generation, original creator system and native player,
+opaque exact EntityID and first observed exact actor handle. Native comparisons
+accept fresh CET wrappers for the same object and reject a different native
+object reusing its ID. Creation is considered complete only after
 the original creator returns that actor attached, managed, spawned and not
 spawning. Nil/unknown flags do not qualify. Cleanup never cancels an in-flight
 static spawn: a late callback remains owned and can then be retired. Never-ready
 or unknown native outcomes remain held. Cleanup needs completed creation and
 confirmed absence from the creator, global lookup and retained handle before
-the slot can be reused. No population-wide delete or fallback actor is used.
+the slot can be reused. Before removal, exact native identity is read again.
+Unknown identity blocks mutation until verified. A positively foreign actor
+produces a sticky ownership fault: this instance neither deletes it nor reuses
+the slot, even if later lookup/absence appears normal. That fault requires
+separate investigation, with no automatic recovery/adoption. A removal attempt
+is issued only once, including a false or throwing return; actual disappearance
+must be observed. No population-wide delete or fallback actor is used.
 
 The common tag inventory permits this instance's known IDs, including pending
 tokens, but blocks unknown historical actors after reload. **Stop all slots and
@@ -150,23 +163,41 @@ actor is not automatically adopted or deleted by a replacement fixture.
 `submittedTarget` records the native command target. `observed.pose` comes from
 the actual actor. `placementVerified` requires fresh matching readback within
 5 cm and 0.02 radians, the exact template, the expected `entEntity` root and an
-observed current appearance name exactly equal to the requested `default`.
+observed current appearance name exactly equal to the requested `default`, from
+a coherent pair whose original native identity was verified.
 A call returning does not prove placement. Observation failure clears current
 readback and qualification. Wrong template/root or missing/wrong appearance
-blocks movement but still permits safe retirement of the exact owned actor.
-`requestedAppearance` is `default`; `observedAppearance` records the name actually
-read and `appearanceVerified` requires exact equality. Empty, `None`, non-string,
-missing or throwing readback cannot qualify. The final actor returned immediately
-before movement is checked again; a contradicted preflight clears cached
-qualification. A requested name does not guarantee that the native getter will
-return it, and no appearance mutation or fallback is used to force a match.
+blocks movement but still permits safe retirement when the separate exact-actor
+identity check succeeds. A changed original player blocks visual/movement
+qualification, but a valid current player context can still retire the exact
+original actor. Cosmetic failure does not become an ownership failure.
+
+`requestedAppearance` is `default`; `observedAppearance` and
+`observedAppearanceHash` record actual engine values. `observedColor` and
+`observedColorHash` record the current color variant. Hashes are canonical native
+Uint64 decimal strings, never Lua numbers or parsed debug text.
+`visualStateObserved` and `colorObserved` require a coherent validated tuple;
+`appearanceVerified` also requires exact `default` equality.
+
+Observed `None`, an empty readable symbol and a zero CName hash are preserved,
+distinct from missing/throwing getters. `appearanceNameAvailable` and
+`colorNameAvailable` report whether a readable symbol was present. An empty or
+`None` appearance cannot satisfy `default`, while a coherently observed color
+remains evidence only. **`colorMatchVerified=false` always:** no supported color
+rule, HOST mapping or color application is implemented. Missing/malformed color
+rejects the joint sample and cannot qualify the appearance/default movement gate.
+
+The final mutation actor is checked again against the original native reference
+and coherent pair. Changed appearance/hash or color/hash rejects the move and
+clears cached qualification. This checks temporal consistency, not similarity to
+another NPC. No appearance/color mutation or fallback forces a match.
 `visualQualified` always remains false. The name alone proves neither mesh
 quality nor animation. No network descriptor or HOST appearance is inferred.
 
 State transitions emit structured diagnostic lines with slot, profile,
 generation, exact ID, submitted/requested/actual pose, template and actual
-appearance evidence. A changed observed name is logged even if the mismatch
-state remains the same. Logging is limited to 64 lines per fixture instance;
+appearance/color evidence and identity status. Changed names or hashes are
+logged even if the state stays the same. Logging is limited to 64 lines per instance;
 unchanged frames stay silent. Status remains available after that limit. See
 [FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for offline evidence and limits.
 

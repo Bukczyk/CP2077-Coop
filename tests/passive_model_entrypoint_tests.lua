@@ -5,6 +5,7 @@ local previous=arg[2];arg[2]="helper"
 local make=assert(loadfile(root.."/tests/passive_model_engine_tests.lua"))();arg[2]=previous
 local folder=root.."/experiments/passive-models/"
 local function load(f)
+    f.requireUpdate=true
     package.loaded.engine=nil;package.loaded.fixture=nil
     local events={};local savedPrint=print
     print=function(message) f.logs[#f.logs+1]=message end
@@ -14,7 +15,10 @@ local function load(f)
     print=savedPrint
     local function update()
         local prior=print;print=function(message) f.logs[#f.logs+1]=message end
-        events.onUpdate(1/60);print=prior
+        f.inUpdate=true
+        local ok,why=pcall(events.onUpdate,1/60)
+        f.inUpdate=false;print=prior
+        assert(ok,why)
     end
     return api,update,events
 end
@@ -90,9 +94,9 @@ for _,fault in ipairs({"missing","throwing","nil","None","empty","number","boole
     api.start("mitch","mitch_default",p(4));tick()
     local first=api.status("judy").entity.."ULL";local second=api.status("mitch").entity.."ULL"
     local a,b=f.complete(first),f.complete(second)
-    local getter=a.CP2077PassiveModelFixture_CurrentAppearance
+    local getter=a.CP2077PassiveModelFixture_CurrentVisualState
     local function breakAppearance()
-        if fault=="missing" then a.CP2077PassiveModelFixture_CurrentAppearance=nil
+        if fault=="missing" then a.CP2077PassiveModelFixture_CurrentVisualState=nil
         elseif fault=="throwing" then a.appearanceError=true
         elseif fault=="nil" then a.appearance=nil
         elseif fault=="None" then a.appearance="None"
@@ -110,7 +114,7 @@ for _,fault in ipairs({"missing","throwing","nil","None","empty","number","boole
         "other profile independently qualifies")
     local before=f.native
     check(not api.move("judy",generation,p(3)) and f.native==before and f.moves==0,"bad appearance cannot queue native move")
-    a.CP2077PassiveModelFixture_CurrentAppearance=getter;a.appearanceError=false;a.appearance="default";tick()
+    a.CP2077PassiveModelFixture_CurrentVisualState=getter;a.appearanceError=false;a.appearance="default";tick()
     s=api.status("judy")
     check(s.state=="ready" and s.observedAppearance=="default" and s.appearanceVerified
         and s.placementVerified and not s.visualQualified,"actual later appearance recovers without visual claim")
@@ -148,5 +152,145 @@ do
     for i=1,100 do a.appearance="wrong_"..i;tick() end
     check(#f.logs==64 and api.status("names").observedAppearance=="wrong_100",
         "appearance log changes remain bounded without stopping observations")
+end
+for _,fault in ipairs({"throwing","nil","number","hash_missing","hash_number","hash_overflow","incoherent"}) do
+    local f=make();local api,tick=load(f)
+    local _,generation=api.start("judy","judy_default",p(2));api.start("mitch","mitch_default",p(4));tick()
+    local first=api.status("judy").entity.."ULL";local second=api.status("mitch").entity.."ULL"
+    local a,b=f.complete(first),f.complete(second)
+    local function breakColor()
+        if fault=="throwing" then a.colorError=true
+        elseif fault=="nil" then a.color=nil
+        elseif fault=="number" then a.color=3
+        elseif fault=="hash_missing" then a.colorHash=nil
+        elseif fault=="hash_number" then a.colorHash=9007199254740992
+        elseif fault=="hash_overflow" then a.colorHash="18446744073709551616"
+        else f.visualHook=function(actor) if actor==a then a.color=a.color.."_changed" end end end
+    end
+    breakColor();tick();local s=api.status("judy")
+    check(s.state=="visual_mismatch" and not s.visualStateObserved and not s.colorObserved
+        and not s.appearanceVerified and not s.placementVerified,"coherent color fault blocks readiness: "..fault)
+    check(api.status("mitch").state=="ready" and api.status("mitch").colorObserved,"sibling remains independent")
+    local before=f.native;check(not api.move("judy",generation,p(3)) and f.native==before and f.moves==0,
+        "public queue cannot bypass failed pair readback")
+    a.colorError=false;a.color="None";a.colorHash="0";f.visualHook=nil;tick();s=api.status("judy")
+    check(s.state=="ready" and s.colorObserved and s.observedColor=="None" and s.observedColorHash=="0"
+        and not s.colorMatchVerified and not s.visualQualified,"None/zero recovery is observation only")
+    breakColor();tick();api.stop("judy");tick()
+    check(f.deletes==1 and not b.disposed,"active color fault does not block exact isolated cleanup")
+    f.finish(first);tick();check(api.status("judy").state=="closed","color fault cleanup observed")
+end
+do
+    local f=make();local api,tick=load(f);local _,gen=api.start("color","judy_default",p(2));tick()
+    local value=next(f.tokens);local a=f.complete(value);tick()
+    check(api.move("color",gen,p(3)),"coherent tuple admits queued movement")
+    local lookups=0;f.lookupHook=function()
+        lookups=lookups+1
+        if lookups==3 then a.color="blue";a.colorHash="18446744073709551615" end
+        return a
+    end
+    tick();local s=api.status("color")
+    check(f.moves==0 and s.state=="move_rejected" and not s.observed and not s.visualStateObserved,
+        "same native actor changed color before mutation clears stale readback")
+    f.lookupHook=nil;tick();s=api.status("color")
+    check(s.state=="ready" and s.observedColor=="blue" and s.observedColorHash=="18446744073709551615"
+        and not s.colorMatchVerified,"new coherent color recoverable but not matching")
+    local lines=#f.logs;a.colorHash="9007199254740993";tick()
+    check(#f.logs==lines+1 and f.logs[#f.logs]:find('observedColorHash="9007199254740993"',1,true)
+        and f.logs[#f.logs]:find('colorMatchVerified=false',1,true),"full hash-only changes logged without false match")
+    tick();check(#f.logs==lines+1,"unchanged pair does not flood logs")
+    for i=1,100 do a.colorHash=tostring(i);tick() end
+    check(#f.logs==64 and api.status("color").observedColorHash=="100","color diagnostics stay bounded")
+end
+for _,replacement in ipairs({"actor","player","fresh_wrappers"}) do
+    local f=make();local api,tick=load(f)
+    local _,gen=api.start("pinned","judy_default",p(2));api.start("sibling","mitch_default",p(4));tick()
+    local first=api.status("pinned").entity.."ULL";local second=api.status("sibling").entity.."ULL"
+    local a=f.complete(first);f.complete(second);tick()
+    check(api.status("pinned").visualStateObserved,"first exact native actor pinned")
+    if replacement=="actor" then
+        local changed=setmetatable({nativeRef={}},{__index=a})
+        f.actors[first],f.globals[first]=changed,changed
+    elseif replacement=="player" then f.playerNative={}
+    else
+        f.actors[first]=setmetatable({},{__index=a})
+        f.globals[first]=setmetatable({},{__index=a})
+    end
+    tick();local s=api.status("pinned")
+    if replacement=="fresh_wrappers" then
+        check(s.state=="ready" and s.visualStateObserved,"fresh wrappers retain same original native identity")
+        check(api.move("pinned",gen,p(3)),"fresh wrappers do not falsely block movement")
+        tick();check(f.moves==1,"exact original native actor receives bounded transform")
+    else
+        check(s.state=="visual_mismatch" and not s.visualStateObserved and not s.placementVerified,
+            "same ID cannot replace original native "..replacement)
+        check(not api.move("pinned",gen,p(3)) and f.moves==0,"replacement cannot acquire movement qualification")
+        if replacement=="actor" then check(api.status("sibling").state=="ready","other native actor unaffected") end
+    end
+end
+do
+    local f=make();local api,tick=load(f);local _,gen=api.start("final_ref","judy_default",p(2));tick()
+    local value=next(f.tokens);local a=f.complete(value);tick()
+    check(api.move("final_ref",gen,p(3)),"queue with original native actor")
+    local lookups=0;local changed=setmetatable({nativeRef={}},{__index=a})
+    f.lookupHook=function()
+        lookups=lookups+1
+        if lookups==3 then f.globals[value]=changed;return changed end
+        return a
+    end
+    tick();local s=api.status("final_ref")
+    check(f.moves==0 and s.state=="move_rejected" and not s.observed,
+        "matching tuple/global lookup cannot substitute a new same-ID native actor before mutation")
+end
+do
+    local f=make();local api,tick=load(f);api.start("owned","judy_default",p(2));tick()
+    local value=next(f.tokens);local original=f.complete(value);tick()
+    local replacement=setmetatable({nativeRef={}},{__index=original})
+    f.actors[value],f.globals[value]=replacement,replacement
+    api.stop("owned");tick();local s=api.status("owned")
+    check(f.deletes==0 and not replacement.disposed and original.attached,
+        "same-ID foreign native actor cannot be retired in place of retained original")
+    check(s.state=="retirement_pending" and s.identityFault
+        and s.reason=="owned_native_identity_mismatch","positive native replacement remains visible and quarantined")
+    f.actors[value],f.globals[value]=original,original;tick()
+    check(f.deletes==0 and api.status("owned").identityFault,"identity fault remains sticky after original lookup returns")
+    f.finish(value);tick()
+    check(api.status("owned").state=="retirement_pending" and not api.start("owned","mitch_default",p(3)),
+        "positive ownership loss cannot authorize replacement after later absence")
+end
+for _,fault in ipairs({"unknown","throwing","missing"}) do
+    local f=make();local api,tick=load(f);api.start("owned","judy_default",p(2));tick()
+    local value=next(f.tokens);local a=f.complete(value);tick()
+    local method=a.CP2077PassiveModelFixture_OwnedIdentity
+    if fault=="unknown" then f.identityUnknown=true
+    elseif fault=="throwing" then f.identityThrows=true
+    else a.CP2077PassiveModelFixture_OwnedIdentity=nil end
+    api.stop("owned");tick()
+    check(f.deletes==0 and api.status("owned").state=="retirement_pending"
+        and not api.status("owned").identityFault,"unknown identity blocks removal without inventing foreign actor")
+    f.identityUnknown,f.identityThrows=false,false;a.CP2077PassiveModelFixture_OwnedIdentity=method
+    a.colorError=true;tick()
+    check(f.deletes==1,"recovered exact identity permits cleanup even with throwing color getter")
+    f.finish(value);tick();check(api.status("owned").state=="closed","valid exact removal recovery")
+end
+do
+    local f=make();local api,tick=load(f);api.start("final_delete","judy_default",p(2));tick()
+    local value=next(f.tokens);local a=f.complete(value);tick()
+    local other=setmetatable({nativeRef={}},{__index=a});local lookups=0
+    f.lookupHook=function()
+        lookups=lookups+1
+        if lookups==2 then f.globals[value]=other;return other end
+        return a
+    end
+    api.stop("final_delete");tick()
+    check(f.deletes==0 and api.status("final_delete").identityFault,
+        "foreign replacement between retirement observation and native call is revalidated")
+end
+do
+    local f=make();local api,tick=load(f);api.start("uncertain","judy_default",p(2));tick()
+    local value=next(f.tokens);f.complete(value);tick();f.despawnThrows=true
+    api.stop("uncertain");tick();tick();tick()
+    check(f.deletes==1 and api.status("uncertain").state=="retirement_pending","unknown native removal is never resubmitted")
+    f.finish(value);tick();check(api.status("uncertain").state=="closed","actual later disappearance resolves unknown removal")
 end
 print("Passive model real entrypoint checks: "..checks)
