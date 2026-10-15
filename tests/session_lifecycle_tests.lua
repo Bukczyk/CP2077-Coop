@@ -20,6 +20,8 @@ local function fixture(role, experimental, motor, passive)
         npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false,
         remotes={}, bodies={}, unbindings={}, frameGeneration=1,
         playerSpawns=0, teleports=0, world={}, mapped={}, deleted={}, phase=4,
+        paused=false, npcClocks={},
+
     }
     local events, hotkeys = {}, {}
     Game, Observe, CName = nil, nil, nil
@@ -44,6 +46,13 @@ local function fixture(role, experimental, motor, passive)
     end
     registerHotkey = function(name, _, callback) hotkeys[name] = callback end
     state.bridge=assert(loadfile(root .. "/runtime/session/cet/CP2077Coop/init.lua"))()
+    local population=package.loaded.npc_population
+    local observe=population.observe
+    population.observe=function(now,paused)
+        state.npcClocks[#state.npcClocks+1]={now=now,paused=paused}
+        return observe(now,paused)
+    end
+
     assert(events.onInit, "entrypoint must register onInit")
     assert(state.observations == 0, "no engine observation during module load")
     -- These callbacks must also be harmless before the engine API is ready.
@@ -121,7 +130,11 @@ local function fixture(role, experimental, motor, passive)
         GetPlayer=function() if state.hasPlayer then return player end end,
         GetSystemRequestsHandler=function()
             return {IsPreGame=function() return state.pregame end,
-                IsGamePaused=function() return state.paused == true end}
+                IsGamePaused=function()
+                    if state.pauseUnavailable then error("pause observation unavailable") end
+                    return state.paused
+                end}
+
         end,
         GetDynamicEntitySystem=function() return system end,
         FindEntityByID=function(id) local e=entry(id); return e and e.visible and e.actor or nil end,
@@ -133,7 +146,10 @@ local function fixture(role, experimental, motor, passive)
             if value==false and state.deactivateThrows then error("injected deactivation failure") end
         end,
         CP2077Session_PushLocal=function() state.pushes=state.pushes+1 end,
-        CP2077Session_BeginFrame=function() return #state.remotes end,
+        CP2077Session_BeginFrame=function()
+            if state.bridgeFailure then error("test bridge failure") end
+            return #state.remotes
+        end,
         CP2077Session_Generation=function() return state.frameGeneration end,
         CP2077Session_Select=function(index) state.selected=state.remotes[index+1]; return state.selected~=nil end,
         CP2077Session_Player=function() return state.selected.id end,
@@ -148,6 +164,7 @@ local function fixture(role, experimental, motor, passive)
             for hash,session in pairs(state.mapped) do if tostring(session)==tostring(id) then state.mapped[hash]=nil end end
             return true
         end,
+
         CP2077Session_Session=function() return uint64(1) end,
         CP2077Session_Epoch=function() return 1 end,
         CP2077Session_Phase=function() return state.phase end,
@@ -182,6 +199,7 @@ local function fixture(role, experimental, motor, passive)
         end
     end
     state.reconnect=hotkeys.cp2077_session_reconnect
+    state.rawTick=events.onUpdate
     state.shutdown=events.onShutdown
     return state
 end
@@ -325,6 +343,15 @@ s.shutdown()
 -- Startup recovery and failed-mode cleanup retain exact IDs after the manager's
 -- tag index has been emptied. No unrelated or newly rebound actor is deleted.
 s=fixture("HOST",false,true)
+local pauseUnknownId=s.add(body("9007199254744997ULL"),"CP2077Session.Projection.9")
+s.pauseUnavailable=true; s.init(); s.tick(120)
+assert(#s.deleted==0,"unknown pause state cannot qualify player cleanup alongside NPC pumping")
+s.pauseUnavailable=false; s.tick(30)
+assert(#s.deleted==1 and not s.world[tostring(pauseUnknownId.hash)].visible,
+    "both update paths recover after pause observation returns")
+s.shutdown()
+
+s=fixture("HOST",false,true)
 local orphan=body("9007199254740997ULL")
 local orphanId=s.add(orphan,"CP2077Session.Projection.9")
 s.delayDelete=true
@@ -443,6 +470,27 @@ assert(#s.deleted==1 and next(s.bridge.playerRetirementDiagnostics())==nil,
     "throwing passive cleanup does not block dynamic retirement pumping")
 passiveResetThrows=false; s.shutdown(); package.loaded.player_passive=nil
 package.loaded.player_motor=nil
+-- The actual entrypoint supplies one timestamp and explicit pause state to NPC
+-- retirement even after unload or a latched bridge failure. Unknown is not false.
+do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local first=s.npcClocks[#s.npcClocks]
+    assert(first.paused==false and first.now>0,"normal NPC pump is explicitly unpaused")
+    s.paused=true; s.tick()
+    local paused=s.npcClocks[#s.npcClocks]
+    assert(paused.paused==true and paused.now>first.now)
+    s.pauseUnavailable=true; s.tick()
+    assert(s.npcClocks[#s.npcClocks].paused==nil,"unknown pause must reach fail-closed adapter")
+    s.pauseUnavailable=false; s.paused=false; s.hasPlayer=false; s.tick(3)
+    local unloaded=s.npcClocks[#s.npcClocks]
+    assert(unloaded.now>paused.now and unloaded.paused==false,"unloaded game still pumps retained NPCs")
+    s.hasPlayer=true; s.bridgeFailure=true; s.rawTick(1/60)
+    local failed=s.npcClocks[#s.npcClocks]
+    s.rawTick(1/60)
+    assert(s.npcClocks[#s.npcClocks].now>failed.now,"latched failure still pumps NPC retirement")
+end
+
+
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

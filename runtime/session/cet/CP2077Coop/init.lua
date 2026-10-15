@@ -154,7 +154,12 @@ local function update(delta)
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
     local requests = Game.GetSystemRequestsHandler()
-    local paused = requests ~= nil and requests:IsGamePaused()
+    ensureNpcProjection()
+    local pauseOk, npcPaused = pcall(function() return requests:IsGamePaused() end)
+    if not pauseOk then npcPaused = nil end
+    npcProjection:pump(time, npcPaused)
+    -- Unknown pause state cannot qualify player retirement either.
+    local paused = npcPaused ~= false
     pumpRetirement(paused)
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
@@ -358,7 +363,14 @@ registerForEvent("onUpdate", function(delta)
         time = time + delta
         pcall(function()
             local requests = Game.GetSystemRequestsHandler()
-            pumpRetirement(requests ~= nil and requests:IsGamePaused())
+            local ok, paused = pcall(function() return requests:IsGamePaused() end)
+            pumpRetirement(not ok or paused ~= false)
+        end)
+        pcall(function()
+            local requests = Game.GetSystemRequestsHandler()
+            local pauseOk, npcPaused = pcall(function() return requests:IsGamePaused() end)
+            if not pauseOk then npcPaused = nil end
+            if npcProjection then npcProjection:pump(time, npcPaused) end
         end)
         return
     end
