@@ -232,7 +232,9 @@ do
     f.generation=1; f.loaded=true; f.remotes={pose(2),pose(3,"9007199254740994ULL")}
     local selected
     Game.GetPlayer=function() return f.loaded and player or nil end
-    Game.GetSystemRequestsHandler=function() return nil end
+    Game.GetSystemRequestsHandler=function()
+        return {IsGamePaused=function() return false end,IsPreGame=function() return false end}
+    end
     Game.GetDynamicEntitySystem=function() return dyn end
     Game.FindEntityByID=function(token) return dyn:GetEntity(token) end
     Game.CP2077Session_ExperimentalStaticNpcProjection=function() return false end

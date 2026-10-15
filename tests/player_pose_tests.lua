@@ -216,7 +216,9 @@ function localPlayer:CP2077Session_SpawnProxy()
 end
 Game={
     GetPlayer=function() return localPlayer end,
-    GetSystemRequestsHandler=function() return nil end,
+    GetSystemRequestsHandler=function()
+        return {IsGamePaused=function() return false end,IsPreGame=function() return false end}
+    end,
     GetDynamicEntitySystem=function() return system end,
     FindEntityByID=function(id) return system:GetEntity(id) end,
     GetTeleportationFacility=function() return {Teleport=function() calls=calls+1 end} end,
