@@ -20,6 +20,14 @@ ENTITY = r"base\cp2077coop\entities\cp2077coop_networkhumanoid.ent"
 GRAPH = r"base\cp2077coop\animations\networkhumanoid_idle.animgraph"
 ANIMSET = r"base\animations\npc\gameplay\woman_average\gang\unarmed\wa_gang_unarmed_locomotion_combat.anims"
 RIG = r"base\characters\base_entities\woman_base\woman_base.rig"
+MESH = r"base\characters\appearances\main_npc\proxy\judy_default\judy_default.mesh"
+IDENTITY_LOCAL_TRANSFORM = {
+    "$type": "WorldTransform",
+    "Orientation": {"$type": "Quaternion", "i": 0, "j": 0, "k": 0, "r": 1},
+    "Position": {"$type": "WorldPosition", **{
+        axis: {"$type": "FixedPoint", "Bits": 0} for axis in ("x", "y", "z")
+    }},
+}
 CLI_SHA256 = "7ae9c308da2fe003220b55ce4ca9c122b51f0701a67db1618cca3ff4f7ff6738"
 
 
@@ -46,6 +54,61 @@ def walk(value):
             yield from walk(child)
 
 
+def validate_passive_visuals(root):
+    """Only the reviewed Judy/default visual, with no inherited components.
+
+    WolvenKit serializes the same component both inline and as compiled data.
+    Handle references may differ in form; their resolved content must agree.
+    """
+    for field in ("includes", "appearances", "backendDataOverrides", "bindingOverrides",
+                  "componentResolveSettings", "inplaceResources"):
+        require(root.get(field) == [], f"Passive visual requires empty {field}")
+    for field in ("includeInstanceBuffer", "localData", "visualTagsSchema"):
+        require(root.get(field) is None, f"Passive visual forbids {field}")
+    require(root["defaultAppearance"]["$value"] == "default", "Only reviewed default appearance is supported")
+    handles = {}
+    for value in walk(root):
+        if "HandleId" in value:
+            require(set(value) == {"HandleId", "Data"}, "Ambiguous entity handle definition")
+            handle = value["HandleId"]
+            require(handle not in handles or handles[handle] == value["Data"], "Conflicting entity handle definitions")
+            handles[handle] = value["Data"]
+
+    def resolved(value, resolving=()):
+        if isinstance(value, list):
+            return [resolved(child, resolving) for child in value]
+        if not isinstance(value, dict):
+            return value
+        if "HandleRefId" in value or "HandleId" in value:
+            if "HandleRefId" in value:
+                require(set(value) == {"HandleRefId"}, "Ambiguous entity handle reference")
+                handle = value["HandleRefId"]
+            else:
+                handle = value["HandleId"]
+            require(handle in handles, "Unresolved entity handle")
+            require(handle not in resolving, "Cyclic entity handle")
+            return resolved(handles[handle], resolving + (handle,))
+        return {key: resolved(child, resolving) for key, child in value.items()}
+
+    components = resolved(root["components"])
+    chunks = resolved(root["compiledData"]["Data"]["Chunks"])
+    require(resolved(root["entity"]) == chunks[0], "Template and compiled entity roots differ")
+    require(components == chunks[1:], "Template and compiled visual components differ")
+    animated, mesh = components[:2]
+    require(resource_path(mesh["mesh"]) == MESH, "Only reviewed Judy mesh is supported")
+    require(mesh["meshAppearance"]["$value"] == "default", "Only reviewed default mesh appearance is supported")
+    require(mesh["isEnabled"] == 1, "Reviewed mesh must stay enabled")
+    require(mesh["chunkMask"] == "9223372036854775807", "Reviewed mesh draw mask must stay unchanged")
+    for component in (animated, mesh):
+        require(component["localTransform"] == IDENTITY_LOCAL_TRANSFORM,
+                "Reviewed visual components require an identity local transform")
+    for field, expected in (("skinning", "entSkinningBinding"), ("parentTransform", "entHardTransformBinding")):
+        binding = mesh[field]
+        require(isinstance(binding, dict) and binding.get("$type") == expected, f"Invalid mesh {field} binding")
+        require(binding["enabled"] == 1 and binding["bindName"] == animated["name"],
+                f"Mesh {field} must target the reviewed animated component")
+
+
 def validate_sources(entity_path, graph_path):
     entity = json.loads(entity_path.read_text(encoding="utf-8-sig"))
     graph = json.loads(graph_path.read_text(encoding="utf-8-sig"))
@@ -57,6 +120,7 @@ def validate_sources(entity_path, graph_path):
     chunks = root["compiledData"]["Data"]["Chunks"]
     require([x["$type"] for x in chunks] == ["entEntity", "entAnimatedComponent", "entSkinnedMeshComponent"], "Unexpected compiled components")
     require([x["$type"] for x in root["components"]] == ["entAnimatedComponent", "entSkinnedMeshComponent"], "Unexpected template components")
+    validate_passive_visuals(root)
     for component in (root["components"][0], chunks[1]):
         require(resource_path(component["graph"]) == GRAPH, "Wrong idle graph reference")
         require(resource_path(component["rig"]) == RIG, "Wrong skeleton")

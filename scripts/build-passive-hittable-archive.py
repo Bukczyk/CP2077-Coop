@@ -40,6 +40,7 @@ def validate(path):
     chunks = root["compiledData"]["Data"]["Chunks"]
     require([c["$type"] for c in chunks] == ["entEntity"] + types, "No unexpected compiled components")
     require([c["$type"] for c in root["components"]] == types, "No unexpected template components")
+    idle.validate_passive_visuals(root)
     for components in (root["components"], chunks[1:]):
         animated, mesh, controller, collider = components
         require(idle.resource_path(animated["graph"]) == GRAPH, "Must reference the separately built encounter graph")
