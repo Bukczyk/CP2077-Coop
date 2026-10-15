@@ -5,6 +5,7 @@ local checks=0
 local function check(v,why) checks=checks+1;assert(v,why) end
 local function pose(x) return {x=x or 2,y=0,z=0,yaw=0} end
 local function observed(x) return {ready=true,templateVerified=true,rootVerified=true,visualQualified=false,
+    observedAppearance="default",appearanceVerified=true,
     pose={x=x or 2,y=0,z=0,qx=0,qy=0,qz=0,qw=1}} end
 local function fixture()
     local engine={calls=0,creates=0,moves=0,deletes=0,world={}}
@@ -117,5 +118,21 @@ do
     local c,e,logs=fixture();c:start("x","judy_default",pose());c:pump()
     for i=1,200 do e.world.x.fail=i%2==0;c:pump() end
     check(#logs==64,"total log budget")
+end
+do
+    local c,e,logs=fixture();local _,gen=c:start("one","judy_default",pose());c:pump();c:pump()
+    local o=e.world.one.o
+    o.observedAppearance="wrong";o.appearanceVerified=true;c:pump()
+    check(c:status("one").state=="visual_mismatch" and not c:status("one").placementVerified
+        and not c:status("one").appearanceVerified,"exact default name required even with true verification flag")
+    check(not c:move("one",gen,pose(3)) and e.moves==0,"mismatched appearance cannot queue movement")
+    local count=#logs;o.observedAppearance="different";c:pump()
+    check(#logs==count+1,"changed observed name logged within unchanged mismatch state")
+    c:pump();check(#logs==count+1,"unchanged appearance does not log every frame")
+    o.observedAppearance="default";o.appearanceVerified="true";c:pump()
+    check(not c:status("one").appearanceVerified and not c:status("one").placementVerified,"strict Boolean appearance flag")
+    o.appearanceVerified=true;c:pump()
+    check(c:status("one").state=="ready" and c:status("one").appearanceVerified,"later appearance can recover")
+    check(not c:status("one").visualQualified,"correct name is not visible qualification")
 end
 print("Passive model fixture state/queue checks: "..checks)

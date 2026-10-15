@@ -68,8 +68,11 @@ function Controller:shutdown()
 end
 function Controller:status(slot)
     local function snapshot(e)
+        local observed=e.observed or {}
         return copy({slot=e.slot,profile=e.profile,generation=e.generation,state=e.state,
             reason=e.reason,entity=e.idKey,requestedAppearance="default",visualQualified=false,
+            observedAppearance=observed.observedAppearance,
+            appearanceVerified=observed.appearanceVerified==true and observed.observedAppearance=="default",
             requestedTarget=e.target,queuedTarget=e.queuedMove,submittedTarget=e.submittedTarget,observed=e.observed,
             placementVerified=e.placementVerified==true,moveSubmission=e.moveSubmission,
             retiring=e.retiring==true,spawnAttempted=e.spawnAttempted==true})
@@ -105,9 +108,12 @@ function Controller:_step(e)
         return
     end
     e.observed=copy(o)
-    e.placementVerified=matched(o.pose,e.target) and o.ready==true and o.templateVerified==true and o.rootVerified==true
+    local appearanceVerified=o.appearanceVerified==true and o.observedAppearance=="default"
+    e.placementVerified=matched(o.pose,e.target) and o.ready==true and o.templateVerified==true
+        and o.rootVerified==true and appearanceVerified
     if o.visualFault then e.state,e.reason="visual_mismatch",o.visualFault;return end
-    if not (o.ready==true and o.templateVerified==true and o.rootVerified==true and o.pose) then
+    if o.ready==true and not appearanceVerified then e.state,e.reason="visual_mismatch","appearance_unverified";return end
+    if not (o.ready==true and o.templateVerified==true and o.rootVerified==true and appearanceVerified and o.pose) then
         e.state,e.reason="spawn_pending","awaiting_ready_actor";return
     end
     if e.queuedMove then
@@ -117,6 +123,8 @@ function Controller:_step(e)
         local submitted,result=pcall(self.engine.move,self.engine,e,target)
         if not e.moveAttempted then
             e.moveSubmission,e.state,e.reason="rejected","move_rejected",tostring(result)
+            -- Final native preflight may contradict the earlier cached sample.
+            e.placementVerified,e.observed=false,nil
             return
         end
         -- Keep unknown native outcomes observable; never automatically reissue.
@@ -141,8 +149,11 @@ function Controller:pump()
             e.state,e.reason="observation_unknown",tostring(why)
             e.placementVerified,e.observed=false,nil
         end
-        -- At most one transition line per slot per update, and never each frame.
-        local message=e.state..":"..tostring(e.reason)
+        -- Log changed appearance evidence even when the state stays mismatched.
+        -- Unchanged frames stay silent and the instance limit still applies.
+        local observed=e.observed or {}
+        local message=e.state..":"..tostring(e.reason)..":"..tostring(observed.observedAppearance)
+            ..":"..tostring(observed.appearanceVerified)
         if self.log and self.logCount<64 and e.lastLog~=message then
             e.lastLog=message
             self.logCount=self.logCount+1
