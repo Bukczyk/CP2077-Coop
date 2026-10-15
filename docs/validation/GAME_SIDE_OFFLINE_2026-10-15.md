@@ -11,14 +11,14 @@ This branch combines the following reviewable source slices on upstream main
 | 15 | feat/teammate-map-markers | d0da56a884aa7c16e0076ad41ceb464592f3c0f2 |
 | 16 | feat/player-action-preparation | 75a7a211da8775158a5c6d8f43bb137554dce0dc |
 | 19 | tooling/movement-log-analysis | 4bb510e2396a98691f0870fecc450e718b63493a |
-| 20 | fix/player-diagnostic-recovery | a4d05313772946d1f3036b218c97e176b094398e |
-| 21 | fix/dynamic-npc-lifecycle | 4f56311052bb2949f05aeda036b2a8d0b2883987 |
+| 20 | fix/player-diagnostic-recovery | 4d12c1c270eff26f152afda2a57ed39fb745bc15 |
+| 21 | fix/dynamic-npc-lifecycle | bd6d941e785b418f5e32370f0258a67241a759eb |
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
 | 23 | feat/vehicle-pose-application | e8070dd74192bf772415790d4e08852638df9b08 |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
 
-Combined source tested: `c2f8a4a90af4d281f429b3ea77ea7fb86959a413`.
+Combined source tested: `d6a2daa53b969c1f224096f4fcd456715409b590`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -47,6 +47,14 @@ and aim sources must remain matched because the lease pins an exact weapon ID.
 Test registrations merged without dropping any existing suite. No networking,
 protocol, server or shared bridge behavior was changed to resolve integration.
 
+The static player/NPC follow-ups now preserve creator, token and first observed
+actor through unknown observations and pending callbacks. Creation must be
+confirmed by the exact creator before later absence can release ownership.
+Both actual-entrypoint regressions fail against their preceding adapters.
+The new NPC reconnect test initially lacked the empty `GetTaggedIDs` method used
+by the existing PR5 player-discovery path; the fixture now provides that method
+alongside `GetTagged`. No runtime behavior was weakened to make the test pass.
+
 ## Passed offline
 
 - Windows x64 Release plugin, session server and core build.
@@ -68,11 +76,12 @@ protocol, server or shared bridge behavior was changed to resolve integration.
 - `git diff --check`; no unresolved merge markers.
 
 Private logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
-`combined-model-configure.log`, `combined-model-build.log`, `combined-model-ctest.log`,
-`combined-readiness-luajit.log` and `redscript/compile-20261015T081404930677Z.*`.
-The 20 LuaJIT suites and full REDscript compilation were run at `af5a24a`; the
-subsequent model merge adds only asset JSON, Python, CMake test registration and
-documentation. All tested Lua/REDscript bytes remain identical. Hosted branch
+`combined-static-cleanup-build.log`, `combined-static-cleanup-ctest-final.log`,
+`combined-static-cleanup-luajit-final.log` and
+`redscript/compile-20261015T081404930677Z.*`. The 43 CTests and all 20 LuaJIT suites
+were rerun on the combined corrected source. REDscript compilation remains the
+verified `af5a24a` result: every REDscript byte is unchanged. The initial combined
+fixture failure remains in the unsuffixed static-cleanup logs. Hosted branch
 checks are recorded separately after completion.
 
 ## Open gates
@@ -87,6 +96,9 @@ The full goal and all relevant live/two-PC gates remain open. Continue independe
 source work while live testing is deferred and bridge requirements await agreement.
 The next NPC task is a separate explicit local profile selection fixture. PR25
 does not activate a production selector or establish visible model/animation parity.
+Unknown never-completed static spawns remain held if terminal cancellation cannot
+be established; no timeout is treated as evidence of safe cleanup. Actual callback
+scheduling, scene teardown and recovery still need the deferred live validation.
 
 Published `v0.1.0-movement-experiment.1` remains at source `691dc397...`.
 Its HOST/JOINER ZIP hashes were reverified unchanged. No games, settings, bindings,
