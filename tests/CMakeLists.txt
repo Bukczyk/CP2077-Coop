@@ -53,3 +53,7 @@ add_test(NAME session_ui COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/sess
 set_tests_properties(session_ui PROPERTIES TIMEOUT 15)
 add_test(NAME marker_facing COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/marker_facing_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(marker_facing PROPERTIES TIMEOUT 15)
+
+add_test(NAME map_basis_capture
+    COMMAND coop_lua_test ${CMAKE_CURRENT_SOURCE_DIR}/map_basis_capture_tests.lua ${CMAKE_SOURCE_DIR})
+set_tests_properties(map_basis_capture PROPERTIES TIMEOUT 15)
