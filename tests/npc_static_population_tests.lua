@@ -18,6 +18,7 @@ function system:GetEntity(id)
     if removed[id] or not spawned[id] then return nil end
     return {
         GetEntityID=function() return id end,
+        IsAttached=function() return not removed[id] and spawned[id] == true end,
         SetWorldTransform=function(_, world) positioned[id]=world end
     }
 end
@@ -28,6 +29,7 @@ function system:DespawnEntity(id)
 end
 Game = {
     GetStaticEntitySystem=function() return system end,
+    FindEntityByID=function(id) return system:GetEntity(id) end,
     CP2077Session_Bind=function(sessionId, localId)
         assert(spawned[localId] and sessionId ~= localId)
         if denyBind then return false end
