@@ -3,6 +3,7 @@
 local root = assert(arg[1])
 package.path = root .. "/runtime/session/cet/CP2077Coop/?.lua;" .. package.path
 local report = print
+local realLifetime = require("player_lifetime")
 local hasFfi, ffi = pcall(require, "ffi")
 local function uint64(offset)
     if hasFfi then return ffi.new("uint64_t", 9007199254740992) + offset end
@@ -20,7 +21,17 @@ local function fixture(role, experimental, motor, passive)
         npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false,
         remotes={}, bodies={}, unbindings={}, frameGeneration=1,
         playerSpawns=0, teleports=0, world={}, mapped={}, deleted={}, phase=4,
+        retirementPumps={},
     }
+    package.loaded.player_lifetime={new=function(...)
+        local owner=realLifetime.new(...)
+        local pump=owner.pump
+        owner.pump=function(self,now,paused)
+            state.retirementPumps[#state.retirementPumps+1]={now=now,paused=paused}
+            return pump(self,now,paused)
+        end
+        return owner
+    end}
     local events, hotkeys = {}, {}
     Game, Observe, CName = nil, nil, nil
     package.loaded.npc_runtime, package.loaded.npc_population = nil, nil
@@ -183,6 +194,7 @@ local function fixture(role, experimental, motor, passive)
     end
     state.reconnect=hotkeys.cp2077_session_reconnect
     state.shutdown=events.onShutdown
+    state.rawTick=events.onUpdate
     return state
 end
 
@@ -443,6 +455,120 @@ assert(#s.deleted==1 and next(s.bridge.playerRetirementDiagnostics())==nil,
     "throwing passive cleanup does not block dynamic retirement pumping")
 passiveResetThrows=false; s.shutdown(); package.loaded.player_passive=nil
 package.loaded.player_motor=nil
+
+-- An engine failure between clock advancement and retirement observation must
+-- invalidate the old qualification, including after the bridge error latches.
+local function retirementStatus(state)
+    local _,entry=next(state.bridge.playerRetirementDiagnostics())
+    return entry and entry.status
+end
+local function waitForRetirement(state,status)
+    for _=1,30 do
+        state.tick()
+        if retirementStatus(state)==status then return end
+    end
+    error("did not reach retirement status "..status)
+end
+local function injectFailure(kind,setPassiveFailure)
+    if kind=="passive" then
+        setPassiveFailure(true)
+        return function() setPassiveFailure(false) end
+    end
+    local name=kind=="player" and "GetPlayer" or "GetSystemRequestsHandler"
+    local original=Game[name]
+    Game[name]=function()
+        if kind=="pause" then
+            return {IsGamePaused=function() error("injected pause lookup failure") end,
+                IsPreGame=function() return false end}
+        end
+        error("injected "..kind.." lookup failure")
+    end
+    return function() Game[name]=original end
+end
+for _,stage in ipairs({"attachment_observation_pending","absence_observation_pending"}) do
+    for _,kind in ipairs({"handler","pause","player","passive"}) do
+        local passiveFailure=false
+        package.loaded.player_passive={new=function()
+            return {reset=function() end,pump=function()
+                if passiveFailure then error("injected passive pump failure") end
+            end,status=function() end,step=function() end,boundIds=function() return {} end}
+        end}
+        local state=fixture("HOST",false,false,kind=="passive")
+        state.add(body("9007199254743993ULL"),"CP2077Session.Projection.2")
+        state.init(); waitForRetirement(state,stage)
+        local before=state.retirementPumps[#state.retirementPumps].now
+        local restore=injectFailure(kind,function(value) passiveFailure=value end)
+        state.allowBridgeError=true; state.rawTick(5)
+        local bridgeErrors=0
+        for _,line in ipairs(state.logs) do
+            if line:find("BRIDGE_ERROR",1,true) then bridgeErrors=bridgeErrors+1 end
+        end
+        assert(bridgeErrors==(kind=="pause" and 0 or 1),
+            kind..": pause uncertainty is nonfatal; infrastructure errors remain latched")
+        local observed=state.retirementPumps[#state.retirementPumps]
+        assert(observed.paused==true and math.abs(observed.now-before-5)<1e-9,
+            kind..": failure invalidates known retirement at the same once-advanced time")
+        assert(next(state.bridge.playerRetirementDiagnostics())~=nil,
+            kind..": failed interval cannot release ownership")
+        restore(); state.rawTick(1/60)
+        observed=state.retirementPumps[#state.retirementPumps]
+        assert(math.abs(observed.now-before-5-1/60)<1e-9,
+            kind..": failed-mode resume advances by exactly its own delta")
+        if stage=="attachment_observation_pending" then
+            assert(#state.deleted==0,kind..": resume needs two new attached observations")
+            state.rawTick(1/60)
+            assert(#state.deleted==1,kind..": fresh second observation permits deletion")
+            state.rawTick(1/60)
+        end
+        assert(retirementStatus(state)=="absence_observation_pending",
+            kind..": resume begins a new absence interval")
+        state.rawTick(0.1); state.rawTick(0.1)
+        assert(next(state.bridge.playerRetirementDiagnostics())~=nil,
+            kind..": less than the fresh quiet interval retains ownership")
+        state.rawTick(0.051)
+        assert(next(state.bridge.playerRetirementDiagnostics())==nil,
+            kind..": complete fresh quiet interval permits retirement")
+        local activations=0
+        for _,value in ipairs(state.activations) do if value then activations=activations+1 end end
+        assert(activations==1,kind..": cleanup recovery does not restart the session")
+        state.shutdown(); package.loaded.player_passive=nil
+    end
+end
+
+-- Unknown pause context in an already-failed tick also resets the quiet window.
+-- Neither a missing handler nor a non-boolean pause value means unpaused.
+for _,kind in ipairs({"handler","pause","nil-handler","nil-pause","malformed-pause"}) do
+    local state=fixture("HOST",false,false)
+    state.add(body("9007199254744993ULL"),"CP2077Session.Projection.2")
+    state.init(); waitForRetirement(state,"absence_observation_pending")
+    local restorePlayer=injectFailure("player")
+    state.allowBridgeError=true; state.rawTick(1/60); restorePlayer(); state.rawTick(1/60)
+    assert(retirementStatus(state)=="absence_observation_pending")
+    local original=Game.GetSystemRequestsHandler
+    local restore
+    if kind=="handler" or kind=="pause" then restore=injectFailure(kind)
+    else
+        Game.GetSystemRequestsHandler=function()
+            if kind=="nil-handler" then return nil end
+            return {IsGamePaused=function()
+                if kind=="malformed-pause" then return "false" end
+            end}
+        end
+        restore=function() Game.GetSystemRequestsHandler=original end
+    end
+    local before=state.retirementPumps[#state.retirementPumps].now
+    state.rawTick(5)
+    local observed=state.retirementPumps[#state.retirementPumps]
+    assert(observed.paused==true and math.abs(observed.now-before-5)<1e-9,
+        kind..": failed mode reports unavailable pause at current time")
+    restore(); state.rawTick(1/60); state.rawTick(0.2)
+    assert(next(state.bridge.playerRetirementDiagnostics())~=nil,
+        kind..": failed-mode unknown interval cannot finish removal")
+    state.rawTick(0.051)
+    assert(next(state.bridge.playerRetirementDiagnostics())==nil,
+        kind..": retirement recovers only after a new quiet interval")
+    state.shutdown()
+end
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

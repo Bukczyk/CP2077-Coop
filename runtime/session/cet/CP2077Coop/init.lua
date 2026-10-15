@@ -117,6 +117,22 @@ local function pumpRetirement(paused)
         end
     end
 end
+local function invalidateRetirementObservation()
+    -- Failure before normal pumping leaves an unobserved interval. Reset each
+    -- known owner's qualification even if startup tag recovery is unavailable.
+    for _, entry in pairs(retiring) do
+        pcall(function() entry.life:pump(time, true) end)
+    end
+end
+local function readPauseContext()
+    local requestsOk, requests = pcall(function() return Game.GetSystemRequestsHandler() end)
+    if not requestsOk then return nil, nil, false, requests end
+    local pauseOk, paused = pcall(function()
+        if requests ~= nil then return requests:IsGamePaused() end
+    end)
+    if not pauseOk or type(paused) ~= "boolean" then paused = nil end
+    return requests, paused, true
+end
 local function retainDynamicRetirement()
     -- This part is independent of engine/native cleanup. Even a failed native
     -- deactivation or a different representation's reset must retain our IDs.
@@ -153,9 +169,11 @@ local function update(delta)
     -- Continue observing asynchronous retirement even while no save is loaded.
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
-    local requests = Game.GetSystemRequestsHandler()
-    local paused = requests ~= nil and requests:IsGamePaused()
+    local requests, pauseObservation, requestsOk, requestsError = readPauseContext()
+    -- Missing or malformed context cannot qualify an unpaused observation.
+    local paused = pauseObservation ~= false
     pumpRetirement(paused)
+    if not requestsOk then error(requestsError, 0) end
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
@@ -356,16 +374,20 @@ registerForEvent("onUpdate", function(delta)
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
         time = time + delta
-        pcall(function()
-            local requests = Game.GetSystemRequestsHandler()
-            pumpRetirement(requests ~= nil and requests:IsGamePaused())
+        local observed = pcall(function()
+            local _, paused = readPauseContext()
+            pumpRetirement(paused ~= false)
         end)
+        if not observed then invalidateRetirementObservation() end
         return
     end
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
         local stopped, cleanupReason = pcall(stop)
+        -- update already advanced time. Do not count the failed interval or
+        -- advance the clock again while invalidating cleanup qualification.
+        invalidateRetirementObservation()
         print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
             .. (stopped and "" or "; cleanup: " .. tostring(cleanupReason)))
     end

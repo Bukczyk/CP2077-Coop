@@ -6,17 +6,21 @@ Base: `691dc3975293dec6e4c9114785117f71d3b12389` (published PR #17 movement expe
 
 ## Scope
 
-This follow-up corrects two misleading diagnostic states without changing
-movement commands, recovery budgets, identity ownership or deletion policy.
+This follow-up corrects two misleading diagnostic states and prevents skipped
+engine observations from qualifying player cleanup. Movement commands,
+recovery budgets and exact identity ownership are unchanged.
 The published HOST/JOINER packages remain unchanged.
 
 Owned files:
 
 - `runtime/session/cet/CP2077Coop/player_motor.lua`
 - `runtime/session/cet/CP2077Coop/player_lifetime.lua`
+- `runtime/session/cet/CP2077Coop/init.lua`
 - `tests/player_motor_tests.lua`
 - `tests/player_lifetime_tests.lua`
 - `tests/session_lifecycle_tests.lua`
+- `tests/player_pose_tests.lua`
+- `tests/passive_player_tests.lua`
 - This validation note
 
 ## Defects and behavior
@@ -31,6 +35,21 @@ Owned files:
    lookup now restores the active lifetime's `owned` status. Missing actors,
    identity mismatches and retiring lifetimes cannot use this recovery path.
    Retirement still requires its existing stable attachment and absence checks.
+3. A `GetPlayer` or passive-pump exception could advance the bridge clock and
+   skip retirement observation. Once the bridge latched its error, the next
+   valid tick could count the skipped interval toward confirmed removal. The
+   failure path now invalidates every already-owned retirement at the current
+   timestamp, even if startup tag recovery also fails. It does not advance time
+   again. Failed-mode cleanup also protects the complete pause-context read.
+
+Pause policy is explicit: a requests-handler getter exception still latches
+the bridge error. An `IsGamePaused` exception now means nonfatal unknown pause,
+consistent with the NPC cleanup path. Missing handlers and non-boolean pause
+results are also unknown. Unknown pause cannot qualify attachment or absence;
+player owners receive `paused=true`, since their optional nil argument means
+unpaused. Valid observations must start a new attachment pair or quiet interval.
+The existing pose and passive entrypoint fixtures now supply an explicitly
+unpaused handler instead of using nil to stand in for a running game.
 
 ## Validation
 
@@ -56,6 +75,15 @@ native build or engine compilation is claimed. No game was launched, no game
 installation/configuration/save was changed, and no release was produced.
 Private reproduction fixtures and LuaJIT output are under
 `D:/Downloads/syncfix/bench-artifacts/20261015-player-reliability-audit`.
+
+The cleanup follow-up adds 13 real-entrypoint cases: four early failures at
+each of two retirement stages, plus five unknown-pause cases after a latched
+failure. They verify retained ownership, fresh qualification, preserved fatal
+error latches, nonfatal method-only pause uncertainty and one clock advance per
+callback. The new session lifecycle suite fails against the prior PR #20
+runtime (`e19ed94611166fafcd9aef68a9ac0789b8fc5ee9`) at the intended handler-error
+invalidation assertion. Both Lua 5.4 and LuaJIT 2.1 pass all seven related suites
+after this follow-up. This is offline lifecycle evidence, not a game test.
 
 ## Separate moving-facing gap
 
