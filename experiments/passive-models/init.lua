@@ -14,6 +14,7 @@ local function pose(p)
 end
 local controller=Fixture.new(Engine.new(),function(slot,state,reason,s)
     local o=s.observed or {}
+    local presentation=s.presentation or {}
     -- Transition snapshots only, with a controller-wide limit of 64 lines.
     print("[PassiveModelFixture] slot="..text(slot).." state="..text(state)
         .." reason="..text(reason).." profile="..text(s.profile)
@@ -29,9 +30,13 @@ local controller=Fixture.new(Engine.new(),function(slot,state,reason,s)
         .." observed="..pose(o.pose).." template="..text(o.template)
         .." templateHash="..text(o.templateHash).." templateVerified="..text(o.templateVerified)
         .." rootVerified="..text(o.rootVerified).." placementVerified="..text(s.placementVerified)
-        .." visualQualified=false moveSubmission="..text(s.moveSubmission))
+        .." visualQualified=false moveSubmission="..text(s.moveSubmission)
+        .." presentationSerial="..text(presentation.serial).." presentationTerminal="..text(presentation.terminal)
+        .." presentationSubmission="..text(presentation.submission).." presentationReason="..text(presentation.reason)
+        .." presentationPreflightError="..text(presentation.preflightError)
+        .." animationObserved=false")
 end)
-registerForEvent("onUpdate",function() controller:pump() end)
+registerForEvent("onUpdate",function(dt) controller:pump(dt) end)
 registerForEvent("onShutdown",function()
     -- No engine mutation outside onUpdate. Stop and observe closed before
     -- unloading; if no further update runs, historical tags block replacement.
@@ -43,5 +48,6 @@ return {
     compare=function(slot,generation,sourceStatus) return controller:compare(slot,generation,sourceStatus) end,
     stop=function(slot) return controller:stop(slot) end,
     move=function(slot,generation,pose) return controller:move(slot,generation,pose) end,
+    present=function(slot,generation,kind) return controller:present(slot,generation,kind) end,
     reset=function() return controller:reset() end,
 }

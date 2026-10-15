@@ -13,10 +13,10 @@ local function load(f)
     registerHotkey=function() error("fixture must not change bindings") end
     local api=assert(loadfile(folder.."init.lua"))()
     print=savedPrint
-    local function update()
+    local function update(dt)
         local prior=print;print=function(message) f.logs[#f.logs+1]=message end
         f.inUpdate=true
-        local ok,why=pcall(events.onUpdate,1/60)
+        local ok,why=pcall(events.onUpdate,dt==nil and 1/60 or dt)
         f.inUpdate=false;print=prior
         assert(ok,why)
     end
@@ -376,5 +376,110 @@ do
         "recreated slot compares only its current explicit generation")
     before=f.native;events.onShutdown()
     check(api.compare("mitch",mitch,sourceStatus("mitch_default")).status=="unknown" and f.native==before,"shutdown stays engine-free and invalidates target")
+end
+local function encounterReady(profile,dt)
+    local f=make();local api,tick,events=load(f)
+    local ok,gen=api.start("one",profile or "judy_encounter",p(2));check(ok,"encounter start accepted")
+    tick();local value=api.status("one").entity.."ULL";local actor=f.complete(value);tick(dt)
+    return f,api,tick,gen,value,actor,events
+end
+for _,profile in ipairs({"judy_encounter","mitch_encounter"}) do
+    local f,api,tick,gen,value,a=encounterReady(profile)
+    check(api.status("one").state=="ready" and #f.events==1 and f.events[1].value==0,"first observation submits idle only")
+    local before=f.native
+    check(api.present("one",gen,"reaction"),"reaction queued through public API")
+    local snapshot=api.status("one");snapshot.presentation.pending.kind="death"
+    check(f.native==before and #f.events==1 and api.status("one").presentation.pending.kind=="reaction","public status/command engine-free and copied")
+    tick(0.1);local s=api.status("one")
+    check(#f.events==3 and f.events[2].key=="cp_coop_hit_progress" and f.events[2].value==0 and f.events[3].value==1,"actual shared modules produce native setter pair")
+    check(s.presentation.submission=="queued_not_observed" and not s.presentation.animationObserved and not s.visualQualified,"no animation delivery claim")
+    for _=1,6 do tick(0.1) end
+    check(f.events[#f.events].key=="cp_coop_phase" and f.events[#f.events].value==0,"completed reaction explicitly returns idle")
+    before=#f.events;tick(0.1);check(#f.events==before,"idle not resubmitted each frame")
+    check(api.present("one",gen,"death"),"terminal sequence admitted")
+    tick(0.1);check(f.events[#f.events].value==2,"death phase submitted")
+    for _=1,21 do tick(0.1) end
+    s=api.status("one")
+    check(s.presentation.sample.phase=="dead" and s.presentation.sample.progress==1 and s.presentation.terminal,"final desired death sample retained")
+    check(not api.present("one",gen,"reaction"),"terminal body cannot replay reaction")
+    before=#f.events;tick();check(#f.events==before,"terminal pose not spammed")
+    check(not api.compare("one",gen,sourceStatus("judy_default")).visualQualified,"encounter presentation grants no appearance comparison qualification")
+end
+for _,kind in ipairs({"reaction","death"}) do
+    local f,api,tick,gen=encounterReady("judy_encounter",0/0)
+    check(#f.events==0 and api.status("one").state=="ready","invalid delta leaves ready unbound body")
+    check(api.present("one",gen,kind),"command admitted before first valid presentation pump")
+    tick(0.1);local s=api.status("one").presentation
+    check(not s.pending and s.sample.phase==kind and s.sample.progress==0 and s.reason=="queued","first bind preserves fresh command")
+end
+for _,kind in ipairs({"reaction","death"}) do
+    local f,api,tick,gen,value=encounterReady("mitch_encounter")
+    check(api.present("one",gen,kind),"pre-stop command admitted")
+    local before=f.native;api.reset();check(f.native==before,"reset remains engine-free")
+    tick();f.finish(value);tick();check(api.status("one").state=="closed","old body observed gone")
+    local ok,newGen=api.start("one","mitch_encounter",p(2));check(ok and newGen~=gen,"replacement explicitly requested")
+    tick();local nextId=api.status("one").entity.."ULL";f.complete(nextId);f.events={};tick()
+    local s=api.status("one").presentation
+    check(s.sample.phase==(kind=="death" and "dead" or "idle") and not s.pending,"retained intent restored without old nonlethal replay")
+    check(#f.events==(kind=="death" and 2 or 1),"only final normalized replacement sample")
+    if kind=="death" then check(f.events[1].value==1 and f.events[2].value==2,"death admitted before stop survives reset without first stage") end
+    check(not api.present("one",gen,"reaction"),"old generation cannot command replacement")
+end
+do
+    local f,api,tick,gen,value=encounterReady("judy_encounter")
+    api.present("one",gen,"reaction");tick();api.stop("one");tick();f.finish(value);tick()
+    local _,nextGen=api.start("one","judy_encounter",p(2));tick();f.complete(api.status("one").entity.."ULL");tick(0/0)
+    check(api.present("one",nextGen,"death"),"fresh death admitted before replacement binding")
+    f.events={};tick(0.1);local s=api.status("one").presentation
+    check(s.sample.phase=="death" and s.sample.progress==0 and not s.pending,"prior alive restore cannot consume fresh death serial")
+end
+for _,fault in ipairs({"paused","unknown_pause","missing_context","pregame"}) do
+    local f,api,tick,gen=encounterReady("judy_encounter")
+    api.present("one",gen,"reaction");tick(0.1)
+    local clock=api.status("one").presentation.clock;local before=#f.events
+    if fault=="paused" then f.paused=true elseif fault=="unknown_pause" then f.paused=nil
+    elseif fault=="missing_context" then f.requests=false else f.preGame=true end
+    tick(0.2);tick(0.2)
+    check(api.status("one").presentation.clock==clock and #f.events==before,"unavailable context neither forwards nor advances: "..fault)
+    f.paused=false;f.requests=true;f.preGame=false;tick(0.1)
+    check(api.status("one").presentation.clock>clock and #f.events==before+2,"fresh context resumes same sample clock")
+end
+for _,fault in ipairs({"throw_first","throw_second","pause","player","actor","stop","new_death"}) do
+    local f,api,tick,gen,value,a=encounterReady("judy_encounter")
+    api.present("one",gen,"reaction");f.events={}
+    f.queueHook=function(actor,event,count)
+        if fault=="throw_first" then error("unknown first setter")
+        elseif fault=="throw_second" then if count==2 then error("unknown second setter") end
+        elseif fault=="pause" then f.paused=true
+        elseif fault=="player" then f.playerNative={}
+        elseif fault=="actor" then local other=setmetatable({nativeRef={}},{__index=a});f.actors[value],f.globals[value]=other,other
+        elseif fault=="stop" then api.stop("one")
+        elseif fault=="new_death" then api.present("one",gen,"death") end
+    end
+    local clock=api.status("one").presentation.clock;tick(0.1)
+    local s=api.status("one").presentation
+    check(#f.events==(fault=="throw_second" and 2 or 1) and s.clock==clock,"partial sample is frozen: "..fault)
+    check(s.submission=="failed_or_partial" and not s.animationObserved,"partial setter outcome not called observed")
+    if fault=="throw_first" or fault=="throw_second" or fault=="pause" or fault=="new_death" then
+        f.queueHook=nil;f.paused=false;f.events={};tick(0.1)
+        s=api.status("one").presentation
+        check(#f.events==2 and s.clock>clock and s.submission=="queued_not_observed","latest sample retry after fresh preflight")
+        check(f.events[1].key==(fault=="new_death" and "cp_coop_death_progress" or "cp_coop_hit_progress"),"retry never replays superseded reaction")
+    elseif fault=="actor" then
+        f.queueHook=nil;api.stop("one");tick()
+        check(f.deletes==0 and api.status("one").identityFault,"foreign same-ID actor never receives cleanup")
+    end
+end
+do
+    local f,api,tick,gen,value,a,events=encounterReady("judy_encounter")
+    local _,other=api.start("other","mitch_encounter",p(4));tick();local second=api.status("other").entity.."ULL";f.complete(second);tick()
+    api.present("one",gen,"reaction");api.present("other",other,"reaction");tick(0.1)
+    a.colorError=true;local frozen=api.status("one").presentation.clock
+    for _=1,4 do tick(0.1) end
+    check(api.status("one").presentation.clock==frozen and api.status("other").presentation.clock>frozen,"faulted native read freezes only its own logical clock")
+    a.colorError=false;tick(0.1)
+    check(api.status("one").presentation.reason=="queued" and api.status("one").presentation.clock>frozen,"recovery never hits shared stale time")
+    local before=f.native;events.onShutdown();check(f.native==before and not api.present("one",gen,"death"),"shutdown only queues and closes public presentation")
+    tick();check(f.deletes==2,"shutdown cleanup can proceed at later update without presentation")
 end
 print("Passive model real entrypoint checks: "..checks)

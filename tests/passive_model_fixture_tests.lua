@@ -1,5 +1,8 @@
 local root=assert(arg[1])
 package.path=root.."/experiments/passive-models/?.lua;"..package.path
+for _,name in ipairs({"presentation","presentation_state"}) do
+    package.preload["cp2077_passive_encounter/"..name]=assert(loadfile(root.."/experiments/shared-encounter/"..name..".lua"))
+end
 local Fixture=require("fixture")
 local checks=0
 local function check(v,why) checks=checks+1;assert(v,why) end
@@ -14,6 +17,7 @@ local function fixture()
     local engine={calls=0,creates=0,moves=0,deletes=0,world={}}
     function engine:profile(name)
         if name=="judy_default" or name=="mitch_default" then return {name=name} end
+        if name=="judy_encounter" or name=="mitch_encounter" then return {name=name,encounter=true} end
     end
     function engine:create(e)
         self.calls=self.calls+1;self.creates=self.creates+1
@@ -45,6 +49,18 @@ local function fixture()
         if w.fail then error("observation_failed") end
         if w.gone then self.deletes=self.deletes+1;return true end
         return false
+    end
+    function engine:presentationReady(e)
+        self.calls=self.calls+1
+        return not self.paused and not self.world[e.slot].presentationUnavailable
+    end
+    function engine:present(e,frame,current)
+        self.calls=self.calls+1
+        assert(current(),"stale presentation guard")
+        local w=self.world[e.slot]
+        w.samples=w.samples or {};w.samples[#w.samples+1]={phase=frame.phase,progress=frame.progress,serial=frame.serial}
+        if self.presentHook then self.presentHook(e,frame) end
+        return not w.rejectPresentation
     end
     local logs={}
     local c=Fixture.new(engine,function(...) logs[#logs+1]={...} end)
@@ -293,5 +309,84 @@ do
     local calls=e.calls;local result=c:compare("one",generation,source())
     check(result.status=="candidate_resource_match" and e.calls==calls,"controller exposes pure comparison")
     c:stop("one");check(c:compare("one",generation,source()).status=="unknown" and e.calls==calls,"queued stop immediately removes comparison qualification")
+end
+-- Real existing shared state controller, with only engine methods substituted.
+for _,kind in ipairs({"reaction","death"}) do
+    local c,e=fixture();local _,gen=c:start("first","judy_encounter",pose())
+    c:pump(0.1);c:pump(0/0)
+    check(c:status("first").state=="ready" and not c:status("first").presentation.desired,"ready but not yet bound")
+    local before=e.calls
+    check(c:present("first",gen,kind) and e.calls==before,"fresh pre-bind command queues only")
+    c:pump(0.1);local s=c:status("first").presentation
+    check(s.desired.kind==kind and s.desired.serial==1 and not s.pending,"fresh command stages after initial bind")
+    check(e.world.first.samples[1].phase==kind and e.world.first.samples[1].progress==0,"fresh first body animates from zero")
+end
+do
+    local c,e=fixture();local _,gen=c:start("first","judy_encounter",pose());c:pump(0.1);c:pump(0.1)
+    check(not c:present("first","stale","death") and not c:present("first",gen,"idle"),"command identity and kind bounded")
+    check(c:present("first",gen,"reaction") and not c:present("first",gen,"reaction"),"one pending nonterminal command")
+    check(c:present("first",gen,"death") and not c:present("first",gen,"reaction"),"death supersedes queued reaction and is terminal")
+    c:reset();e.world.first.gone=true;c:pump(0.1)
+    check(c:status("first").state=="closed" and c:status("first").presentation.terminal,"reset preserves admitted death before stage")
+    check(not c:start("first","mitch_encounter",pose()),"retained logical profile cannot change")
+    local ok,newGen=c:start("first","judy_encounter",pose());check(ok and newGen~=gen,"same logical death gets new body generation")
+    c:pump(0.1);c:pump(0.1)
+    local samples=e.world.first.samples
+    check(#samples==1 and samples[1].phase=="dead" and samples[1].progress==1,"replacement restores final death instead of replay")
+    check(not c:present("first",newGen,"reaction"),"recreated terminal cannot revive")
+end
+for _,fresh in ipairs({"reaction","death"}) do
+    local c,e=fixture();local _,gen=c:start("one","mitch_encounter",pose());c:pump(0.1);c:pump(0.1)
+    c:present("one",gen,"reaction");c:pump(0.1);c:stop("one");e.world.one.gone=true;c:pump(0.1)
+    local _,nextGen=c:start("one","mitch_encounter",pose());c:pump(0.1);c:pump(0/0)
+    check(c:present("one",nextGen,fresh),"fresh replacement command admitted before bind")
+    c:pump(0.1);local s=c:status("one").presentation
+    check(s.desired.kind==fresh and s.desired.serial==2 and not s.pending,"restore prior serial without consuming fresh command")
+    check(e.world.one.samples[1].phase==fresh and e.world.one.samples[1].progress==0,"replacement new command samples fresh progress")
+end
+do
+    local c,e=fixture();local _,gen=c:start("one","judy_encounter",pose());c:pump(0.1);c:pump(0.1)
+    c:present("one",gen,"reaction");c:pump(0.1);c:stop("one");e.world.one.gone=true;c:pump(0.1)
+    c:start("one","judy_encounter",pose());c:pump(0.1);c:pump(0.1)
+    check(e.world.one.samples[1].phase=="idle" and #e.world.one.samples==1,"replacement never replays old alive reaction")
+end
+do
+    local c,e=fixture();local _,a=c:start("a","judy_encounter",pose());local _,b=c:start("b","mitch_encounter",pose(4))
+    c:pump(0.1);c:pump(0.1);c:present("a",a,"reaction");c:present("b",b,"reaction");c:pump(0.1)
+    local held=c:status("a").presentation.clock;e.world.a.presentationUnavailable=true
+    for _=1,3 do c:pump(0.1) end
+    check(c:status("a").presentation.clock==held and c:status("b").presentation.clock>held,"one failed slot clock cannot freeze sibling")
+    e.world.a.presentationUnavailable=false;c:pump(0.1)
+    check(c:status("a").presentation.reason=="queued" and c:status("a").presentation.clock>held,"independent state clocks avoid stale_time on recovery")
+    local before=c:status("a").presentation.clock;e.paused=true;c:pump(0.1)
+    check(c:status("a").presentation.clock==before,"pause cannot advance logical time")
+    e.paused=false
+    for _,dt in ipairs({-1,math.huge,0/0,0.251}) do
+        c:pump(dt);check(c:status("a").presentation.clock==before,"invalid or discontinuous delta freezes presentation")
+    end
+    c:pump(0);check(c:status("a").presentation.clock==before,"zero delta samples without advancing")
+end
+do
+    local c,e=fixture();local _,gen=c:start("a","judy_encounter",pose());c:pump(0.1);c:pump(0.1)
+    c:present("a",gen,"reaction");e.world.a.rejectPresentation=true;c:pump(0.1)
+    local s=c:status("a").presentation;local held=s.clock
+    check(s.reason=="engine_rejected" and not s.pending,"failed native sample retains staged desired state")
+    check(c:present("a",gen,"death"),"new death supersedes uncertain reaction sample")
+    c:pump(0.1);check(c:status("a").presentation.clock==held,"failed death sample does not accrue time")
+    e.world.a.rejectPresentation=false;c:pump(0.1)
+    local last=e.world.a.samples[#e.world.a.samples]
+    check(last.phase=="death" and last.progress==0 and last.serial==2,"retry samples newest terminal state only")
+    local copied=c:status("a");copied.presentation.sample.phase="bad"
+    check(c:status("a").presentation.sample.phase=="death","presentation status is copied")
+    c:shutdown();check(not c:present("a",gen,"death"),"shutdown rejects presentation without engine calls")
+end
+do
+    local c,e=fixture();local _,gen=c:start("a","judy_default",pose());c:pump();c:pump()
+    check(not c:present("a",gen,"reaction") and not c:status("a").encounter,"idle profiles remain presentation-disabled")
+    local d,ee=fixture();local _,g=d:start("a","judy_encounter",pose());d:pump(0.1);d:pump(0.1)
+    d.logical.a.serial=2147483647
+    check(not d:present("a",g,"reaction"),"command identity counter cannot lose integer precision")
+    d.serial=2147483647
+    check(not d:start("b","mitch_encounter",pose()),"body counter bounded")
 end
 print("Passive model fixture state/queue checks: "..checks)
