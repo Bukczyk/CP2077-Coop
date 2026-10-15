@@ -14,13 +14,13 @@ This branch combines the following reviewable source slices on upstream main
 | 20 | fix/player-diagnostic-recovery | 4d12c1c270eff26f152afda2a57ed39fb745bc15 |
 | 21 | fix/dynamic-npc-lifecycle | bd6d941e785b418f5e32370f0258a67241a759eb |
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
-| 23 | feat/vehicle-pose-application | c129eb384e96b0d780c9f6a56bcdd2ce0959935d |
+| 23 | feat/vehicle-pose-application | cc66fb9ae1683d3bf5b7384e45578ffcbf9f8a5b |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | a105a228d2fd5505f071f0e6dd11d05d6493cedd |
+| 26 | feat/passive-model-fixture | d6ae28f4018ddf2f95f385270759e6c638997d70 |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `d2ea1709505a15618c7355a00632185c242dd2ff`.
+Combined source tested: `41a24f69511e83000cebe6287d2d9de38fc7e5ab`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -86,8 +86,18 @@ both the four vehicle tests and new NPC observation registration were retained.
 The vehicle seat follow-up checks fresh pause/menu/creator/spawn context before
 native submission, with a second native pause/menu guard. Definite preflight
 failure leaves no pending transition; a native exception still retains unknown
-ownership. A separate reproduced stale cosmetic-state case remains open and
-must preserve safe unmount when corrected.
+ownership. The new cosmetic correction checks frozen supported appearance/color
+before mounting and permits safe exact unmount during cosmetic quarantine. Both
+seat relationship views are checked freshly; completion still needs matching
+events and actual exit. Wrong record remains a separate persistent identity fault.
+
+The passive model follow-up observes coherent current appearance/color names and
+exact native hashes, without claiming a supported color or visual match. Native
+reference checks distinguish fresh Lua wrappers from different same-ID actors.
+Movement and cleanup cannot target a replacement. Separate identity checks let
+exact cleanup continue when only cosmetic readback fails; unknown native removal
+is not automatically retried. Both follow-ups merged without conflicts, leaving
+all existing suites and shared contracts intact.
 
 ## Passed offline
 
@@ -106,17 +116,23 @@ must preserve safe unmount when corrected.
   Private WolvenKit builds of both profiles passed serialization roundtrip,
   single-resource archive listing and extracted-byte parity. The existing Judy
   entity, authored idle graph and production builders remain unchanged.
-- 299 focused model-fixture checks per Lua 5.4/LuaJIT run: 52 controller, 153
-  actual adapter and 94 real entrypoint checks. Independent review covered
+- 479 focused model-fixture checks in Lua 5.4 and 481 in LuaJIT: 60 controller,
+  248/250 actual adapter and 171 real entrypoint checks. Independent review covered
   per-slot failure isolation, late callbacks, unknown/duplicate creation,
   stale generations, wrong templates, observed pose and bounded diagnostics.
   Current-name mismatch/unavailability, sibling isolation, recovery, exact
-  cleanup and final-actor appearance changes are covered by the actual modules.
+  cleanup and final-actor appearance/color changes are covered by the actual modules.
+  Thirty independent scenarios per runtime additionally cover native replacements,
+  fresh wrappers, current context, None/zero versus unknown, and cleanup isolation.
+  The original a105a22 retirement regression deletes a different same-ID actor;
+  the corrected actual entrypoint refuses that deletion in both Lua runtimes.
   The real Lua resource catalog matches the Python builder for both profiles.
-- Vehicle follow-up: 1645 adapter, 353 fixture, 111 movement and 69 integration
+- Vehicle follow-up: 3655 adapter, 544 fixture, 111 movement and 69 integration
   checks per Lua interpreter, including retained creator/actor recovery and the
-  actual-entrypoint paused-request regression. The new regression fails the
-  preceding f95cacc and passes the correction under both interpreters.
+  actual-entrypoint paused-request regression. Five additional cosmetic/record
+  regressions fail c129eb3 and pass this correction under both interpreters;
+  eighteen independent scenarios per interpreter also passed. The earlier
+  pause regression against f95cacc remains preserved.
 - NPC observation: 431 focused Lua 5.4 and 434 LuaJIT checks passed on its branch,
   plus 14 independent probes per interpreter. The new actual-entrypoint suite is
   also included in the combined CTest/LuaJIT runs. Its separate branch passed a
@@ -128,9 +144,21 @@ must preserve safe unmount when corrected.
 - `git diff --check`; no unresolved merge markers.
 
 Current combined logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-passive-profile-color-observation`,
+`combined-validation.json`, `combined-ctest.log` and `combined-luajit.log`:
+47 CTests and 24 LuaJIT suites pass at `41a24f6`. Native source, runtime and target
+definitions are unchanged from the preceding verified head, so matching existing
+Release binaries were reused. `combined-compile-20261015T104911230079Z.json` and
+its log record all current session/experiment REDscript sources compiling together
+with unchanged inputs. The independent branch checks and historical failures are
+in that folder and `20261015-vehicle-cosmetic-exit-fix`. These results do not execute
+the native engine or prove visible matching. Final hosted validation is tracked
+against the published commit in GitHub Actions and the vault handoff.
+
+Previous NPC-observer combined logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-npc-appearance-observation`,
 `combined-ctest.log` and `combined-luajit.log`: 47 CTests and 24 LuaJIT suites pass
-at the current tested source. The prior native Release build is recorded
+at d2ea170. The prior native Release build is recorded
 in `20261015-passive-model-fixture-audit/combined-build.log`. The current folder
 contains `combined-compile-20261015T101444214928Z.json` and `.log`:
 all current session and selected experiment REDscript sources compile together,
