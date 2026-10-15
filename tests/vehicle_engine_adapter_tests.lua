@@ -138,4 +138,72 @@ data.cameraFailure=true;f4:step(0.1,false)
 check(f4.pending and not f4.pending.finished and #data.events==1,"camera failure discarded completion")
 data.cameraFailure=false;f4:step(0.1,false)
 check(f4.pending==nil and f4.state=="ready" and #data.events==0)
+
+-- Lifecycle observations and deletion belong to the system that created the
+-- token. A new ready system cannot certify an old creator's disappearance.
+local baseGet,baseDelete,baseReady=system.GetEntity,system.DeleteEntity,system.IsReady
+local baseFind=Game.FindEntityByID
+local function freshFixture()
+    system.GetEntity,system.DeleteEntity,system.IsReady=baseGet,baseDelete,baseReady
+    Game.GetDynamicEntitySystem=function()return system end
+    Game.FindEntityByID=baseFind
+    data.present,data.attached,data.managed,data.spawned,data.spawning=false,false,false,false,false
+    data.mounts,data.events,data.cameraFailure,data.deleted={},{},false,0
+    local engine=Engine.new();local fixture=Fixture.new(engine,desc)
+    check(fixture:start(target))
+    for _=1,5 do fixture:step(0.1,false)end
+    check(fixture.state=="ready" and engine.retained==actor)
+    return engine,fixture
+end
+do
+    local engine,fixture=freshFixture()
+    local replacementCalls=0
+    local replacement={IsReady=function()return true end,GetEntity=function()return nil end,
+        IsManaged=function()return false end,IsSpawned=function()return false end,IsSpawning=function()return false end,
+        DeleteEntity=function()error("replacement system must not delete original token")end}
+    Game.GetDynamicEntitySystem=function()replacementCalls=replacementCalls+1;return replacement end
+    fixture:stop();fixture:step(0.1,false)
+    check(data.deleted==1 and replacementCalls==0,"delete uses pinned creator")
+    data.attached,data.managed=false,false
+    Game.FindEntityByID=function()return nil end
+    for _=1,6 do fixture:step(0.1,false)end
+    check(fixture.state~="closed" and data.spawned and data.present,
+        "empty replacement cannot certify original population removal")
+    data.present,data.spawned=false,false
+    for _,unknown in ipairs({{value=false},{},{value="true"},{value=1}})do
+        system.IsReady=function()return unknown.value end
+        for _=1,6 do fixture:step(0.1,false)end
+        check(fixture.state~="closed","unready or unknown original creator retains ownership")
+    end
+    system.IsReady=baseReady
+    fixture:step(0.1,false);check(fixture.state~="closed","known recovery starts fresh absence interval")
+    for _=1,4 do fixture:step(0.1,false)end
+    check(fixture.state=="closed" and replacementCalls==0,"only original creator absence completes cleanup")
+end
+
+-- A rejected later wrapper must not overwrite the first exact attached handle.
+-- Cover nil and truthy malformed values as well as valid detached/attached ones.
+for _,sample in ipairs({{}, {value="false"}, {value=0}, {value=false}, {value=true}})do
+    local engine,fixture=freshFixture()
+    fixture:stop();fixture:step(0.1,false);check(data.deleted==1)
+    local wrapperAttached=sample.value
+    local wrapper=setmetatable({IsAttached=function()return wrapperAttached end},{__index=actor})
+    Game.FindEntityByID=function()return wrapper end
+    system.GetEntity=function()return wrapper end
+    fixture:step(0.1,false)
+    check(engine.retained==actor,"later wrapper cannot replace first retained actor")
+    if type(sample.value)~="boolean" then
+        check(fixture.state=="observation_unavailable","malformed attachment rejected before mutation")
+    end
+    wrapperAttached=false;Game.FindEntityByID=function()return nil end
+    system.GetEntity=function()return nil end
+    data.managed,data.spawned=false,false
+    for _=1,6 do fixture:step(0.1,false)end
+    check(fixture.state~="closed" and actor:IsAttached(),"first attached actor blocks false absence")
+    data.attached=false
+    for _=1,5 do fixture:step(0.1,false)end
+    check(fixture.state=="closed","explicit original detach and absent lookups permit cleanup")
+end
+system.GetEntity,system.DeleteEntity,system.IsReady=baseGet,baseDelete,baseReady
+Game.GetDynamicEntitySystem=function()return system end;Game.FindEntityByID=baseFind
 print("vehicle_engine_adapter: "..checks.." checks passed")

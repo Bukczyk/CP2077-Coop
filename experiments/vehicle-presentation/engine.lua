@@ -14,7 +14,7 @@ local function key(value)
 end
 local function system()
     local value=Game.GetDynamicEntitySystem()
-    assert(value and value:IsReady(),"dynamic_system_unavailable")
+    assert(value and value:IsReady()==true,"dynamic_system_unavailable")
     return value
 end
 function Engine.new(generation) return setmetatable({generation=generation or 1},Engine) end
@@ -42,29 +42,45 @@ function Engine:create(descriptor,pose)
     spec.orientation=Quaternion.new(pose.qx,pose.qy,pose.qz,pose.qw)
     spec.persistState=false; spec.persistSpawn=false; spec.alwaysSpawned=true
     spec.spawnInView=true; spec.active=true; spec.tags={CName.new(tag)}
+    self.system=s -- Retain the exact creator even while native creation is pending.
     self.id=s:CreateEntity(spec)
     self.key=assert(key(self.id),"create_identity_unavailable")
     return self.key,self.creator
 end
 function Engine:_actor(expected)
     assert(expected==self.key and self.id~=nil,"not_owned_identity")
-    local s=system()
+    local s=self.system
+    assert(s and s:IsReady()==true,"creator_system_unavailable")
     local world=Game.FindEntityByID(self.id)
     local population=s:GetEntity(self.id)
-    if world then assert(key(world:GetEntityID())==expected,"world_identity_mismatch") end
-    if population then assert(key(population:GetEntityID())==expected,"population_identity_mismatch") end
-    if self.retained then assert(key(self.retained:GetEntityID())==expected,"retained_identity_mismatch") end
-    if world and world:IsAttached() then self.retained=world
-    elseif population and population:IsAttached() then self.retained=population end
-    local actor=world or population or self.retained
-    if self.retained and self.retained:IsAttached() then actor=self.retained end
-    return actor,s,population,world
+    local function attached(candidate,label)
+        if candidate==nil then return false end
+        assert(key(candidate:GetEntityID())==expected,label.."_identity_mismatch")
+        local value=candidate:IsAttached()
+        assert(type(value)=="boolean",label.."_attachment_unavailable")
+        return value
+    end
+    local worldAttached=attached(world,"world")
+    local populationAttached=attached(population,"population")
+    local retainedAttached=attached(self.retained,"retained")
+    -- Validate before changing ownership. A later exact-ID wrapper cannot erase
+    -- evidence that the first observed actor is still attached.
+    if self.retained==nil then
+        if worldAttached then self.retained=world;retainedAttached=true
+        elseif populationAttached then self.retained=population;retainedAttached=true end
+    end
+    local actor,actorAttached
+    if retainedAttached then actor=self.retained;actorAttached=true
+    elseif world~=nil then actor=world;actorAttached=worldAttached
+    elseif population~=nil then actor=population;actorAttached=populationAttached
+    else actor=self.retained;actorAttached=false end
+    return actor,s,population,world,actorAttached,retainedAttached
 end
 function Engine:observe(expected)
-    local actor,s,population,world=self:_actor(expected)
+    local actor,s,population,world,attached,retainedAttached=self:_actor(expected)
     local o={id=expected,managed=s:IsManaged(self.id),spawning=s:IsSpawning(self.id),spawned=s:IsSpawned(self.id),
-        worldPresent=world~=nil,populationPresent=population~=nil,attached=actor~=nil and actor:IsAttached(),
-        retainedAttached=self.retained~=nil and self.retained:IsAttached()}
+        worldPresent=world~=nil,populationPresent=population~=nil,attached=attached,
+        retainedAttached=retainedAttached}
     if not o.attached then return o end
     local player=assert(Game.GetPlayer(),"player_unavailable")
     -- After deletion, the entity may remain attached briefly but no longer be managed.
