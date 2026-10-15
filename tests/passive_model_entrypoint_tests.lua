@@ -293,4 +293,88 @@ do
     check(f.deletes==1 and api.status("uncertain").state=="retirement_pending","unknown native removal is never resubmitted")
     f.finish(value);tick();check(api.status("uncertain").state=="closed","actual later disappearance resolves unknown removal")
 end
+-- The real public API consumes the copied PR27 observer status schema. Native
+-- engine/helper calls remain mocked and update-bound, not live engine evidence.
+local function sourceStatus(name)
+    local judy=name=="judy_default"
+    return {valid=true,reason="captured",scope=3,ticket=12,frame=44,historical=true,visualQualified=false,
+        observed={entityId="18446744073709551615",contextId="9007199254740997",
+            recordId=judy and "63110975482" or "67785639286",
+            templateHash=judy and "18351684596531345670" or "15874478119190254727",
+            templatePath=judy and "base\\quest\\secondary_characters\\judy.ent" or "base\\quest\\tertiary_characters\\mitch.ent",
+            templatePathAvailable=true,appearance=name,appearanceNameAvailable=true,
+            appearanceHash=judy and "14696382396136616853" or "14305357555168828196",
+            color="None",colorHash="0",colorNameAvailable=true}}
+end
+do
+    local f=make()
+    -- Match the reviewed SDK-computed identifiers in the native shim, while
+    -- retaining its checks that every engine read occurs inside onUpdate.
+    local original=ResRef.FromName
+    ResRef.FromName=function(path)
+        local r=original(path)
+        if path=="base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent" then r.hash="4410265881089470268ULL"
+        elseif path=="base\\cp2077coop\\entities\\cp2077coop_networkhumanoid_mitch.ent" then r.hash="5362881734093004222ULL" end
+        return r
+    end
+    local api,tick,events=load(f)
+    local _,judy=api.start("judy","judy_default",p(2));local _,mitch=api.start("mitch","mitch_default",p(4))
+    local before=f.native
+    check(api.compare("judy",judy,sourceStatus("judy_default")).status=="unknown" and f.native==before,
+        "comparison before spawn neither reads nor creates")
+    tick()
+    for value in pairs(f.tokens) do local actor=f.complete(value);actor.appearanceHash="16982411286042166782" end
+    tick();before=f.native
+    local source=sourceStatus("judy_default")
+    local a=api.compare("judy",judy,source)
+    local b=api.compare("mitch",mitch,sourceStatus("mitch_default"))
+    check(a.status=="candidate_resource_match" and b.status=="candidate_resource_match","both actual entrypoint profiles compare")
+    check(f.native==before and f.creates==2 and f.moves==0 and f.deletes==0,"comparison has zero engine reads or mutations")
+    check(a.target.entity~=a.source.observed.entityId and a.source.observed.entityId=="18446744073709551615",
+        "different exact source and target IDs retained")
+    check(not a.visualQualified and not a.colorMatchVerified and not a.resourceBytesVerified,"candidate does not certify rendered parity")
+    check(api.compare("mitch",mitch,source).status=="different_profile","wrong explicit slot is reported only")
+    check(api.compare("judy","stale",source).reason=="stale_generation","stale generation cannot identify current slot")
+    check(api.compare("absent",judy,source).status=="unknown","unknown slot is not created")
+    a.source.observed.recordId="mutated";a.target.entity="mutated";a.resourceChain.proxyMesh="mutated"
+    check(source.observed.recordId=="63110975482" and api.compare("judy",judy,source).target.entity==api.status("judy").entity,
+        "report mutations cannot alter input or cached fixture")
+    source.observed.appearanceHash="1"
+    check(api.compare("judy",judy,source).status=="invalid_input" and a.source.observed.appearanceHash=="14696382396136616853",
+        "input mutation cannot rewrite a previous report")
+    source=sourceStatus("judy_default");source.unrelated=source
+    check(api.compare("judy",judy,source).status=="candidate_resource_match","unused cyclic data is ignored without traversal")
+    check(api.compare("judy",judy,{valid=false,reason="reset_pending",visualQualified=false}).status=="unknown",
+        "latest source reset status cannot compare")
+    -- An older copied sample is deliberately historical: this pure API cannot
+    -- detect a subsequent source-only reset, reload, reconnect or color change.
+    local prior=api.compare("judy",judy,source)
+    check(prior.status=="candidate_resource_match" and not prior.freshnessVerified and not prior.sourceAuthenticated,
+        "old supplied snapshots never gain freshness or authentication")
+    f.paused=true
+    check(api.compare("judy",judy,source).status=="candidate_resource_match" and f.native==before,
+        "before another update comparison is explicitly cached historical evidence")
+    tick();check(api.compare("judy",judy,source).status=="candidate_resource_match",
+        "read-only fixture observation is allowed while paused; report makes no unpaused claim")
+    f.creatorError=true;tick();check(api.compare("judy",judy,source).status=="unknown","failed actual target observation invalidates comparison")
+    f.creatorError=false;f.paused=false;tick()
+    local value=api.status("judy").entity.."ULL";f.actors[value].color="different";f.actors[value].colorHash="7";tick()
+    a=api.compare("judy",judy,source)
+    check(a.status=="candidate_resource_match" and not a.colorObservedEqual and not a.colorMatchVerified,"changed color is reported without inventing support")
+    check(api.compare("mitch",mitch,sourceStatus("mitch_default")).colorObservedEqual,"sibling color evidence remains independent")
+    before=f.native;local logCount=#f.logs
+    for _=1,100 do api.compare("judy",judy,source) end
+    check(f.native==before and #f.logs==logCount,"repeated reports do not call engine or emit spam")
+    api.stop("judy")
+    check(api.compare("judy",judy,source).status=="unknown" and f.native==before,"stop invalidates comparison synchronously")
+    tick();f.finish(value);tick()
+    local _,replacement=api.start("judy","mitch_default",p(2));tick()
+    local replacementId=api.status("judy").entity.."ULL"
+    f.complete(replacementId).appearanceHash="16982411286042166782";tick()
+    check(api.compare("judy",judy,source).reason=="stale_generation","closed and recreated slot rejects prior generation")
+    check(api.compare("judy",replacement,sourceStatus("mitch_default")).status=="candidate_resource_match",
+        "recreated slot compares only its current explicit generation")
+    before=f.native;events.onShutdown()
+    check(api.compare("mitch",mitch,sourceStatus("mitch_default")).status=="unknown" and f.native==before,"shutdown stays engine-free and invalidates target")
+end
 print("Passive model real entrypoint checks: "..checks)
