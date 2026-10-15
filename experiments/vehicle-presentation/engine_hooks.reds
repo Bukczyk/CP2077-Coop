@@ -115,6 +115,9 @@ public func CP2077VehicleProbe_Request(player: ref<PlayerPuppet>, slot: CName, m
     let data: ref<MountEventData>;
     let mount: ref<MountingRequest>;
     let unmount: ref<UnmountingRequest>;
+    let requests = GameInstance.GetSystemRequestsHandler();
+    // Also protect direct helper calls and changes since Lua's preflight.
+    if !IsDefined(requests) || requests.IsGamePaused() || requests.IsPreGame() { return false; }
     if !this.CP2077VehicleProbe_Owned(player) || !this.CP2077VehicleProbe_HasSeat(slot)
         || Vector4.Length(this.GetLinearVelocity()) >= 0.20 { return false; }
     current = player.CP2077VehicleProbe_MountInfo();

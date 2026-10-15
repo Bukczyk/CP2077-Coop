@@ -116,10 +116,24 @@ function Engine:acknowledge(expected,serial)
     return actor:CP2077VehicleProbe_AcknowledgeEvents(serial)
 end
 function Engine:request(expected,child,operation,slot)
-    local actor,s=self:_actor(expected)
-    local player=Game.GetPlayer()
-    assert(actor and s:IsManaged(self.id) and player and key(player:GetEntityID())==self.creator
-        and child==self.creator,"request_identity_unavailable")
+    -- Last observation can predate pause or save/menu changes. These reads are
+    -- before the native request, so failure is a definite rejection, not an
+    -- ambiguous submitted outcome that would quarantine the pending request.
+    local ok,actor,player=pcall(function()
+        local handler=assert(Game.GetSystemRequestsHandler(),"request_context_unavailable")
+        assert(handler:IsGamePaused()==false and handler:IsPreGame()==false,"request_context_inactive")
+        local current,s,_,_,attached=self:_actor(expected)
+        local creator=Game.GetPlayer()
+        assert(current and attached==true and s:IsManaged(self.id)==true
+            and s:IsSpawned(self.id)==true and s:IsSpawning(self.id)==false
+            and creator and creator:IsAttached()==true
+            and key(creator:GetEntityID())==self.creator and child==self.creator,
+            "request_identity_unavailable")
+        return current,creator
+    end)
+    if not ok then return false end
+    -- Keep the actual mutation outside that pcall: an exception after entering
+    -- the native request still has an unknown outcome and must retain ownership.
     return actor:CP2077VehicleProbe_Request(player,CName.new(slot),operation=="mount")
 end
 function Engine:delete(expected)

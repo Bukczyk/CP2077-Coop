@@ -34,6 +34,12 @@ network/session/authority ownership. Starting revision: upstream main
   restored player camera. **Every reported result has `cameraVerified=false`.**
 - Manual enter/exit observation and separately enabled injected mount/unmount
   requests for the local player. There is no control rebinding or automatic action.
+- Every injected seat request checks the current pause/menu context, exact creator
+  and completed spawn immediately before submission. Paused, pregame, missing or
+  unknown context rejects without leaving a pending request; retry only after the
+  context is valid. The native helper independently checks pause/menu context.
+  A failure after entering the native request remains an unknown outcome and keeps
+  its pending ownership until actual completion can be observed.
 - Exact parent/child/slot queries on both sides of a relationship plus a matching
   finished-mounting callback before a request is marked observed. A submitted
   request, callback alone, or occupancy alone never completes it.
@@ -87,6 +93,9 @@ GetMod("zz_VehicleSeatFixture").stop()
 ```
 
 `start` and request success mean submission only. Poll status and evidence.
+Seat readiness still uses the last appearance/color observation; a cosmetic change
+between that sample and an injected request is a separately reproduced open issue
+in [VALIDATION.md](VALIDATION.md). This correction qualifies fresh context only.
 `stop` disables new requests but cannot cancel an unresolved native mount safely.
 It retains an occupied or uncertain car. If a timed-out request completes late,
 observe reconciliation, then leave the car manually before cleanup proceeds.
