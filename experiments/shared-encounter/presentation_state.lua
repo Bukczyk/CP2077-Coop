@@ -15,6 +15,9 @@
 -- API: new(config); reset(scope, now); bind(scope, sessionKey, localKey, now);
 -- unbind(scope, sessionKey, localKey, now); stage(scope, sessionKey, localKey,
 -- serial, "reaction"|"death", now); apply(scope, sessionKey, localKey, now).
+-- restore(scope, sessionKey, localKey, serial, "alive"|"dead", now) selects a
+-- supplied final state without replaying a transient clip. It is not admission
+-- or recovery: the caller must validate the supplied state and its freshness.
 -- inspect(scope, sessionKey) returns a copy; size() includes retained entries.
 -- Unbound entries are retained until a NEW caller-owned scope token is set.
 -- This bounds memory without evicting death state or allowing resurrection.
@@ -164,6 +167,23 @@ function M.new(config)
         entry.serial, entry.kind, entry.startedAt = serial, kind, now
         entry.dead, entry.appliedPhase = kind == "death", nil
         return true, "staged"
+    end
+
+    function controller:restore(givenScope, sessionKey, localKey, serial, life, now)
+        local entry, reason = bound(givenScope, sessionKey, localKey, now)
+        if not entry then return false, reason end
+        if not integer(serial, maxSerial) then return false, "invalid_serial" end
+        if life ~= "alive" and life ~= "dead" then return false, "invalid_life" end
+        if serial < entry.serial then return false, "stale_serial" end
+        if entry.dead and life ~= "dead" then return false, "terminal_death" end
+        if serial == entry.serial and entry.dead ~= (life == "dead") then
+            return false, "conflicting_serial"
+        end
+        clock = now
+        entry.serial, entry.dead = serial, life == "dead"
+        entry.kind, entry.startedAt = entry.dead and "dead" or "idle", now
+        entry.appliedPhase = nil
+        return true, "restored"
     end
 
     function controller:apply(givenScope, sessionKey, localKey, now)

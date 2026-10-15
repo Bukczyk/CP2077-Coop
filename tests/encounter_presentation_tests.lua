@@ -211,4 +211,73 @@ do
     assert(c:size() == 1, "failed binding consumed capacity")
 end
 
+-- Replacement bodies receive supplied final state, never a previous hit clip.
+-- Restoring state itself must not call the engine, even for a terminal death.
+do
+    local f = fixture()
+    local c, s = f.controller, f.scope
+    f:bind("alive", "old-alive")
+    f:bind("dead", "old-dead")
+    assert(c:stage(s, "alive", "old-alive", 1, "reaction", 0))
+    assert(c:stage(s, "dead", "old-dead", 1, "death", 0))
+    assert(c:apply(s, "alive", "old-alive", 0.5))
+    assert(c:apply(s, "dead", "old-dead", 0.5))
+    assert(f.frames[1].phase == "reaction" and f.frames[1].progress == 0.25)
+    assert(f.frames[2].phase == "death" and f.frames[2].progress == 0.125)
+    assert(c:unbind(s, "alive", "old-alive", 0.5))
+    assert(c:unbind(s, "dead", "old-dead", 0.5))
+    f:bind("alive", "new-alive", 0.5)
+    f:bind("dead", "new-dead", 0.5)
+    assert(c:restore(s, "alive", "new-alive", 1, "alive", 0.5))
+    assert(c:restore(s, "dead", "new-dead", 1, "dead", 0.5))
+    assert(#f.frames == 2, "restore unexpectedly called the engine")
+    assert(c:apply(s, "alive", "new-alive", 0.5))
+    assert(c:apply(s, "dead", "new-dead", 0.5))
+    assert(f.frames[3].phase == "idle" and f.frames[3].progress == 0)
+    assert(f.frames[4].phase == "dead" and f.frames[4].progress == 1)
+    rejected("terminal_death", c:restore(s, "dead", "new-dead", 2, "alive", 0.5))
+    assert(c:inspect(s, "alive").serial == 1 and not c:inspect(s, "alive").dead)
+end
+
+-- Bad evidence cannot change the retained final state or consume a serial.
+do
+    local f = fixture()
+    local c, s = f.controller, f.scope
+    f:bind("a", "pa")
+    assert(c:restore(s, "a", "pa", 3, "alive", 2))
+    rejected("stale_serial", c:restore(s, "a", "pa", 2, "dead", 2))
+    rejected("conflicting_serial", c:restore(s, "a", "pa", 3, "dead", 2))
+    rejected("wrong_scope", c:restore({}, "a", "pa", 4, "dead", 2))
+    rejected("wrong_projection", c:restore(s, "a", "other", 4, "dead", 2))
+    rejected("invalid_key", c:restore(s, 1, "pa", 4, "dead", 2))
+    rejected("stale_time", c:restore(s, "a", "pa", 4, "dead", 1))
+    rejected("invalid_time", c:restore(s, "a", "pa", 4, "dead", 0/0))
+    rejected("invalid_life", c:restore(s, "a", "pa", 4, "death", 2))
+    for _, serial in ipairs({0, -1, 1.5, 101, math.huge, 0/0, "4"}) do
+        rejected("invalid_serial", c:restore(s, "a", "pa", serial, "dead", 2))
+    end
+    f.mapped.a = "replacement"
+    rejected("wrong_mapping", c:restore(s, "a", "pa", 4, "dead", 2))
+    f.mapped.a = nil
+    rejected("mapping_missing", c:restore(s, "a", "pa", 4, "dead", 2))
+    f.mapped.a, f.resolveError = "pa", true
+    rejected("mapping_unavailable", c:restore(s, "a", "pa", 4, "dead", 2))
+    f.resolveError = false
+    assert(c:inspect(s, "a").serial == 3 and not c:inspect(s, "a").dead)
+    assert(#f.frames == 0)
+    assert(c:restore(s, "a", "pa", 4, "dead", 2))
+    f.accepts = false
+    rejected("engine_rejected", c:apply(s, "a", "pa", 2))
+    rejected("terminal_death", c:restore(s, "a", "pa", 5, "alive", 2))
+    f.accepts = true
+    f.onApply = function()
+        rejected("callback_busy", c:restore(s, "a", "pa", 5, "dead", 2))
+    end
+    assert(c:apply(s, "a", "pa", 2))
+    assert(f.frames[1].phase == "dead" and f.frames[1].progress == 1)
+    assert(c:inspect(s, "a").serial == 4)
+    assert(c:unbind(s, "a", "pa", 2))
+    rejected("unbound", c:restore(s, "a", "pa", 5, "dead", 2))
+end
+
 print("encounter presentation local fixture tests passed")

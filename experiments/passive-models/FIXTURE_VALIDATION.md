@@ -12,6 +12,9 @@ The pure historical comparison follow-up starts from
 `d6ae28f4018ddf2f95f385270759e6c638997d70`; it adds no native calls.
 The separate encounter-asset prerequisite starts from
 `e8bd1d913b35125015c386915b229fb16ee00897`; it does not activate fixture reactions.
+The local encounter fixture follow-up starts from
+`d583c2affa9f33c54dc36101477d44c35afcfeef`, adding opt-in presentation without
+installing or activating any game runtime.
 
 ## Scope and ownership
 
@@ -260,7 +263,75 @@ prepares a presentation asset, not physical hit detection or a connected
 male reaction/death implementation. Fixed front-torso clips do not reproduce
 arbitrary HOST reactions, ragdoll or final bone poses. Actual idle/impact/death
 deformation, transitions, terminal pose and recreation without idle flash remain
-deferred live gates. The existing fixture still uses the idle assets.
+deferred live gates. The asset checkpoint itself did not activate the fixture;
+the separate source-only fixture extension is recorded below.
+
+## Local encounter fixture checkpoint
+
+Starting from PR26 `d583c2affa9f33c54dc36101477d44c35afcfeef`, the existing
+fixture adds explicit `judy_encounter`/`mitch_encounter` profiles and the bounded
+`present(slot, generation, reaction|death)` command. Production defaults,
+protocol, assets, native helpers and package contents are unchanged. The shared
+adapter is reused unchanged; the shared pure controller receives the exact
+PR12 `restore` method. There is no duplicate state implementation or committed
+copy of a shared module.
+
+Evidence is retained under
+`D:\Downloads\syncfix\bench-artifacts\20261015-passive-encounter-fixture`:
+
+- `focused-lua-validation.json` / `validate_focused.py`: all three current
+  focused suites pass, 811 Lua 5.4 checks (334 engine, 180 fixture, 297 actual
+  entrypoint) and 813 LuaJIT checks (336 engine, 180 fixture, 297 entrypoint).
+  The two-check difference comes from an existing runtime-order-dependent loop.
+- Tests cover explicit resource dependencies, initial/replacement commands
+  admitted before first binding, exact actor/player replacement, preflight and
+  between-setter pause/context/identity/visual changes, constructor and setter
+  exceptions, normalized retry, newer death supersession, stop/reset before
+  stage, terminal new-body restoration, stale generations, per-slot clocks,
+  invalid deltas, public API inertness, copied status and sibling isolation.
+- `independent-engine-stable-review.json`: 305 independent checks per runtime
+  across ten scenarios, using actual entrypoint, engine, fixture, state and
+  adapter in a literal-path CET-style sandbox. It checks exact per-setter
+  identity/context, partial failures, retry and stop between setters.
+  `independent-focused-suites.json` also records the reviewer's rerun of the
+  three fixture suites and existing shared state/adapter suites.
+- `independent-controller-results-20261015T115808389261Z.json`: 237 independent
+  checks per runtime across seven scenarios. The real staged entrypoint/state
+  covers terminal admission before reset, nonlethal replacement without replay,
+  fresh commands before initial/replacement binding, paused admission, sibling
+  recovery, partial sampling, superseding death and shutdown. The staged source
+  hashes stayed unchanged. The sandbox has no `package` or global require
+  fallback and uses the documented `cp2077_passive_encounter/` subfolder.
+
+Only verified native boundaries are mocked in these Lua checks. They do not
+execute Cyberpunk, Codeware creation, native animation delivery or rendering.
+The underlying helper source is unchanged from the prior successful isolated
+compile; no new native signature or redundant REDscript compile is claimed.
+`branch-validation.json` and logs record a fresh configure, incremental Windows
+Release build and 31/31 CTests, plus all six relevant LuaJIT suites including
+the unchanged connected-encounter suite (206 checks). Executable source and test
+hashes stayed unchanged. This branch build has `COOP_BUILD_PLUGIN=OFF`; it does
+not claim a new in-game native/plugin build. The final ten-file source manifest
+includes the eight fixture-owned files plus the two shared state files owned
+by the parent implementation task. Hosted CI is a separate publication check.
+
+The fixture retains logical death only within its current in-memory instance,
+not across mod reload or network reconnect. Stop/reset retire the disposable
+body while preserving that logical state. A replacement gets final dead state
+or idle without replaying an old hit; a new command keeps its own serial. Each
+slot has its own reused state controller and effective unpaused time, so one
+read failure cannot create `stale_time` for another slot. Invalid deltas above
+0.25 seconds or non-finite/negative values freeze presentation; time is credited
+only after a valid successful/unchanged sample.
+
+The native adapter checks the original actor/player and exact current binding
+before each progress/phase setter. A thrown call may already have queued an
+event. `forwarded` is an attempted-call count, not a receipt. Current preflight
+failures are reported separately from the last attempted sample/submission.
+The latest normalized sample can retry after fresh preflight, including after
+an unknown partial pair. This does not prove visible continuity or engine
+delivery. Terminality is local fixture intent, never inferred HOST authority.
+`animationObserved`, `visualQualified` and color matching remain false.
 
 ## Reproduce offline checks
 
@@ -273,15 +344,16 @@ ctest --test-dir build/passive-model-fixture -C Release --output-on-failure
 
 Each focused Lua suite also accepts the repository root as its first script
 argument. Run `tests/passive_model_{fixture,engine,entrypoint}_tests.lua` in
-fresh Lua 5.4 and LuaJIT 2.1 states. The suites total 582 and 584 checks,
+fresh Lua 5.4 and LuaJIT 2.1 states. The suites total 811 and 813 checks,
 respectively. Python profile tests and existing asset contract tests run through
 CTest as before.
 
 ## Remaining qualification
 
 No fixture was installed or activated. Both actors visible simultaneously,
-correct default appearance, deformation, idle playback, absence of autonomous
-behavior, native move/readback and cleanup/recreation still require manual
+correct default appearance, deformation, idle/reaction/death playback, absence
+of autonomous behavior, native move/readback and cleanup/recreation without an
+idle flash still require manual
 live testing. `visualQualified` remains false unconditionally. Resource
 presence alone cannot identify replaced or corrupted asset bytes.
 

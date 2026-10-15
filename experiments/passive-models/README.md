@@ -2,12 +2,14 @@
 
 This source-only experiment adds one authored male `Mitch/default` entity beside
 the existing `Judy/default` entity, a strict local profile builder and a separate
-opt-in CET fixture. The fixture can queue local creation, movement and cleanup;
+opt-in CET fixture. The fixture can queue local creation, movement, cleanup and
+explicit encounter reaction/death presentation;
 it has not been installed or tested in Cyberpunk. The existing runtime, Judy
 asset, production builders and published packages stay unchanged.
 An additional private encounter-profile builder prepares a separate Mitch asset
-for the existing idle/impact/death graph. This is an asset prerequisite only;
-the local fixture below still uses its original idle-only profiles.
+for the existing idle/impact/death graph. Encounter presentation requires explicit
+encounter profiles and separately staged shared modules. The original idle
+profiles remain idle-only; no production activation or package changes occur.
 
 ## Supported subset
 
@@ -16,7 +18,7 @@ the local fixture below still uses its original idle-only profiles.
 | `judy_default` (builder default) | Existing `cp2077coop_networkhumanoid.ent` | Judy default proxy, woman-base rig, female unarmed locomotion set |
 | `mitch_default` | New `cp2077coop_networkhumanoid_mitch.ent` | Mitch default proxy, man-base rig, male unarmed locomotion set |
 
-Both use mesh appearance `default` and the unchanged authored
+These idle profiles use mesh appearance `default` and the unchanged authored
 `base\cp2077coop\animations\networkhumanoid_idle.animgraph`. The profile names
 are local experiment labels, not network values or arbitrary NPC identities.
 
@@ -43,13 +45,14 @@ network identity. No vanilla entity template, mesh, animation or rig payload is
 copied into this source. There is no `NPCPuppet`, template inheritance, AI,
 navigation, damage or collision component.
 
-## Encounter asset prerequisite, not activated
+## Encounter asset prerequisite
 
 `build_encounter_profile.py` uses the existing Judy encounter entity or the new
 `cp2077coop_networkhumanoid_mitch_encounter.ent.json`. Its explicit
-`judy_default`/`mitch_default` labels select build inputs only. They do not change
-`build_profile.py`, the fixture's resource allowlist, production selection or
-the historical appearance comparison.
+`judy_default`/`mitch_default` labels select build inputs only. The separate
+fixture names `judy_encounter`/`mitch_encounter` below explicitly select the built
+encounter entities. Idle builder defaults, production selection and the
+historical appearance comparison remain unchanged.
 
 The Mitch encounter entity references the reviewed Mitch proxy, `man_base.rig`
 and three male animation sets: `ma_gang_unarmed_locomotion_combat.anims`,
@@ -98,10 +101,9 @@ packages and are not added to `game-files/latest` or release downloads.
 Both private profiles built successfully. The new Judy entity bytes exactly
 match the earlier encounter build; pack timestamps make whole-archive equality
 a different question. Existing Judy, idle, hittable and graph sources remain
-unchanged. A later reviewed fixture extension must queue exact-generation
-reaction/death presentation on the update thread and distinguish queue acceptance
-from visible playback. This checkpoint does not enable it or change PR12 life
-restoration, combat, networking or shared interfaces. See
+unchanged. The opt-in fixture below queues exact-generation local presentation
+on the update thread. Submission is not visible playback. It does not connect
+combat, networking or shared interfaces. See
 [FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for hashes and offline evidence.
 
 ## Resource evidence and limits
@@ -265,6 +267,107 @@ logged even if the state stays the same. Logging is limited to 64 lines per inst
 unchanged frames stay silent. Status remains available after that limit. See
 [FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for offline evidence and limits.
 
+## Opt-in local encounter presentation
+
+The explicit fixture profiles `judy_encounter` and `mitch_encounter` use
+`cp2077coop_networkhumanoid_encounter.ent` and
+`cp2077coop_networkhumanoid_mitch_encounter.ent`, respectively. They require the
+reviewed encounter graph plus their mesh, rig and all three idle/impact/death
+animation sets. All seven resource dependencies must be present before creation.
+The runtime check proves presence only. It cannot attest override bytes or
+rendered animation.
+
+For a later authorized manual installation, stage this layout under the separate
+CET mod `PassiveModelFixture`. Copy the two shared files unchanged from this
+same revision, with the reviewed `restore` method included:
+
+```text
+PassiveModelFixture/
+  init.lua                         <- experiments/passive-models/init.lua
+  engine.lua                       <- experiments/passive-models/engine.lua
+  fixture.lua                      <- experiments/passive-models/fixture.lua
+  comparison.lua                   <- experiments/passive-models/comparison.lua
+  cp2077_passive_encounter/
+    presentation.lua               <- experiments/shared-encounter/presentation.lua
+    presentation_state.lua         <- experiments/shared-encounter/presentation_state.lua
+```
+
+Also stage the existing matching read-only `engine_hooks.reds` and reviewed
+authored assets as described above. No source copies are duplicated in the
+repository and no files have been installed. The explicit slash paths are
+intentional: CET resolves `require` relative to this mod root and does not turn
+dotted names into folders, as defined in
+[CET v1.37.1 LuaSandbox.cpp](https://github.com/maximegmd/CyberEngineTweaks/blob/v1.37.1/src/scripting/LuaSandbox.cpp#L381-L405).
+No `package` library or other mod's module cache is
+required. Missing shared modules reject encounter start. Idle profiles do not
+load these modules or submit encounter setters.
+
+```lua
+local f = GetMod("PassiveModelFixture")
+local ok, generation = f.start("male_test", "mitch_encounter", observedClearPoint)
+-- Wait for status("male_test").state == "ready", then explicitly request:
+f.present("male_test", generation, "reaction")
+f.status("male_test")
+-- Optional terminal presentation on that same logical slot:
+f.present("male_test", generation, "death")
+```
+
+`present` validates cached state and queues at most one pending command per slot;
+it does not access the engine. Only `reaction` and `death` are accepted. Death
+supersedes a pending reaction and is terminal as soon as it is admitted, even
+if stop/reset happens before the next update. Stale generations, unready bodies,
+queued movement and idle profiles cannot receive presentation commands. Command
+and body counters stop at 2,147,483,647 rather than lose exact identity.
+
+Each logical encounter slot reuses its own instance of the existing shared
+presentation state controller. It has an independent effective clock, driven by
+finite update deltas in [0, 0.25] seconds. Invalid/long deltas, pause, missing
+context or failed actor/preflight checks freeze that slot; a sibling can keep
+progressing. Zero delta may sample without advancing. A successful or unchanged
+sample credits the current delta for the next update. This avoids counting
+unobserved failure intervals as animation time.
+
+The existing shared adapter submits normalized progress followed by phase.
+Before **each** native setter, the engine rechecks the original native actor and
+player, exact ID/generation binding, attachment, creator readiness, template,
+passive root, coherent appearance/color and explicit unpaused loaded context.
+It does not authorize a replacement merely because its EntityID is the same.
+Stop, a newer command, or lost context between setters blocks the remaining
+setter. An exception can still leave a partial pair. The next valid update may
+retry only the latest desired normalized sample with fresh checks; a later
+death supersedes the old reaction. No delivery receipt or native pose readback
+is invented.
+
+Stop/reset retire bodies through the existing exact cleanup. They retain the
+logical slot's profile, serial and terminal death within this fixture instance.
+Explicitly recreating the **same** closed encounter slot uses a new body
+generation: known death submits the final death sample immediately, while a
+previous nonlethal reaction settles to idle without replay. A fresh command
+queued for the replacement is not consumed by restoration. This does not prove
+that a rendered idle flash is absent before the first setter arrives.
+The retained profile cannot be changed for that logical slot. Use a different
+available slot for a fresh life; the local eight-slot budget is unchanged.
+Mod reload loses this in-memory logical state, and historical tagged actors
+still block unsafe reuse. This is not network reconnect restoration or a HOST
+life-state source.
+
+Copied `status.presentation` separates `pending`, retained `desired`, last
+attempted `sample`, and native submission details. `forwarded` counts attempted
+native setters, including a throwing call. `submission` is
+`queued_not_observed` or `failed_or_partial`; it is not an animation result.
+`reason` describes current processing and `preflightError` preserves a current
+bounded failure separately from the last submission reason. A failed preflight
+does not erase the last attempted sample or imply another submission. Transition
+logs include these distinctions under the existing 64-line limit, without
+per-frame progress spam. **`animationObserved=false`, `visualQualified=false`
+and `colorMatchVerified=false` remain unconditional.**
+
+The historical `compare` API remains restricted to its reviewed idle-profile
+resource chains. Encounter profiles are not silently added to that mapping.
+This fixture does not detect hits, change health, create NPC AI, replicate
+combat, apply HOST state or generate ragdoll. Its fixed front-torso clips are
+local presentation probes, not arbitrary replicated NPC reactions.
+
 ## Compare historical NPC and fixture observations
 
 `compare(slot, generation, sourceStatus)` is a pure report, available through
@@ -340,9 +443,11 @@ is copied, bounded and read-only with respect to both input objects.
 
 ## Remaining live gates
 
-Later live gates are both models visible, correct default appearance, idle
-without T-pose/deformation, no autonomous AI, exact orientation/readback and
-cleanup/recreation without duplicates. Those gates remain unperformed.
+Later live gates are both models visible, correct default appearance, idle and
+encounter playback without T-pose/deformation, no autonomous AI, exact
+orientation/readback, normalized sampling/terminal transitions and
+cleanup/recreation without duplicates or visible idle flash. Those gates remain
+unperformed.
 
 The current NPC descriptor does not supply an arbitrary chosen appearance. The
 historical comparison establishes only the narrow resource relationship above,

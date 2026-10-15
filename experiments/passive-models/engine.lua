@@ -3,6 +3,7 @@ local M = {}
 local Engine = {}; Engine.__index = Engine
 local TAG = "CP2077Coop.PassiveModelFixture"
 local GRAPH = "base\\cp2077coop\\animations\\networkhumanoid_idle.animgraph"
+local ENCOUNTER_GRAPH = "base\\cp2077coop\\animations\\networkhumanoid_encounter.animgraph"
 -- Keep these allowlists aligned with build_profile.py. Paths refer to resources,
 -- not bundled vanilla payloads; ResourceExists verifies presence, not content.
 local profiles = {
@@ -17,6 +18,24 @@ local profiles = {
         mesh="base\\characters\\appearances\\main_npc\\proxy\\mitch_default\\mitch_default.mesh",
         rig="base\\characters\\base_entities\\man_base\\man_base.rig",
         animset="base\\animations\\npc\\gameplay\\man_average\\gang\\unarmed\\ma_gang_unarmed_locomotion_combat.anims",
+    },
+    judy_encounter = {
+        template="base\\cp2077coop\\entities\\cp2077coop_networkhumanoid_encounter.ent",
+        mesh="base\\characters\\appearances\\main_npc\\proxy\\judy_default\\judy_default.mesh",
+        rig="base\\characters\\base_entities\\woman_base\\woman_base.rig",
+        animset="base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_locomotion_combat.anims",
+        impact="base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_reaction_ranged_impact.anims",
+        death="base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_reaction_ranged_death.anims",
+        graph=ENCOUNTER_GRAPH,encounter=true,
+    },
+    mitch_encounter = {
+        template="base\\cp2077coop\\entities\\cp2077coop_networkhumanoid_mitch_encounter.ent",
+        mesh="base\\characters\\appearances\\main_npc\\proxy\\mitch_default\\mitch_default.mesh",
+        rig="base\\characters\\base_entities\\man_base\\man_base.rig",
+        animset="base\\animations\\npc\\gameplay\\man_average\\gang\\unarmed\\ma_gang_unarmed_locomotion_combat.anims",
+        impact="base\\animations\\npc\\gameplay\\man_average\\gang\\unarmed\\ma_gang_unarmed_reaction_ranged_impact.anims",
+        death="base\\animations\\npc\\gameplay\\man_average\\gang\\unarmed\\ma_gang_unarmed_reaction_ranged_death.anims",
+        graph=ENCOUNTER_GRAPH,encounter=true,
     },
 }
 local function opaque(value)
@@ -83,8 +102,9 @@ function M.new() return setmetatable({owned={}},Engine) end
 function Engine:profile(name)
     local source=profiles[name]
     if not source then return nil end
-    return {name=name,template=source.template,appearance="default",graph=GRAPH,
-        mesh=source.mesh,rig=source.rig,animset=source.animset}
+    return {name=name,template=source.template,appearance="default",graph=source.graph or GRAPH,
+        mesh=source.mesh,rig=source.rig,animset=source.animset,impact=source.impact,death=source.death,
+        encounter=source.encounter==true}
 end
 function Engine:create(entry)
     assert(not entry.spawnAttempted, "spawn_already_attempted")
@@ -97,7 +117,9 @@ function Engine:create(entry)
     local creator=assert(Game.GetStaticEntitySystem(), "static_system_unavailable")
     assert(creator:IsReady()==true, "static_system_not_ready")
     local depot=assert(Game.GetResourceDepot(), "resource_depot_unavailable")
-    for _,path in ipairs({p.template,GRAPH,p.mesh,p.rig,p.animset}) do
+    local dependencies={p.template,p.graph or GRAPH,p.mesh,p.rig,p.animset}
+    if p.encounter then dependencies[#dependencies+1]=p.impact;dependencies[#dependencies+1]=p.death end
+    for _,path in ipairs(dependencies) do
         local exists=depot:ResourceExists(ResRef.FromName(path))
         assert(type(exists)=="boolean", "resource_observation_unknown")
         assert(exists, "missing_resource:"..path)
@@ -211,6 +233,48 @@ function Engine:move(entry,target)
     entry.moveAttempted=true
     actor:SetWorldTransform(world)
     return true -- submission only; controller compares a later actual readback.
+end
+local function presentationActor(engine,entry,current)
+    assert(profiles[entry.profile] and profiles[entry.profile].encounter,"presentation_profile_unsupported")
+    assert(not entry.retiring and (not current or current()),"presentation_binding_changed")
+    local _,playerId=localPlayer()
+    assert(playerId==entry.playerId,"presentation_player_changed")
+    local o=engine:observe(entry)
+    assert(o.ready and o.identityVerified and not o.identityFault and o.templateVerified
+        and o.rootVerified and o.visualStateObserved and o.appearanceVerified,"presentation_actor_unqualified")
+    local actor=assert(entry.creator:GetEntity(entry.id),"presentation_actor_unavailable")
+    assert(key(actor:GetEntityID())==entry.idKey and actor:IsAttached()==true,"presentation_actor_changed")
+    assert(ownedIdentity(actor,entry),"presentation_native_identity_changed")
+    assert(opaque(ResRef.GetHash(actor:GetTemplatePath()))==entry.templateHash
+        and actor:IsExactlyA(CName.new("entEntity"))==true,"presentation_visual_changed")
+    local pair=visualState(actor,entry)
+    assert(pair.appearance=="default" and pair.appearance==o.observedAppearance
+        and pair.appearanceHash==o.observedAppearanceHash and pair.color==o.observedColor
+        and pair.colorHash==o.observedColorHash,"presentation_pair_changed")
+    assert(not paused() and (not current or current()),"presentation_context_changed")
+    return actor
+end
+function Engine:presentationReady(entry)
+    presentationActor(self,entry)
+    return true
+end
+function Engine:present(entry,frame,current)
+    assert(frame.localKey==entry.idKey and type(current)=="function" and current(),"presentation_frame_changed")
+    local adapter=require("cp2077_passive_encounter/presentation")
+    local engine=self
+    entry.presentationForwarded=0
+    local forwarding={QueueEvent=function(_,event)
+        -- Constructors and the previous setter may have changed context. Every
+        -- forwarded setter freshly verifies the original actor/player and pair.
+        local actor=presentationActor(engine,entry,current)
+        entry.presentationForwarded=entry.presentationForwarded+1
+        actor:QueueEvent(event) -- no native delivery/animation receipt exists
+    end}
+    local kind=frame.phase=="dead" and "death" or frame.phase
+    local accepted,reason=adapter.apply(forwarding,kind,frame.phase=="dead" and 1 or frame.progress)
+    entry.presentationSubmission=accepted and "queued_not_observed" or "failed_or_partial"
+    entry.presentationSubmissionReason=reason
+    return accepted
 end
 function Engine:retire(entry)
     if not entry.spawnAttempted then return true end

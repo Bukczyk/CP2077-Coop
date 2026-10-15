@@ -1,12 +1,17 @@
 local root=assert(arg[1])
 local folder=root.."/experiments/passive-models/"
 package.path=folder.."?.lua;"..package.path
+-- Test-only loader for the exact production subfolder names. The standalone
+-- CET loader review separately stages these files with no package fallback.
+for _,name in ipairs({"presentation","presentation_state"}) do
+    package.preload["cp2077_passive_encounter/"..name]=assert(loadfile(root.."/experiments/shared-encounter/"..name..".lua"))
+end
 local checks=0
 local function check(value,why) checks=checks+1;assert(value,why) end
 local function id(value) return {hash=value} end
 local function make()
     local f={native=0,creates=0,moves=0,deletes=0,tokens={},actors={},globals={},tags={},logs={},paused=false,
-        ready=true,resources={},nextId=0,playerId="9007199254740997ULL",playerNative={},requests=true}
+        ready=true,resources={},nextId=0,playerId="9007199254740997ULL",playerNative={},requests=true,events={}}
     local refs,serial={},0
     local function ref(path)
         if not refs[path] then serial=serial+1;refs[path]="18014398509482"..string.format("%03d",serial).."ULL" end
@@ -62,6 +67,11 @@ local function make()
             if f.applyMove then self.position=world.position;self.orientation=world.orientation end
             if f.moveThrows then error("native_move_outcome_unknown") end
         end
+        function a:QueueEvent(event)
+            native();f.events[#f.events+1]={actor=self.nativeRef,id=self.id,key=event.key,value=event.value}
+            if f.queueHook then f.queueHook(self,event,#f.events) end
+            if f.queueThrows then error("native_queue_outcome_unknown") end
+        end
         return a
     end
     local s={}
@@ -108,7 +118,7 @@ local function make()
         FindEntityByID=function(value) native();return f.globals[value.hash] end,
         GetSystemRequestsHandler=function()
             native();if not f.requests then return nil end
-            return {IsGamePaused=function() native();return f.paused end,IsPreGame=function() native();return false end}
+            return {IsGamePaused=function() native();return f.paused end,IsPreGame=function() native();return f.preGame==true end}
         end,
         GetPlayer=function()
             native();return {nativeRef=f.playerNative,id=f.playerId,
@@ -128,6 +138,7 @@ local function make()
     ResRef={FromName=function(path) native();return ref(path) end,
         GetHash=function(r) native();return r.hash end,ToString=function(r) native();return r.path end}
     CName={new=function(value) native();return value end}
+    NewObject=function(name) native();assert(name=="entAnimInputSetterFloat");if f.constructorThrows then error("event_constructor_failed") end;return {} end
     Vector4={new=function(x,y,z,w) native();return {x=x,y=y,z=z,w=w} end}
     Quaternion={new=function(i,j,k,r) native();return {i=i,j=j,k=k,r=r} end}
     EulerAngles={new=function(roll,pitch,yaw) native();return {roll=roll,pitch=pitch,yaw=yaw} end}
@@ -375,5 +386,64 @@ do
     local block=builder:sub(start,assert(builder:find("\n})",start,true)))
     for _,field in ipairs({"template","mesh","rig","animset"}) do check(block:find(m[field],1,true),"Mitch builder drift: "..field) end
     j.template="mutated";check(f.engine:profile("judy_default").template~="mutated","catalog returns copy")
+end
+for _,name in ipairs({"judy_encounter","mitch_encounter"}) do
+    local f=make();local profile=f.engine:profile(name)
+    check(profile.encounter and profile.graph:find("encounter",1,true),"explicit encounter profile and graph")
+    for _,field in ipairs({"template","graph","mesh","rig","animset","impact","death"}) do
+        f.resources[profile[field]]=false
+        check(not pcall(f.engine.create,f.engine,f.entry(name)) and f.creates==0,"encounter dependency gate: "..field)
+        f.resources[profile[field]]=nil
+    end
+    local e=f.entry(name);check(f.engine:create(e),"encounter creation uses same owned lifecycle")
+    local actor=f.complete(e.id.hash);f.engine:observe(e)
+    check(f.engine:presentationReady(e),"exact passive encounter preflight")
+    for _,sample in ipairs({{"reaction",0.3,"cp_coop_hit_progress",1},{"death",0.7,"cp_coop_death_progress",2},{"dead",1,"cp_coop_death_progress",2}}) do
+        f.events={}
+        check(f.engine:present(e,{localKey=e.idKey,phase=sample[1],progress=sample[2]},function() return true end),"existing adapter accepts guarded sample")
+        check(#f.events==2 and f.events[1].key==sample[3] and f.events[1].value==sample[2]
+            and f.events[2].key=="cp_coop_phase" and f.events[2].value==sample[4],"actual progress then phase setter sequence")
+        check(f.events[1].actor==actor.nativeRef and f.events[2].actor==actor.nativeRef
+            and e.presentationSubmission=="queued_not_observed","exact actor submission is not animation evidence")
+    end
+    e.retiring=true;check(not f.engine:retire(e) and f.deletes==1,"encounter retirement reuses exact cleanup")
+end
+for _,fault in ipairs({"paused","pause_unknown","requests_missing","pregame","player","actor","detached","appearance","color","template","root","binding"}) do
+    local f=make();local e=f.entry("judy_encounter");f.engine:create(e);local a=f.complete(e.id.hash);f.engine:observe(e)
+    local current=true
+    f.queueHook=function()
+        if fault=="paused" then f.paused=true
+        elseif fault=="pause_unknown" then f.paused=nil
+        elseif fault=="requests_missing" then f.requests=false
+        elseif fault=="pregame" then f.preGame=true
+        elseif fault=="player" then f.playerNative={}
+        elseif fault=="actor" then local other=setmetatable({nativeRef={}},{__index=a});f.actors[a.id],f.globals[a.id]=other,other
+        elseif fault=="detached" then a.attached=false
+        elseif fault=="appearance" then a.appearance="other"
+        elseif fault=="color" then a.colorError=true
+        elseif fault=="template" then a.template=f.ref("foreign.ent")
+        elseif fault=="root" then a.root=false
+        else current=false end
+    end
+    check(not f.engine:present(e,{localKey=e.idKey,phase="reaction",progress=0.2},function() return current end),"mid-pair failure rejected: "..fault)
+    check(#f.events==1 and f.events[1].key=="cp_coop_hit_progress" and e.presentationForwarded==1,
+        "fresh guard blocks phase after "..fault)
+    check(e.presentationSubmission=="failed_or_partial","partial is never called completed")
+end
+for _,fault in ipairs({"constructor","first_setter","second_setter"}) do
+    local f=make();local e=f.entry("mitch_encounter");f.engine:create(e);f.complete(e.id.hash);f.engine:observe(e)
+    if fault=="constructor" then f.constructorThrows=true
+    elseif fault=="first_setter" then f.queueThrows=true
+    else f.queueHook=function(_,_,count) if count==2 then error("second setter unknown") end end end
+    local sample={localKey=e.idKey,phase="reaction",progress=0.4}
+    check(not f.engine:present(e,sample,function() return true end),"event construction/forwarding failure returned")
+    check(#f.events==(fault=="constructor" and 0 or fault=="first_setter" and 1 or 2),"accurate attempted setter count")
+    f.constructorThrows=false;f.queueThrows=false;f.queueHook=nil;f.events={}
+    check(f.engine:present(e,sample,function() return true end) and #f.events==2,"normalized sample can safely retry after fresh preflight")
+end
+do
+    local f=make();local e=f.entry();f.engine:create(e);f.complete(e.id.hash);f.engine:observe(e)
+    check(not f.engine:present(e,{localKey=e.idKey,phase="reaction",progress=0},function() return true end)
+        and #f.events==0,"idle graph never receives encounter setters")
 end
 print("Passive model actual engine adapter checks: "..checks)
