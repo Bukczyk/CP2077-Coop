@@ -167,6 +167,35 @@ do
         "confirmed removal must release the session mapping for later recreation")
 end
 
+-- Unknown or malformed flags cannot confirm disappearance, either before any
+-- despawn request or while an accepted asynchronous despawn is pending.
+for _, field in ipairs({"managed", "spawning", "spawned"}) do
+    for _, phase in ipairs({"before", "after"}) do
+        for _, kind in ipairs({"nil", "string", "number"}) do
+            local first, second = "9007199254740993ULL", "9007199254740994ULL"
+            local f = fixture({first, second})
+            local a, source = f.adapter, npc("unknown-lifecycle")
+            local id = assert(a.spawn(source))
+            if phase == "after" then
+                assert(not a.remove(id) and f.despawnCalls == 1)
+            end
+            local entry = f.entries[first]
+            entry.managed, entry.spawning, entry.spawned, entry.visibleHandle = false, false, false, false
+            if kind == "nil" then entry[field] = nil
+            elseif kind == "string" then entry[field] = "false"
+            else entry[field] = 0 end
+            local attempts = f.despawnCalls
+            assert(not a.remove(entityId(first)), "invalid " .. field .. " cannot prove disappearance")
+            assert(f.despawnCalls == attempts, "invalid observations cannot trigger another despawn")
+            assert(a.spawn(source) == id and f.spawnCalls == 1, "unknown lifetime must retain its exact ID")
+            entry[field] = false
+            assert(a.remove(entityId(first)) and f.despawnCalls == attempts)
+            assert(hashOf(a.spawn(source)) == second and f.spawnCalls == 2,
+                "known false observations and no handle permit replacement")
+        end
+    end
+end
+
 do
     local f = fixture({"9007199254740993ULL"})
     local a = f.adapter

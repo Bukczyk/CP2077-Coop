@@ -99,8 +99,10 @@ function M.remove(localId)
     local s = system()
     if s == nil then return false end
     local function isGone()
-        return not s:IsManaged(entry.id) and not s:IsSpawning(entry.id)
-            and not s:IsSpawned(entry.id) and s:GetEntity(entry.id) == nil
+        local managed, spawning, spawned = s:IsManaged(entry.id), s:IsSpawning(entry.id), s:IsSpawned(entry.id)
+        if type(managed) ~= "boolean" or type(spawning) ~= "boolean"
+            or type(spawned) ~= "boolean" then error("invalid static lifetime observation") end
+        return managed == false and spawning == false and spawned == false and s:GetEntity(entry.id) == nil
     end
     -- Failed creation, a world reset or another completed removal may already
     -- have retired the owned ID. DespawnEntity then legitimately returns false.

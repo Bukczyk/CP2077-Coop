@@ -1,4 +1,4 @@
-# Dynamic NPC exact identity and retirement
+# NPC exact identity and retirement
 
 Owner: KyleBuildsAI. UTC checkpoint: 2026-10-15T07:09:57Z.
 Branch: `fix/dynamic-npc-lifecycle`.
@@ -57,10 +57,12 @@ live test of this NPC change.
 ## Exact owned files
 
 - `runtime/session/cet/CP2077Coop/npc_population.lua`
+- `runtime/session/cet/CP2077Coop/npc_static_population.lua` (strict lifecycle observations)
 - `runtime/session/cet/CP2077Coop/npc_runtime.lua`
 - `runtime/session/cet/CP2077Coop/init.lua` (NPC clock/pause pumping only)
 - `tests/npc_dynamic_identity_tests.lua`
 - `tests/npc_population_tests.lua`
+- `tests/npc_static_identity_tests.lua`
 - `tests/session_lifecycle_tests.lua`
 - `tests/CMakeLists.txt`
 - `docs/validation/DYNAMIC_NPC_LIFECYCLE_2026-10-15.md`
@@ -114,6 +116,26 @@ Four focused suites pass under both built Lua 5.4 and LuaJIT 2.1; logs are
 `build/dynamic-npc/pause-ctest.log` and `pause-luajit.log`. This follow-up changes
 only CET source, the lifecycle fixture and this note, so no native rebuild or new
 live-game test was performed.
+
+### Static projection observation follow-up
+
+2026-10-15T07:32:51Z: the static NPC adapter's disappearance check used Lua
+truthiness for `IsManaged`, `IsSpawning` and `IsSpawned`. A nil result from any
+one call, with the remaining flags false and no handle, incorrectly completed
+retirement and allowed a replacement. It now rejects unknown/malformed flags
+before submitting a despawn or releasing ownership; completion requires three
+explicit Boolean false values and the existing absent-handle observation.
+This is a bounded static-adapter fix, not an import of the dynamic deletion
+mechanism or a claim that both Codeware lifecycles behave identically.
+
+The static identity suite adds 18 cases covering every flag with nil, string
+and numeric observations before and after accepted asynchronous despawn. Each
+case retains the exact original ID until valid observations permit recreation.
+Each of the three nil-flag regressions independently fails against `b2690e8`.
+Four focused suites pass under Lua 5.4 and LuaJIT 2.1; evidence is in
+`build/dynamic-npc/static-flags-ctest.log` and `static-flags-luajit.log`.
+No native rebuild, asset change, installation or live-game test was needed for
+this source/test follow-up.
 
 ## Remaining gates and limitations
 
