@@ -192,3 +192,49 @@ protected cb func OnVehicleFinishedMountingEvent(evt: ref<VehicleFinishedMountin
     if IsDefined(vehicle) { vehicle.CP2077VehicleProbe_Finished(evt); }
     return result;
 }
+
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseGeneration: Uint32;
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseRequest: Uint32;
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseOrigin: Vector4;
+@addField(VehicleObject)
+private let CP2077VehicleProbe_poseOrientation: Quaternion;
+
+@addMethod(VehicleObject)
+public func CP2077VehicleProbe_ApplyPose(player: ref<PlayerPuppet>, generation: Uint32,
+    request: Uint32, position: Vector4, orientation: Quaternion) -> Bool {
+    let currentPosition: Vector4;
+    let currentOrientation: Quaternion;
+    let dot: Float;
+    if generation == 0u || generation > 1000000000u || request == 0u || request > 16u
+        || request <= this.CP2077VehicleProbe_poseRequest
+        || (this.CP2077VehicleProbe_poseGeneration != 0u && generation != this.CP2077VehicleProbe_poseGeneration)
+        || !this.CP2077VehicleProbe_CanRetire(player) { return false; }
+    if !(AbsF(position.X) < 100000.0 && AbsF(position.Y) < 100000.0 && AbsF(position.Z) < 100000.0)
+        || !(AbsF(Quaternion.MagnitudeSq(orientation) - 1.0) <= 0.001) { return false; }
+    if NotEquals(this.CP2077VehicleProbe_Appearance(), player.CP2077VehicleProbe_DefaultAppearance())
+        || NotEquals(this.CP2077VehicleProbe_ColorVariant(), "None") { return false; }
+    currentPosition = this.GetWorldPosition();
+    currentOrientation = Quaternion.Normalized(this.GetWorldOrientation());
+    orientation = Quaternion.Normalized(orientation);
+    dot = AbsF(Quaternion.Dot(currentOrientation, orientation));
+    // Maximum single jump 0.5 m / 10 degrees. Reject no-op requests below
+    // the probe's independent readback resolution (0.1 m / 2 degrees).
+    if !(Vector4.Distance(currentPosition, position) <= 0.5 && dot >= 0.996194698)
+        || (Vector4.Distance(currentPosition, position) < 0.1 && dot > 0.999847695) { return false; }
+    if this.CP2077VehicleProbe_poseGeneration == 0u {
+        this.CP2077VehicleProbe_poseOrigin = currentPosition;
+        this.CP2077VehicleProbe_poseOrientation = currentOrientation;
+    }
+    if !(Vector4.Distance(this.CP2077VehicleProbe_poseOrigin, position) <= 2.0
+        && AbsF(position.Z - this.CP2077VehicleProbe_poseOrigin.Z) <= 0.25
+        && AbsF(Quaternion.Dot(this.CP2077VehicleProbe_poseOrientation, orientation)) >= 0.965925826) { return false; }
+    this.CP2077VehicleProbe_poseGeneration = generation;
+    this.CP2077VehicleProbe_poseRequest = request;
+    // Vanilla vehicleTransition uses this exact whole-vehicle API and converts
+    // the full quaternion to all three Euler angles. It returns Void.
+    GameInstance.GetTeleportationFacility(this.GetGame()).Teleport(this, position, Quaternion.ToEulerAngles(orientation));
+    return true; // Submission only; the Lua probe independently observes settling.
+}

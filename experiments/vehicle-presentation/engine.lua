@@ -17,7 +17,7 @@ local function system()
     assert(value and value:IsReady(),"dynamic_system_unavailable")
     return value
 end
-function Engine.new() return setmetatable({},Engine) end
+function Engine.new(generation) return setmetatable({generation=generation or 1},Engine) end
 function Engine:descriptor()
     local player=assert(Game.GetPlayer(),"player_unavailable")
     assert(player:IsAttached() and player:CP2077VehicleProbe_OnFoot(),"player_not_on_foot")
@@ -112,5 +112,17 @@ function Engine:delete(expected)
     if not actor or not player or key(player:GetEntityID())~=self.creator
         or not actor:CP2077VehicleProbe_CanRetire(player) then return false end
     return s:DeleteEntity(self.id)
+end
+function Engine:applyPose(expected,child,generation,request,target)
+    assert(generation==self.generation and child==self.creator,"pose_scope_mismatch")
+    -- A pause can begin after the last observation but before this manual call.
+    -- No native application has happened yet, so unknown/paused is a rejection.
+    local pauseOk,paused=pcall(function() return Game.GetSystemRequestsHandler():IsGamePaused() end)
+    if not pauseOk or paused~=false then return false end
+    local actor=self:_actor(expected)
+    local player=Game.GetPlayer()
+    assert(actor and player and key(player:GetEntityID())==self.creator,"pose_identity_unavailable")
+    return actor:CP2077VehicleProbe_ApplyPose(player,generation,request,
+        Vector4.new(target.x,target.y,target.z,1),Quaternion.new(target.qx,target.qy,target.qz,target.qw))
 end
 return Engine
