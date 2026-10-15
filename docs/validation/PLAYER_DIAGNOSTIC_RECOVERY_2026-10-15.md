@@ -85,6 +85,26 @@ runtime (`e19ed94611166fafcd9aef68a9ac0789b8fc5ee9`) at the intended handler-err
 invalidation assertion. Both Lua 5.4 and LuaJIT 2.1 pass all seven related suites
 after this follow-up. This is offline lifecycle evidence, not a game test.
 
+## Retained actor observation follow-up
+
+The player lifetime previously accepted empty global/population lookups plus
+false lifecycle flags as disappearance, even when its previously observed exact
+actor handle was still attached. A focused fixture reproduces premature release
+against `736b1cd`; this is an offline lifecycle defect, not a new live observation.
+
+The lifetime now retains the first verified actor handle, checks its exact ID
+and Boolean attachment on each cleanup observation, and requires that handle
+to detach before starting the absence quiet interval. Unknown, throwing or
+changed-identity handle observations keep ownership and restart qualification.
+The reference is cleared only after confirmed retirement. Both lookup paths
+and the existing manager/spawn/quiet-period requirements remain mandatory.
+
+Lua 5.4 and LuaJIT pass the 3,059-check lifetime suite and the real CET entrypoint
+suite. Independent review also exercised population-only initial handle capture
+and later lookup loss. Baseline failure and LuaJIT output are recorded in
+`bench-artifacts/20261015-player-reliability-audit/retained-handle-*` on the
+maintainer's machine. Actual engine detachment timing still needs live testing.
+
 ## Separate moving-facing gap
 
 The motor forwards authoritative yaw to correction and idle-turn commands.
