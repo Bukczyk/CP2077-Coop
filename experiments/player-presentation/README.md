@@ -1,8 +1,10 @@
 # Offline player action preparation
 
-Experiment only. No startup registration, transport, package inclusion or game
-installation. The current runtime does not require this Lua file or load these
-REDscript hooks. Work branch: `feat/player-action-preparation`; base:
+Experiment only. The separate opt-in `init.lua` now registers local fixture
+callbacks, but loading it does not spawn an actor. There is no transport, default
+package inclusion or game installation. The production runtime does not require
+these Lua modules or load these REDscript hooks. Work branch:
+`feat/player-action-preparation`; original boundary base:
 `b1f054ed67c0bb03f1b8e290c2b5fd62a621307c`.
 
 Follow-up: [`aim_probe.lua` / `aim_probe.reds`](../../docs/validation/PLAYER_AIM_PROBE.md)
@@ -113,6 +115,110 @@ probe acquisition. Equipment ownership clears only after confirmed command
 retirement. A stance signal has no cancellation handle: its pending flag clears
 only when its requested stance is read back, or with exact actor retirement.
 Timeout or Lua reset is not proof that a pending engine signal was cancelled.
+
+## Opt-in local action fixture
+
+`init.lua`, `fixture.lua`, `fixture_engine.lua` and `fixture_hooks.reds` provide
+an explicit local test of the existing `actions.lua` and `aim_probe.lua`. They do
+not replace those modules, adopt ambient actors, or create a multiplayer session.
+One activation owns one temporary `Character.Judy` NPC. This local test bound is
+not a multiplayer capacity limit. The NPC's ordinary AI remains active and may
+compete with presentation requests; it is not a passive NetworkHumanoid.
+
+Future authorized manual staging uses a dedicated CET mod folder named
+`PlayerActionFixture` containing these five Lua files from the same revision:
+
+```text
+PlayerActionFixture/
+  init.lua
+  fixture.lua
+  fixture_engine.lua
+  actions.lua
+  aim_probe.lua
+```
+
+Keep `fixture_hooks.reds`, `action_hooks.reds` and `aim_probe.reds` together in a
+separate experimental REDscript folder. The matched session `remote.reds`
+supplies `CP2077Session_PoseReady`; use the existing matched session scripts, not
+a second duplicate definition. Codeware's DynamicEntitySystem is required.
+Do not copy only the entrypoint or mix helper revisions. CET resolves literal
+mod-local filenames here, with no `package.path` or external-mod fallback.
+Nothing in this source task installs or launches these files.
+
+When a future game test is authorized, load a save and choose a clear world
+position 3-8 meters from V, within two meters vertically. Coordinates are supplied
+explicitly, not inferred as safe ground by this fixture:
+
+```lua
+local f = GetMod("PlayerActionFixture")
+local generation, reason = f.start({x = chosenX, y = chosenY, z = chosenZ, yaw = 0})
+f.status()                    -- wait for phase="ready"
+f.capture(generation)         -- begin fresh local weapon/stance follow
+f.aim(generation)             -- explicit bounded local Aim/Normal experiment
+f.status()                    -- inspect copied evidence and reason
+f.stop()                      -- wait for phase="retired" before hot reload/exit
+```
+
+All five public calls are engine-free. `start`, `capture`, `aim` and `stop` queue
+bounded work for `onUpdate`; `status` returns copied cached evidence. `capture`
+starts automatic fresh sampling at no more than one sample per 0.25 effective
+seconds. Explicit capture/Aim requests may sample sooner; repeated requests
+coalesce to one current sample per update.
+Each sample calls the existing native capture boundary. It does not refresh old
+copied state to defeat the controller's freshness deadline. Unsupported or failed
+captures stop progress explicitly and require cleanup before another activation.
+
+`aim` takes a fresh actual weapon/stance capture, then changes only its local
+test intent to aiming=true. Status labels this `injected_local_aim`; it is not a
+claim that V physically held aim or that remote ADS exists. The unchanged action
+controller must first read back the requested weapon/stance before the unchanged
+probe acquires its lease. Follow pauses for that entire lease. After observed
+Aim, bounded hold, observed stable Normal and lease release, follow resumes from
+a new actual local capture. Changing V's weapon during the probe cannot issue a
+competing equipment request. Hold a supported drawn firearm before requesting
+the experiment. No input bindings or controls are changed.
+
+Loaded, attached, unpaused context must be explicitly confirmed. Unknown pause,
+pregame, throwing lookups, invalid frame delta and unavailable actor observation
+freeze work and invalidate retirement qualification. The fixture pins the
+original player reference and opaque ID, original creating dynamic system, exact
+token and first completed actor. Native reference comparisons accept fresh CET
+wrappers but quarantine a different actor with the same ID. The original player
+must remain available for action and cleanup work; switching saves/players does
+not silently transfer this ownership.
+
+Stop first drains a pending Aim request into Normal and releases supported
+command work. If equip/probe cancellation is uncertain, status explicitly names
+`unreleased_action_exact_retirement` or `uncertain_probe_exact_retirement`.
+Those unchanged module guards stay intact: their ownership is retained while
+the exact disposable actor is retired. Two distinct completed attachment
+observations are required before one exact `DeleteEntity` attempt. A pending
+creation is never deleted. Acceptance, exception, false return, elapsed time or
+empty tags alone never prove removal. The original manager must report all
+three lifecycle flags false, both exact lookups absent, and the retained actor
+detached for a new uninterrupted 0.25-second observation interval. Only then may
+the fixture discard uncertain controller/probe handles and allow a new start.
+If a previously confirmed completed actor disappears externally, the same fresh
+absence qualification can close ownership without sending a deletion request.
+An actor returning during qualification cancels that provisional route and must
+drain normal cleanup again. A rejected preparation that never called CreateEntity
+can close immediately on its next valid update, without requiring the old player
+context. Neither exception releases an unknown/pending native creation.
+
+An unknown creation token, foreign native identity, unavailable original creator
+or unconfirmed removal remains owned. There is no automatic replacement, retry
+after ambiguous deletion, tag-wide deletion or ambient cleanup. The fixed tag
+blocks a new activation when an earlier fixture remains, including pending
+creation. It does not recover an old Lua handle or authorize deleting it.
+`onShutdown` only closes admission and queues stop; CET may provide no further
+updates after unload. **Stop and observe `retired` before hot reload or removing
+the fixture.** Shutdown is not a cleanup confirmation.
+
+`actions.status="observed"` means engine weapon-slot/stance readback;
+`probe.logicalAimObserved` means a logical upper-body state. Neither proves
+visible weapon, grip, sight alignment or animation. `visualQualified` remains
+false. Full validation and remaining live gates are recorded in
+[`PLAYER_PRESENTATION_FIXTURE.md`](../../docs/validation/PLAYER_PRESENTATION_FIXTURE.md).
 
 ## Validation and handoff
 

@@ -83,3 +83,5 @@ set_tests_properties(marker_facing PROPERTIES TIMEOUT 15)
 add_test(NAME map_basis_capture
     COMMAND coop_lua_test ${CMAKE_CURRENT_SOURCE_DIR}/map_basis_capture_tests.lua ${CMAKE_SOURCE_DIR})
 set_tests_properties(map_basis_capture PROPERTIES TIMEOUT 15)
+add_test(NAME player_presentation_fixture COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_presentation_fixture_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(player_presentation_fixture PROPERTIES TIMEOUT 15)
