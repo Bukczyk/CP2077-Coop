@@ -1,9 +1,10 @@
 # Passive Judy/Mitch profile experiment
 
 This source-only experiment adds one authored male `Mitch/default` entity beside
-the existing `Judy/default` entity. It provides a strict local profile builder;
-it does not select, spawn or install either profile in the game. The existing
-runtime, Judy asset, production builders and published packages stay unchanged.
+the existing `Judy/default` entity, a strict local profile builder and a separate
+opt-in CET fixture. The fixture can queue local creation, movement and cleanup;
+it has not been installed or tested in Cyberpunk. The existing runtime, Judy
+asset, production builders and published packages stay unchanged.
 
 ## Supported subset
 
@@ -86,13 +87,76 @@ is an explicit external dependency, and the vanilla mesh/rig/animset remain
 external installed resources. Do not replace a tested runtime/package with it.
 No automatic activation, game-file write or installation command is provided.
 
-## Next separate game-side task
+## Opt-in local fixture
 
-After source review, add an opt-in local fixture under `experiments/passive-models/`
-that selects a profile explicitly before spawn and pins it for that entity's
-lifetime. Reuse the reviewed exact-ID, pending-spawn, retained-handle and
-retirement rules. Unknown/missing assets must spawn nothing. Keep production
-`npc_static_population.lua` unchanged until the separate fixture is qualified.
+`init.lua`, `engine.lua` and `fixture.lua` form a separate CET experiment. They
+are not loaded by the production mod. Loading this entrypoint only registers
+callbacks. There are no hotkeys, default spawns, network calls or automatic
+movement. All engine reads and mutations run inside `onUpdate`; the public
+methods only validate/copy commands or return copied cached status.
+
+A future manual test requires Codeware, CET, both reviewed authored entities,
+the authored idle graph and the installed vanilla dependencies listed above.
+The runtime presence check is not an archive hash or visual-quality check. Use
+the builder's verified outputs and manifest; do not install unreviewed assets.
+No installation or package changes are made by this source change.
+
+After separately approved manual installation as a CET mod named
+`PassiveModelFixture`, the console API is:
+
+```lua
+local f = GetMod("PassiveModelFixture")
+-- Define judyPoint and mitchPoint from observed clear positions near the player.
+-- Each is {x=<world x>, y=<world y>, z=<world z>, yaw=<radians>}.
+local okJ, generationJ = f.start("judy", "judy_default", judyPoint)
+local okM, generationM = f.start("mitch", "mitch_default", mitchPoint)
+f.status("judy") -- cached actual observation; inspect after game updates
+f.status()       -- all slots, copied so callers cannot mutate ownership
+-- Only after this exact generation reports ready:
+f.move("judy", generationJ, observedNearbyTarget)
+f.stop("judy")   -- queues retirement of only this fixture-owned actor
+f.reset()        -- queues retirement of every slot in this fixture instance
+```
+
+Choose points from the current loaded scene. Creation requires an attached
+player, explicit unpaused state, a point
+1 to 15 metres away and a vertical difference of at most 3 metres. A movement
+step is at most 5 metres and must stay within 20 metres of the current player.
+Yaw is in radians, between minus pi and pi. Readback retains all quaternion
+components; the input deliberately supports yaw only. There are eight named
+diagnostic slots, a local resource budget unrelated to multiplayer capacity.
+
+Each slot pins its profile, generation, original creator system, opaque exact
+EntityID and first observed exact handle. Creation is considered complete only after
+the original creator returns that actor attached, managed, spawned and not
+spawning. Nil/unknown flags do not qualify. Cleanup never cancels an in-flight
+static spawn: a late callback remains owned and can then be retired. Never-ready
+or unknown native outcomes remain held. Cleanup needs completed creation and
+confirmed absence from the creator, global lookup and retained handle before
+the slot can be reused. No population-wide delete or fallback actor is used.
+
+The common tag inventory permits this instance's known IDs, including pending
+tokens, but blocks unknown historical actors after reload. **Stop all slots and
+wait until every status is `closed` before unloading.** `onShutdown` queues
+cleanup only; there may be no later update to execute it. A blocked historical
+actor is not automatically adopted or deleted by a replacement fixture.
+
+`submittedTarget` records the native command target. `observed.pose` comes from
+the actual actor. `placementVerified` requires fresh matching readback within
+5 cm and 0.02 radians, the exact template and the expected `entEntity` root.
+A call returning does not prove placement. Observation failure clears current
+readback and qualification. Wrong template/root blocks movement but still
+permits safe retirement of the exact owned actor. `requestedAppearance` is
+`default`; there is no verified appearance getter here. `visualQualified`
+always remains false. No network descriptor or HOST appearance is inferred.
+
+State transitions emit structured diagnostic lines with slot, profile,
+generation, exact ID, submitted/requested/actual pose, template evidence and
+qualification. Logging is limited to 64 lines per fixture instance, not every
+frame. Status remains available after that limit. See
+[FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for offline evidence and limits.
+
+## Remaining live gates
 
 Later live gates are both models visible, correct default appearance, idle
 without T-pose/deformation, no autonomous AI, exact orientation/readback and
