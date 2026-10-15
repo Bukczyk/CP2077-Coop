@@ -5,6 +5,9 @@ the existing `Judy/default` entity, a strict local profile builder and a separat
 opt-in CET fixture. The fixture can queue local creation, movement and cleanup;
 it has not been installed or tested in Cyberpunk. The existing runtime, Judy
 asset, production builders and published packages stay unchanged.
+An additional private encounter-profile builder prepares a separate Mitch asset
+for the existing idle/impact/death graph. This is an asset prerequisite only;
+the local fixture below still uses its original idle-only profiles.
 
 ## Supported subset
 
@@ -39,6 +42,67 @@ entries. Local component labels remain identical, including the historic
 network identity. No vanilla entity template, mesh, animation or rig payload is
 copied into this source. There is no `NPCPuppet`, template inheritance, AI,
 navigation, damage or collision component.
+
+## Encounter asset prerequisite, not activated
+
+`build_encounter_profile.py` uses the existing Judy encounter entity or the new
+`cp2077coop_networkhumanoid_mitch_encounter.ent.json`. Its explicit
+`judy_default`/`mitch_default` labels select build inputs only. They do not change
+`build_profile.py`, the fixture's resource allowlist, production selection or
+the historical appearance comparison.
+
+The Mitch encounter entity references the reviewed Mitch proxy, `man_base.rig`
+and three male animation sets: `ma_gang_unarmed_locomotion_combat.anims`,
+`ma_gang_unarmed_reaction_ranged_impact.anims` and
+`ma_gang_unarmed_reaction_ranged_death.anims`. Read-only game 2.31 metadata reports
+the same named clips used by the existing encounter graph:
+`idle_stand`, `impact_stand_front_torso_l` (about 0.4667 s) and
+`death_front_torso_l_idle` (about 1.9333 s). This establishes resource/rig/clip
+compatibility, not male deformation or playback quality.
+
+The graph remains the unchanged authored
+`base\cp2077coop\animations\networkhumanoid_encounter.animgraph`, with phase
+0/1/2 and normalized hit/death progress. Root motion and event dispatch remain
+disabled. The added entity remains `entEntity` with animated, skinned-mesh and
+animation-controller components only. It has no inherited NPC/AI, collider,
+native damage handling or ragdoll. Physical hit detection is a separate task.
+
+Validation checks exact profile mesh, rig, three ordered animation sets and
+resource flags in both template/compiled copies, plus the exact ordered
+dependency table. A temporary canonical copy substitutes only those already
+checked profile references and invokes the unchanged Judy encounter validator.
+Its complete `Data` must also equal the hash-pinned reviewed Judy source after
+resolving valid equivalent handle forms. That pins controller type/enabled
+binding/masks and all other non-profile fields, not just matching component
+copies. Conflicting, ambiguous, missing or cyclic handles fail; identical
+repeated definitions and valid WolvenKit references remain accepted. LF and CRLF
+checkouts have the same content pins. The old production validators are not
+modified or monkeypatched.
+
+```powershell
+python tests/passive_model_encounter_asset_tests.py
+python experiments/passive-models/build_encounter_profile.py --profile mitch_default `
+  --wolvenkit 'D:\tools\WolvenKit.Console-9.0.1\WolvenKit.CLI.exe' `
+  --output-dir 'D:\private-builds\mitch-encounter-new'
+```
+
+Use the pinned official WolvenKit Console 9.0.1 and a new private output folder.
+The default build profile remains Judy. The archive contains **one authored
+entity only**. The unchanged encounter graph is an external authored prerequisite;
+mesh, rig and animation files are external installed dependencies. The builder
+does not bundle the graph or any proprietary game payload. It verifies actual
+roundtrip data, archive listing, unpacked bytes and unchanged input files, and
+refuses existing output folders. These partial archives are not installation
+packages and are not added to `game-files/latest` or release downloads.
+
+Both private profiles built successfully. The new Judy entity bytes exactly
+match the earlier encounter build; pack timestamps make whole-archive equality
+a different question. Existing Judy, idle, hittable and graph sources remain
+unchanged. A later reviewed fixture extension must queue exact-generation
+reaction/death presentation on the update thread and distinguish queue acceptance
+from visible playback. This checkpoint does not enable it or change PR12 life
+restoration, combat, networking or shared interfaces. See
+[FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for hashes and offline evidence.
 
 ## Resource evidence and limits
 
