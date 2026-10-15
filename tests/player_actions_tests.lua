@@ -11,6 +11,16 @@ local function actor(id)
     function a:CP2077Session_HeldPresentationMatches(weapon,drawn)
         return self.drawn==drawn and (not drawn or self.weapon==weapon)
     end
+    function a:CP2077Session_ReadPresentationWeapon(weapon,drawn)
+        if self.readWeapon then return self:readWeapon(weapon,drawn) end
+        local spawning=self.slotSpawning==true
+        local attached=self.drawn and self.weaponAttached~=false
+        return {ownerID={hash=self.id},entityID={hash=self.weaponEntity or "weapon-"..self.id},
+            record=self.weapon,spawning=spawning,slotEmpty=not self.drawn,hasItem=self.drawn,attached=attached,
+            matches=not spawning and (not self.drawn or attached) and self:CP2077Session_HeldPresentationMatches(weapon,drawn),
+            appearance=self.appearance or "default",muzzleAvailable=self.drawn and attached,
+            muzzlePosition={x=1,y=2,z=3},muzzleRotation={i=0,j=0,k=0,r=1}}
+    end
     function a:CP2077Session_ApplyStance(crouched)
         if self.probeLocked then return false end
         self.stances=self.stances+1; self.requestedCrouch=crouched; return true
@@ -137,6 +147,83 @@ p,map=fixture(); a=actor("already-matchingULL"); map.a=a
 p:stage(scope,"a",1,state(),0); p:bind(scope,"a",a,0)
 check(p:step(scope,"a",2.1)=="observed" and #a.commands==0,"timeout belongs to admitted work only")
 
+-- Missing item objects during streaming are not confirmed holsters. A matching
+-- record on a detached item is not a completed draw, either.
+for _,mode in ipairs({"empty_spawning","drawn_spawning","detached","empty_pending"}) do
+    p,map=fixture(); a=actor("readiness-"..mode.."ULL"); map.a=a
+    local desired=state()
+    if mode=="empty_spawning" then a.slotSpawning=true
+    elseif mode=="drawn_spawning" then
+        a.drawn,a.weapon,a.slotSpawning=true,"Items.Pistol",true; desired=state("Items.Rifle",true)
+    elseif mode=="detached" then
+        a.drawn,a.weapon,a.weaponAttached=true,"Items.Pistol",false; desired=state("Items.Pistol")
+    else
+        local read=a.CP2077Session_ReadPresentationWeapon
+        a.readWeapon=function(self,weapon,drawn)
+            self.readWeapon=nil; local sample=read(self,weapon,drawn)
+            sample.slotEmpty,sample.matches=false,false; return sample
+        end
+    end
+    p:stage(scope,"a",1,desired,0); p:bind(scope,"a",a,0)
+    local status,reason=p:step(scope,"a",0)
+    check(status=="queued" and reason:find("weapon_",1,true)==1,"pending native slot never reports matched equipment: "..mode)
+    check(#a.commands==0 and a.stances==0,"pending slot blocks competing equipment/stance mutation")
+    check(not p:inspect("a").commandOwned,"no command invented while attachment is pending")
+    a.slotSpawning,a.weaponAttached=false,true; a.readWeapon=nil
+    p:step(scope,"a",0.1)
+    if mode=="drawn_spawning" then
+        check(#a.commands==1 and a.stances==1,"known ready slot permits the requested switch/stance")
+    else check(p:inspect("a").status=="observed","fresh ready slot can complete without mutation") end
+end
+
+-- A pending slot cannot cancel/replace admitted work or extend its deadline.
+p,map=fixture(); a=actor("pending-switchULL"); a.drawn,a.weapon=true,"Items.Pistol"; map.a=a
+p:stage(scope,"a",1,state("Items.Rifle"),0); p:bind(scope,"a",a,0); p:step(scope,"a",0)
+a.drawn,a.weapon,a.slotSpawning=false,"",true
+check(p:step(scope,"a",0.1)=="queued" and p:inspect("a").commandOwned and a.stops==0,
+    "switch retains command while the item object is streaming")
+check(p:step(scope,"a",2.1)=="failed" and a.stops==1,"pending slot still obeys admitted deadline")
+
+-- Native sample belongs to one exact actor/item. Unknown flags or an unavailable
+-- snapshot fail closed instead of falling back to the old record-only matcher.
+for _,mode in ipairs({"nil","wrong_owner","numeric_item","zero_item","nil_spawning","malformed_empty"}) do
+    p,map=fixture(); a=actor("bad-sampleULL"); a.drawn,a.weapon=true,"Items.Pistol"; map.a=a
+    local original=a.CP2077Session_ReadPresentationWeapon
+    a.readWeapon=function(self,weapon,drawn)
+        if mode=="nil" then return nil end
+        self.readWeapon=nil; local sample=original(self,weapon,drawn)
+        if mode=="wrong_owner" then sample.ownerID={hash="otherULL"}
+        elseif mode=="numeric_item" then sample.entityID={hash=9007199254740992}
+        elseif mode=="zero_item" then sample.entityID={hash="0ULL"}
+        elseif mode=="nil_spawning" then sample.spawning=nil
+        else sample.slotEmpty="false" end
+        return sample
+    end
+    p:stage(scope,"a",1,state("Items.Pistol"),0); p:bind(scope,"a",a,0)
+    check(p:step(scope,"a",0)=="failed" and p:inspect("a").reason=="readback_unavailable",
+        "invalid weapon snapshot cannot produce a ready match: "..mode)
+    check(#a.commands==0 and a.stances==0 and p:inspect("a").weaponEvidence==nil,
+        "invalid weapon observation makes no mutation or stale evidence")
+end
+
+-- Appearance and actual muzzle transform are detached diagnostic samples only.
+p,map=fixture(); a=actor("weapon-evidenceULL"); a.drawn,a.weapon,a.appearance=true,"Items.Pistol","observed_variant"; map.a=a
+p:stage(scope,"a",1,state("Items.Pistol",false,true),0); p:bind(scope,"a",a,0)
+check(p:step(scope,"a",0)=="partial","muzzle data does not upgrade unsupported ADS")
+local evidence=p:inspect("a").weaponEvidence
+check(evidence.itemKey=="weapon-"..a.id and evidence.appearance=="observed_variant"
+    and evidence.muzzle=="sampled" and evidence.x==1 and evidence.qr==1 and evidence.observedAt==0,
+    "actual item identity, appearance and finite muzzle sample are recorded")
+evidence.x=999; check(p:inspect("a").weaponEvidence.x==1,"diagnostic copy cannot mutate controller evidence")
+local original=a.CP2077Session_ReadPresentationWeapon
+a.readWeapon=function(self,weapon,drawn)
+    self.readWeapon=nil; local sample=original(self,weapon,drawn); sample.muzzlePosition.x=0/0; return sample
+end
+check(p:step(scope,"a",0.1)=="partial" and p:inspect("a").weaponEvidence.muzzle=="invalid"
+    and p:inspect("a").weaponEvidence.x==nil,"nonfinite muzzle rejected as evidence without inventing ADS failure/success")
+a.readWeapon=function() return nil end
+check(p:step(scope,"a",0.2)=="failed" and p:inspect("a").weaponEvidence==nil,"lost sample clears prior weapon evidence")
+
 -- Cleanup must retire exact command; failure blocks replacement and scope reset.
 p,map=fixture(); a=actor("101ULL"); map.a=a
 p:stage(scope,"a",1,state("Items.Pistol"),0); p:bind(scope,"a",a,0); p:step(scope,"a",0); a.cancel=false
@@ -226,14 +313,18 @@ local Probe=assert(loadfile(root.."/experiments/player-presentation/aim_probe.lu
 local function aimActor(key)
     local a=actor(key); a.weapon,a.drawn,a.upper="Items.Pistol",true,0
     a.aimRequests,a.restoreRequests=0,0
-    function a:CP2077Session_AcquireAimProbe(record)
-        if self.lease or self.upper~=0 or not self.attached or self.weapon~=record then return nil end
-        self.lease={}; self.probeLocked=true
+    function a:CP2077Session_AcquireAimProbe(record,weaponEntity)
+        if self.lease or self.upper~=0 or not self.attached or self.weapon~=record
+            or not weaponEntity or weaponEntity.hash~=(self.weaponEntity or "weapon-"..self.id)
+            or self.slotSpawning or self.weaponAttached==false then return nil end
+        self.lease={itemKey=weaponEntity.hash,record=record}; self.probeLocked=true
         if self.throwAcquire then error("after acquiring native lease") end
         return self.lease
     end
     function a:CP2077Session_ReadAimProbe(lease)
         if self.lease~=lease or not self.attached then return -1 end
+        if self.weapon~=lease.record or (self.weaponEntity or "weapon-"..self.id)~=lease.itemKey
+            or self.slotSpawning or self.weaponAttached==false then return -1 end
         if self.upper==1 and lease.requested then lease.seen=true end
         return self.upper
     end
@@ -373,4 +464,25 @@ check(probe:inspect().reservationHeld and probe:inspect().retirementRequired and
 check(a.aimRequests==0 and a.restoreRequests==0 and not p:reset("new scope",0),
     "uncertain acquisition does not submit Aim/Normal or reset ownership")
 check(not p:unbind(scope,"a",a.id,0),"uncertain acquisition blocks exact actor unbind")
+
+-- Aim owns one exact weapon instance, not merely its record. Slot transitions
+-- cannot send Normal or claim completed restoration on another same-model gun.
+for _,mode in ipairs({"replacement_before_acquire","replacement_during_aim","spawning","detached"}) do
+    probe,p,map=prepareProbe(aimActor("exact-weaponULL"),"a"); a=map.a
+    if mode=="replacement_before_acquire" then
+        a.weaponEntity="replacement-weaponULL"
+        check(not probe:start(scope,"a",0) and a.aimRequests==0,"stale item binding cannot acquire native aim lease")
+        check(not probe:inspect().reservationHeld and not probe:inspect().retirementRequired,"rejected native lease owns no actor")
+    else
+        check(probe:start(scope,"a",0),"acquire exact weapon lease")
+        a.upper=1; probe:step(0.1)
+        if mode=="replacement_during_aim" then a.weaponEntity="replacement-weaponULL"
+        elseif mode=="spawning" then a.slotSpawning=true
+        else a.weaponAttached=false end
+        check(probe:step(0.2)=="failed" and probe:inspect().retirementRequired,"uncertain held weapon retains aim ownership: "..mode)
+        check(a.restoreRequests==0 and a.lease~=nil,"weapon transition never forces Normal or releases native lease")
+        local sample=probe:inspect().weaponEvidence
+        check(sample and sample.observedAt==0.2,"failed readiness retains explicitly timestamped diagnostic sample")
+    end
+end
 print("player action checks: "..checks)

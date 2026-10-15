@@ -92,12 +92,74 @@ public func CP2077Session_HasPresentationWeapon() -> Bool {
 
 @addMethod(NPCPuppet)
 public func CP2077Session_HeldPresentationMatches(record: TweakDBID, drawn: Bool) -> Bool {
-    // Read the actual right-hand attachment, not the last submitted record.
+    let sample = this.CP2077Session_ReadPresentationWeapon(record, drawn);
+    return IsDefined(sample) && sample.matches;
+}
+
+// Local observation only. No network descriptor or visual ADS verdict.
+public class CP2077PresentationWeaponSample extends IScriptable {
+    public let ownerID: EntityID;
+    public let entityID: EntityID;
+    public let record: TweakDBID;
+    public let spawning: Bool;
+    public let slotEmpty: Bool;
+    public let hasItem: Bool;
+    public let attached: Bool;
+    public let matches: Bool;
+    public let appearance: CName;
+    public let muzzleAvailable: Bool;
+    public let muzzlePosition: Vector4;
+    public let muzzleRotation: Quaternion;
+}
+
+@addMethod(NPCPuppet)
+public func CP2077Session_ReadPresentationWeapon(record: TweakDBID, drawn: Bool) -> ref<CP2077PresentationWeaponSample> {
     let transactions = GameInstance.GetTransactionSystem(this.GetGame());
-    if !IsDefined(transactions) { return false; }
+    if !this.IsAttached() || !IsDefined(transactions) { return null; }
+    let sample = new CP2077PresentationWeaponSample();
+    sample.ownerID = this.GetEntityID();
+    sample.record = t"";
+    sample.spawning = transactions.IsSlotSpawningAnyItem(this, t"AttachmentSlots.WeaponRight");
+    sample.slotEmpty = transactions.IsSlotEmpty(this, t"AttachmentSlots.WeaponRight");
     let held = transactions.GetItemInSlot(this, t"AttachmentSlots.WeaponRight");
-    if !drawn { return !IsDefined(held); }
-    return IsDefined(held) && Equals(ItemID.GetTDBID(held.GetItemID()), record);
+    sample.hasItem = IsDefined(held);
+    let itemID: ItemID;
+    if sample.hasItem {
+        sample.entityID = held.GetEntityID();
+        if !EntityID.IsDefined(sample.entityID) { return null; }
+        itemID = held.GetItemID();
+        sample.record = ItemID.GetTDBID(itemID);
+        sample.attached = held.IsAttached();
+        if sample.attached && !sample.spawning && !sample.slotEmpty {
+            sample.appearance = transactions.GetItemAppearance(this, itemID);
+            let weapon = held as WeaponObject;
+            if IsDefined(weapon) && CP2077PlayerPresentation.SupportedWeapon(sample.record) {
+                let muzzle = weapon.GetMuzzleSlotWorldTransform();
+                sample.muzzlePosition = Transform.GetPosition(muzzle);
+                sample.muzzleRotation = Transform.GetOrientation(muzzle);
+                sample.muzzleAvailable = true; // Caller checks finite values; not visual proof.
+            }
+        }
+    }
+    // Reject a changing slot/actor rather than joining observations from two
+    // item lifetimes. All reads occur on the caller's game-thread tick.
+    let current = transactions.GetItemInSlot(this, t"AttachmentSlots.WeaponRight");
+    if !this.IsAttached() || NotEquals(this.GetEntityID(), sample.ownerID)
+        || NotEquals(IsDefined(current), sample.hasItem)
+        || NotEquals(transactions.IsSlotSpawningAnyItem(this, t"AttachmentSlots.WeaponRight"), sample.spawning)
+        || NotEquals(transactions.IsSlotEmpty(this, t"AttachmentSlots.WeaponRight"), sample.slotEmpty) { return null; }
+    if sample.hasItem {
+        if NotEquals(current.GetEntityID(), sample.entityID) || current.GetItemID() != itemID
+            || NotEquals(current.IsAttached(), sample.attached) { return null; }
+    }
+    if !sample.spawning {
+        if drawn {
+            sample.matches = sample.hasItem && sample.attached && !sample.slotEmpty && Equals(sample.record, record);
+        } else {
+            sample.matches = !sample.hasItem && sample.slotEmpty;
+        }
+    }
+    return sample;
 }
 
 // Retained on the exact disposable projection, including across Lua rebinding.

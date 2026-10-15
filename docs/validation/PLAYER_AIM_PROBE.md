@@ -5,6 +5,12 @@ Owner: KyleBuildsAI. UTC checkpoint: 2026-10-09. Branch:
 No protocol, server, native session declaration, installed runtime, controls,
 settings or saves changed. No game was launched or live test performed.
 
+2026-10-15 follow-up: [weapon readiness and exact held-item lifetime](PLAYER_WEAPON_READINESS_2026-10-15.md)
+now gate the existing probe. Native acquisition receives the exact observed item
+EntityID; later reads and release require that same attached item. The Lua probe
+records timestamped appearance/muzzle evidence without upgrading `visual` from
+`unverified`. The original checkpoint below remains historical evidence.
+
 ## Candidate comparison from installed primary sources
 
 The source root inspected is
