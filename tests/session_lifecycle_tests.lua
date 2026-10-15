@@ -461,6 +461,25 @@ s.overlayOpen(); local activations=#s.activations; s.draw(); s.draw()
 assert(#s.activations==activations,"UI draw must not run engine/session cleanup")
 s.tick(); assert(#s.activations==activations+2,"queued UI reconnect runs once on update")
 ImGui=nil; s.shutdown()
+-- A persistent engine lookup error must not let the UI prevent failed-mode cleanup.
+do
+    local state=fixture("HOST",false,false,false,true)
+    state.remotes={{id=2,entity=uint64(1),x=10}}
+    state.init(); state.tick(2)
+    assert(state.markers[2],"seed an owned marker")
+    local getPlayer=Game.GetPlayer
+    Game.GetPlayer=function() error("persistent player lookup failure") end
+    state.allowBridgeError=true; state.markerCleanupFails=true
+    state.tick()
+    assert(state.markers[2],"failed cleanup keeps the marker owned")
+    state.markerCleanupFails=false
+    local ok,reason=pcall(function() state.tick(90) end)
+    assert(ok,"UI player lookup must not escape failed-mode cleanup: "..tostring(reason))
+    assert(not state.markers[2] and next(state.bridge.markerDiagnostics())==nil,
+        "marker retirement must progress even while player lookup keeps failing")
+    Game.GetPlayer=getPlayer
+    state.shutdown()
+end
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

@@ -377,7 +377,8 @@ registerForEvent("onUpdate", function(delta)
     if not initialized then return end
     if reconnectRequested then reconnectRequested=false; reconnect() end
     if failed then
-        sessionUI:update({loaded=Game.GetPlayer()~=nil,error=true})
+        local playerKnown, currentPlayer = pcall(function() return Game.GetPlayer() end)
+        sessionUI:update({loaded=playerKnown and currentPlayer~=nil,error=true})
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
         time = time + delta
