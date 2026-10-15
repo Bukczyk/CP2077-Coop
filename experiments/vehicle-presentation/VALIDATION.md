@@ -161,6 +161,74 @@ It contains `baseline.json`, frozen baseline adapter/controller copies,
 `ctest.log`, independent review evidence and the isolated compile JSON/log.
 Earlier evidence remains unchanged.
 
+## Fresh movement descriptor/context correction, 2026-10-15
+
+Base: `cc66fb9ae1683d3bf5b7384e45578ffcbf9f8a5b`. Exact six-file scope:
+`engine.lua`, `engine_hooks.reds`, `README.md`, `VALIDATION.md`,
+`tests/vehicle_engine_adapter_tests.lua` and
+`tests/vehicle_movement_integration_tests.lua`. The fixture, movement controller,
+entrypoint, seat policy, native plugin, protocol and package contents are unchanged.
+
+The preceding actual-entrypoint audit reproduced two gaps after a valid ready
+sample: pregame becoming true still admitted movement; and the actual car
+appearance plus current record default could both change away from the frozen
+creation appearance and still admit movement. The native boundary was modeled
+from inspected source, not executed in a game.
+
+Movement now uses fresh explicit loaded/unpaused context, the retained creator
+system's ready/managed/spawned/not-spawning flags, attached car and creator IDs,
+exact supported record and the frozen appearance/color contract. All those Lua
+reads and native argument construction occur before helper entry in a protected
+preflight. A failure returns false without pending/ambiguous movement ownership.
+The native helper gains a final `expectedAppearance: CName` argument and
+independently checks pause/pregame and current record/appearance/color against it.
+Use matched Lua/helper files. The actual native invocation remains outside the
+preflight exception guard: a native exception may follow submission and must
+retain unknown outcome ownership. Existing safe-exit, occupied-car and cleanup
+rules are unchanged.
+
+Private evidence:
+`D:\Downloads\syncfix\bench-artifacts\20261015-vehicle-movement-preflight`.
+
+- `baseline-fixed-reproductions.json` / `validate_focused.py`: the exact preceding
+  source is preserved in `baseline-cc66fb9`. Five cases run against old and fixed
+  actual entrypoints in both Lua runtimes. The changed-default/current-appearance
+  and pregame admissions reproduce on the old source, then reject before helper
+  entry on the fix. The same inspected old-helper boundary model is used on both
+  sources, isolating the Lua correction. Valid, paused and appearance-only
+  controls retain their expected outcomes.
+- `focused-lua-validation.json`: all four vehicle suites pass under compiled
+  Lua 5.4 and LuaJIT, with 544 fixture, 6,846 engine adapter, 111 movement and
+  69 movement-integration checks per runtime. These include assertion checks in
+  the native mocks, not 7,570 separate scenarios. The new actual-entrypoint cases
+  cover nil/non-Boolean/throwing context, missing/throwing cosmetics, matched but
+  changed defaults, original creator readiness, exact identities, fresh record
+  faults, changes after Lua preflight, explicit recovery, constructor failure,
+  full quaternion forwarding and unknown native result/cleanup exclusion.
+- `redscript/compile-20261015T120933800908Z.json` and its log: isolated compilation
+  of matched session and experimental vehicle scripts against copied actual
+  game 2.31 cache/compiler and Codeware succeeds. Source, installed and compiler
+  input hashes are unchanged. No installed files were written and no game ran.
+- `independent-final-review.json` and `independent-entrypoint-final-review.json`:
+  independent review reran all four suites in both runtimes and 20 additional
+  actual-entrypoint scenarios (920 checks per runtime). It verified the current
+  helper hash against the successful compilation and rechecked the installed
+  input hashes. The source, tests and matched-file documentation passed review.
+- `branch-validation.json` and `branch-{configure,build,ctest}.log`: reconfigure
+  and incremental Windows x64 Release build passed using the existing Visual
+  Studio 17 2022 configuration, `COOP_BUILD_PLUGIN=ON`. All 29/29 CTests passed;
+  the same 29 tests remain registered. Executable source/test hashes stayed
+  unchanged. This was an incremental validation, not a fresh C++ implementation.
+  `frozen-source-manifest.json` pins all six scoped files. Hosted CI is checked
+  separately after publication.
+
+The native guard behavior in the Lua cases is a model of inspected REDscript.
+Successful compilation does not execute its runtime checks. Actual teleport,
+appearance, physics settling, seats and camera behavior remain live gates.
+`movementQualified=false` and `cameraVerified=false` remain explicit. This fixes
+admission for the existing supported local fixture; it does not synchronize cars
+between PCs or add vehicle authority.
+
 ## Original checkpoint passed locally
 
 - Fresh Windows x64 Release plugin/server/core build with MSVC 19.41, VS 2022.

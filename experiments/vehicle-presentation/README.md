@@ -70,6 +70,9 @@ network/session/authority ownership. Starting revision: upstream main
 - A separately enabled, bounded unoccupied-car pose probe, using the vanilla
   whole-vehicle teleport route with the complete quaternion converted to three-axis
   Euler orientation. Submission is separate from actual pose/low-speed readback.
+  Fresh admission requires explicit loaded/unpaused context, the original creator
+  and completed lifecycle, exact record and the lifetime-frozen appearance/color
+  contract. Both Lua and the matched native helper enforce the descriptor.
   It is a hook experiment, not continuous movement or physics synchronization.
 
 The fixture can own one car per activation; this is a test boundary, not a
@@ -85,7 +88,8 @@ folder named `zz_VehicleSeatFixture`. Do not add these files to the default runt
 or the currently published movement ZIPs. No automatic installer is included.
 Use the Lua files and native helper from the same checkpoint. The seat-request
 helper now takes the frozen expected appearance as its fourth argument; mixing
-this adapter with an older `engine_hooks.reds` is unsupported.
+this adapter with an older `engine_hooks.reds` is unsupported. The pose helper
+also takes the frozen expected appearance as its final (sixth) argument.
 
 Start in safe free roam, on foot, with a clear road surface 6-15 metres away and
 within 3 metres vertically. The caller supplies that clear point explicitly;
@@ -149,9 +153,30 @@ probe.stop() -- pending/unknown outcome holds the exact car until reconciled
 The exact car ID, creating player's ID and activation generation must match.
 The car must be fully spawned, attached, still managed, empty, and below 0.2 m/s;
 the creator must be on foot. Actual model/appearance/color must match the supported
-descriptor. These checks occur in Lua and immediately before the native call.
-The adapter independently rechecks pause at submission, including pause-query
-failure. No keys or automatic movement loop are registered.
+descriptor. The Lua adapter freshly checks explicit `IsGamePaused()==false` and
+`IsPreGame()==false`, the original creating DynamicEntitySystem's readiness and
+managed/spawned/not-spawning flags, attached exact creator and car IDs, record,
+actual appearance/color and current record default before entering the helper.
+The default and actual appearance must still equal the **frozen creation
+appearance**, not merely equal each other. Changing both to another variant
+cannot admit a move. No keys or automatic movement loop are registered.
+
+Missing, throwing or unknown preflight observations return a definite rejection:
+no helper call, no pending movement and no ambiguous-outcome fault. Argument
+construction is also before native entry. A later explicit request may recover
+after valid context returns; there is no automatic retry. A hard record mismatch
+still latches the existing identity fault. An observed cosmetic quarantine
+remains sticky as described above; this preflight does not clear it.
+
+`CP2077VehicleProbe_ApplyPose` independently checks loaded/unpaused context and
+compares record/default/actual appearance against the frozen `CName` supplied by
+this owning adapter, with color exactly `None`. It also keeps the existing
+empty-car, on-foot, low-speed, lifecycle, generation and movement bounds. A
+definite native `false` clears the pending command. An exception after entering
+the native helper still means the outcome is unknown, retains pending ownership
+and blocks cleanup until actual readback resolves it. The Lua adapter and helper
+must be from the same revision. Native compilation validates the signature, not
+live vehicle behavior.
 
 Each activation allows at most 16 explicit commands, one pending at a time, within
 2 m, 0.25 m vertically and 30 degrees of its origin. Each command is at most
