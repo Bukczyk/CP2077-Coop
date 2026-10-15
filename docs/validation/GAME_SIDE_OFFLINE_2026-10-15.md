@@ -17,10 +17,10 @@ This branch combines the following reviewable source slices on upstream main
 | 23 | feat/vehicle-pose-application | d0f8654e5a2b8742968837b078574593d843355d |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | 97fd12f12a15257b76b92ecff102203743c601d9 |
+| 26 | feat/passive-model-fixture | 0d03be9ddba2e3333f01cfda90a62e4b03094f51 |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `4b29a040ff1c8b4a2f98492ad0067f43887cb56f`.
+Combined source tested: `29e21feb20ebc5b5e6a22a3cc450771ec8d9357e`.
 PR12's connected controller is not integrated here. Only its existing pure
 presentation-state `restore` method is reused by the local fixture. Its connected
 evidence remains separate, and the life-baseline bridge request awaits coordination.
@@ -151,10 +151,10 @@ six files merged without conflicts; seat policy and the controller are unchanged
 ## Passed offline
 
 - Fresh configure and incremental Windows x64 Release plugin, session server
-  and core build passed. Native inputs are unchanged; all previous 48 tests remain
-  registered alongside the new player action fixture.
-- 49/49 CTests, including existing real-socket/core tests and the new suites.
-- 28 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
+  and core build passed. Native inputs are unchanged; all previous 49 tests remain
+  registered alongside the new Defeated asset contract.
+- 50/50 CTests, including existing real-socket/core tests and the new suites.
+- Prior 28 focused suites under LuaJIT 2.1 still apply to unchanged source, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
@@ -219,7 +219,25 @@ six files merged without conflicts; seat policy and the controller are unchanged
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current player action fixture logs:
+Current Defeated asset prerequisite logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-defeated-held-assets`,
+`combined-validation.json` and configure/build/CTest logs: 50 CTests pass at
+`29e21feb`, preserving all previous 49 registrations. The Release build includes
+the plugin. All source hashes remained unchanged during validation. All previous
+Lua/native/REDscript hashes match the player-action checkpoint below, so its
+28 LuaJIT suites and isolated script compilation apply without a redundant run.
+
+The new explicit builder mode compiles two authored Judy/Mitch Defeated entities
+and a separate sampled graph. Both actual WolvenKit roundtrips, exact two-resource
+archive listings and extracted hashes passed independent review. The default
+encounter build retains its prior Judy binary and one-resource archive behavior.
+The new contract has 24 tests; branch Release/core validation passed 32 CTests.
+Graph alias identity, forward reference ordering and explicit serializer defaults
+were corrected before publication, with failed evidence retained. The assets are
+not yet selectable by the Lua fixture; distinct supplied Defeated handling and
+live pose/transition qualification remain open. No shared contract changed.
+
+Previous player action fixture logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-player-action-fixture`,
 `combined-validation.json` and configure/build/CTest/LuaJIT logs: 49 CTests and
 28 LuaJIT suites pass at `4b29a04`, retaining all prior registrations. Windows
