@@ -17,11 +17,12 @@ This branch combines the following reviewable source slices on upstream main
 | 23 | feat/vehicle-pose-application | cc66fb9ae1683d3bf5b7384e45578ffcbf9f8a5b |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | d583c2affa9f33c54dc36101477d44c35afcfeef |
+| 26 | feat/passive-model-fixture | 97fd12f12a15257b76b92ecff102203743c601d9 |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `d49d750c3b98e372234bce5274e0c94762995444`.
-PR12 restoration is not merged into this verification branch. Its earlier
+Combined source tested: `3d2f4fe1e072d3ff9187f62753f9c38a9f87b4fd`.
+PR12's connected controller is not integrated here. Only its existing pure
+presentation-state `restore` method is reused by the local fixture. Its connected
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
 ## Actual conflict resolution
@@ -115,16 +116,25 @@ component copies require the reviewed male mesh/rig/three animation sets and
 dependency metadata; full normalized Data must match the pinned Judy reference
 after only checked profile substitutions. Disabled/mistyped control bindings
 cannot hide in matching copies. Existing assets, graph, Lua fixture and PR12
-remain unchanged. The fixture still uses its original idle-only profiles.
-This merged without conflicts and preserves every existing test registration.
+remained unchanged by that asset slice. It merged without conflicts and preserved
+every existing test registration.
+
+The latest fixture extension explicitly selects Judy/Mitch encounter profiles,
+stages reaction/death onUpdate and checks original native identity before every
+setter. Logical terminal death survives body retirement/replacement in this
+fixture instance; old nonlethal hits do not replay. Fresh commands admitted before
+binding keep their own serial. Per-slot effective clocks freeze on pause or failed
+observation without blocking siblings. Partial setters can retry only the latest
+normalized sample. Queue submission remains unobserved animation, not health or
+network synchronization. The ten files merged without conflicts; native helpers,
+assets, production runtime and shared network contracts are unchanged.
 
 ## Passed offline
 
 - Fresh configure and incremental Windows x64 Release plugin, session server
-  and core build passed. Native inputs are unchanged; CMake registered the new
-  encounter asset test without dropping any existing suite.
+  and core build passed. Native inputs and all 48 test registrations are unchanged.
 - 48/48 CTests, including existing real-socket/core tests and the new suites.
-- 24 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
+- 27 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
@@ -141,8 +151,8 @@ This merged without conflicts and preserves every existing test registration.
   passed. Judy entity bytes match the earlier encounter build. Fourteen protected
   asset/runtime files remain unchanged. These private archives contain only one
   authored entity; the unchanged graph and installed resources are external.
-- 582 focused model-fixture checks in Lua 5.4 and 584 in LuaJIT: 140 controller,
-  248/250 actual adapter and 194 real entrypoint checks. Independent review covered
+- 811 focused model-fixture checks in Lua 5.4 and 813 in LuaJIT: 180 controller,
+  334/336 actual adapter and 297 real entrypoint checks. Independent review covered
   per-slot failure isolation, late callbacks, unknown/duplicate creation,
   stale generations, wrong templates, observed pose and bounded diagnostics.
   Current-name mismatch/unavailability, sibling isolation, recovery, exact
@@ -155,6 +165,12 @@ This merged without conflicts and preserves every existing test registration.
   The comparison adds 54 independent actual-PR27-producer-to-PR26-consumer checks
   per runtime, with mocked native boundaries. Four audited resource SHA256s and
   seven computed native identifiers agree with metadata and the pinned SDK.
+- New encounter integration: 237 controller and 305 engine checks per runtime
+  passed in independent literal-path CET-style sandboxes with no package/global
+  module fallback. These use the actual staged modules and mocked native APIs.
+  Initial/replacement binding, retained death, stale commands, per-slot pause,
+  setter ordering, exact reference checks and partial retry are covered. Shared
+  state/adapter and connected-encounter suites also pass with the reused method.
 - Vehicle follow-up: 3655 adapter, 544 fixture, 111 movement and 69 integration
   checks per Lua interpreter, including retained creator/actor recovery and the
   actual-entrypoint paused-request regression. Five additional cosmetic/record
@@ -171,7 +187,17 @@ This merged without conflicts and preserves every existing test registration.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current encounter-asset logs:
+Current encounter-fixture logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-passive-encounter-fixture`,
+`combined-validation.json`, configure/build/CTest/LuaJIT logs: 48 CTests and
+27 LuaJIT suites passed at `3d2f4fe1`. The separate branch passed 31 CTests and
+six LuaJIT suites. Exact source/test hashes stayed unchanged. Native and REDscript
+inputs remain identical, so the prior isolated script compilation still applies.
+Independent staged-module reviews and the frozen ten-file manifest are retained
+there. Hosted final-head checks are recorded separately in GitHub and the vault.
+No game was launched or installed and no package version was published.
+
+Previous encounter-asset logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-mitch-encounter-profile`,
 `combined-validation.json`, `combined-build.log`, `combined-ctest.log` and
 `combined-luajit.log`: 48 CTests and 24 LuaJIT suites pass at `d49d750c`.
