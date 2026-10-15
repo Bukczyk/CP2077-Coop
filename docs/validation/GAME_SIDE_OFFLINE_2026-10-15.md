@@ -17,10 +17,10 @@ This branch combines the following reviewable source slices on upstream main
 | 23 | feat/vehicle-pose-application | cc66fb9ae1683d3bf5b7384e45578ffcbf9f8a5b |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | e8bd1d913b35125015c386915b229fb16ee00897 |
+| 26 | feat/passive-model-fixture | d583c2affa9f33c54dc36101477d44c35afcfeef |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `8329c8e78395d175db3d411abc10dc4535478501`.
+Combined source tested: `d49d750c3b98e372234bce5274e0c94762995444`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -109,13 +109,21 @@ authenticated nor simultaneous/current evidence. No model selection, engine call
 native helper, lifecycle mutation, shared interface or asset changed. This merged
 without conflicts; the seven contributed files match the exact PR26 source.
 
+The encounter-asset follow-up adds a separately named Mitch entity for the
+existing phase/progress graph and a strict Judy/Mitch private builder. Both
+component copies require the reviewed male mesh/rig/three animation sets and
+dependency metadata; full normalized Data must match the pinned Judy reference
+after only checked profile substitutions. Disabled/mistyped control bindings
+cannot hide in matching copies. Existing assets, graph, Lua fixture and PR12
+remain unchanged. The fixture still uses its original idle-only profiles.
+This merged without conflicts and preserves every existing test registration.
+
 ## Passed offline
 
-- Windows x64 Release plugin, session server and core build at the preceding
-  checkpoint. C++ source and target definitions are unchanged by this follow-up;
-  Matching existing binaries were used; this comparison follow-up did not change
-  test registrations or require CMake regeneration.
-- 47/47 CTests, including existing real-socket/core tests and the new suites.
+- Fresh configure and incremental Windows x64 Release plugin, session server
+  and core build passed. Native inputs are unchanged; CMake registered the new
+  encounter asset test without dropping any existing suite.
+- 48/48 CTests, including existing real-socket/core tests and the new suites.
 - 24 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
@@ -127,6 +135,12 @@ without conflicts; the seven contributed files match the exact PR26 source.
   Private WolvenKit builds of both profiles passed serialization roundtrip,
   single-resource archive listing and extracted-byte parity. The existing Judy
   entity, authored idle graph and production builders remain unchanged.
+- 23 new encounter-profile tests and 37 independent controls passed. Pinned
+  WolvenKit 9.0.1 compiled and roundtripped both encounter profiles; direct
+  archive listing, singleton extracted-byte parity and existing-output refusal
+  passed. Judy entity bytes match the earlier encounter build. Fourteen protected
+  asset/runtime files remain unchanged. These private archives contain only one
+  authored entity; the unchanged graph and installed resources are external.
 - 582 focused model-fixture checks in Lua 5.4 and 584 in LuaJIT: 140 controller,
   248/250 actual adapter and 194 real entrypoint checks. Independent review covered
   per-slot failure isolation, late callbacks, unknown/duplicate creation,
@@ -157,7 +171,18 @@ without conflicts; the seven contributed files match the exact PR26 source.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current comparison logs:
+Current encounter-asset logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-mitch-encounter-profile`,
+`combined-validation.json`, `combined-build.log`, `combined-ctest.log` and
+`combined-luajit.log`: 48 CTests and 24 LuaJIT suites pass at `d49d750c`.
+The separate branch passed 31 CTests and its core/session Release build with
+plugin excluded. Source hashes stayed unchanged during validation. Native,
+Lua and REDscript inputs are unchanged from `54eba8c`; the previous isolated
+script compilation still applies. Independent build/review evidence and frozen
+source hashes are in the same folder. Final hosted checks are recorded against
+published heads in GitHub and the vault. No live game behavior is established.
+
+Previous comparison logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-passive-appearance-comparison`,
 `combined-validation.json`, `combined-ctest.log` and `combined-luajit.log`:
 47 CTests and 24 LuaJIT suites pass at `8329c8e`. Branch validation passes 30
