@@ -1,5 +1,9 @@
 # CP2077-Coop
 
+**PR #5 + #17 movement test:** [HOST and JOINER downloads](https://github.com/Bukczyk/CP2077-Coop/releases/tag/v0.1.0-movement-experiment.1)
+and [installation/test steps](docs/MOVEMENT_TEST_PACKAGE.md). Locomotion and
+bounded diagnostics enabled; two-PC movement quality remains unqualified.
+
 Experimental session-based co-op development. The native session bridge and
 reliable gameplay route are connected to controlled engine experiments.
 

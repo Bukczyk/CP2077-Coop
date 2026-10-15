@@ -407,7 +407,7 @@ end, playerDiagnostics = function()
     local result = {}
     for id, entry in pairs(proxies) do
         local t, m = entry.target, entry.motor
-        result[tostring(id)] = {
+        local p = {
             entity=tostring(entry.entity), actor=entry.localKey,
             x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
             mode=m and "motor" or "pose", fault=m and m.fault or entry.pose and entry.pose.fault,
@@ -417,7 +417,23 @@ end, playerDiagnostics = function()
             actorState=entry.actorState,
             error=m and m.error, speed=m and m.speed, gait=m and m.gait,
             commands=m and m.commands, snaps=m and m.snaps,
+            turns=m and m.turns, commandKind=m and m.kind,
+            commandState=m and m.command and m.commandState,
+            commandAge=m and m.command and (m.clock-m.issued),
         }
+        -- Only queried by read-only diagnostics on the game thread. Failures
+        -- must not change movement, command ownership or lifecycle state.
+        local actor = m and m.actor or entry.pose and entry.pose.actor
+        local ok, x, y, z, yaw = pcall(function()
+            if not actor or not actor:IsAttached() then return end
+            local v = actor:GetWorldPosition()
+            return v.x, v.y, v.z, actor:GetWorldOrientation():ToEulerAngles().yaw
+        end)
+        p.readback = ok and x ~= nil and "available" or "unavailable"
+        if p.readback == "available" then
+            p.actualX, p.actualY, p.actualZ, p.actualYawDegrees = x, y, z, yaw
+        end
+        result[tostring(id)] = p
     end
     return result
 end }

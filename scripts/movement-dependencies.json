@@ -1,0 +1,202 @@
+{
+  "source_release": "https://github.com/KyleBuildsAI/cp2077-coop/releases/tag/v0.0.37-game-bundle.1",
+  "runtime_versions": {
+    "CET": "1.37.1",
+    "RED4ext": "1.30.0",
+    "Codeware": "1.18.0",
+    "ASI_loader": "6.0.0",
+    "redscript": "exact compiler hashes below"
+  },
+  "files": [
+    {
+      "path": "game-root/bin/x64/ASI_LOADER_LICENSE.txt",
+      "sha256": "ceca73c504e39084b0b80d2a437aea9988313d1915418d3c629c3e4a8313f5a1",
+      "bytes": 1067
+    },
+    {
+      "path": "game-root/bin/x64/LICENSE",
+      "sha256": "98c3b6d063066ad2dddc1a716d6ce5df8ed63497b0084b248d8d05516c57dbc7",
+      "bytes": 1085
+    },
+    {
+      "path": "game-root/bin/x64/global.ini",
+      "sha256": "c02b09b2cf2cfab32527ee1a88ee311500c1c2f4c95d20fe0898c9e0407a4d86",
+      "bytes": 167
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks.asi",
+      "sha256": "43a7b94698979703f9dfa2b0950607c9a88f53b84bbf09a8e593c7e218d41059",
+      "bytes": 7391744
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/ThirdParty_LICENSES",
+      "sha256": "83b9af1ffcc13f5822ae9ba561969bffcb8967a05edff6f41bf497e6c232fff0",
+      "bytes": 29643
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSans-Regular.ttf",
+      "sha256": "4c8d67001d3c2977e5d6bf0a4f8add80cd564bd1df60b7569fd23751e7dda02a",
+      "bytes": 556216
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSansJP-Regular.otf",
+      "sha256": "34b41de3f65166440ea2ce40121eb1c9b9c2bb92d188bd32a8e6091cd92316db",
+      "bytes": 4548208
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSansKR-Regular.otf",
+      "sha256": "29445948e432137e0de104dec389e956d72633aa0e4cb04ca572bb8e378e3d35",
+      "bytes": 4744692
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSansMono-Regular.ttf",
+      "sha256": "97b31969bfe7ebf894c12afdf6a5dcb6e87e64114697782802fe933e693eacd8",
+      "bytes": 383844
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSansSC-Regular.otf",
+      "sha256": "a2b93e6c2db05d6bbbf6f27d413ec73269735b7b679019c8a5aa9670ff0ffbf2",
+      "bytes": 8482020
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSansTC-Regular.otf",
+      "sha256": "8d9cd5f210c0204d2a1ddaeaf82db1071e242126f4e18b9c350d8b1680bae400",
+      "bytes": 5766468
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/NotoSansThai-Regular.ttf",
+      "sha256": "f73be376b0e1704da118312e202be49e8ac04a6b2e19b588cdfc2707c7f3e25d",
+      "bytes": 47404
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/fonts/materialdesignicons.ttf",
+      "sha256": "bd725a7a38939e5b59904e1b7a7265919ecec256166ece69d515c21005165907",
+      "bytes": 1243500
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/scripts/IconGlyphs/icons.lua",
+      "sha256": "f52aa193fe7fc562c82facb18261834bdb30e61cfca0feb2effba758f8a2cf80",
+      "bytes": 682986
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/scripts/json/LICENSE",
+      "sha256": "f2c7e5ea921f2d0514e229e88ac39e51b3db50698b270b3a9290b610b7015fdc",
+      "bytes": 1068
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/scripts/json/README.md",
+      "sha256": "e71e8c5fa757699655d0d48843ec98b8a777c78819c1eec623f61027ac4bc5d0",
+      "bytes": 1557
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/scripts/json/json.lua",
+      "sha256": "23031288e528880354d3d4651a9dc299b4c85e28889d9f5ae1dcca76b3cdc8b1",
+      "bytes": 10026
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/tweakdb/tweakdbstr.kark",
+      "sha256": "1eff27bacbac8bb55a632c8e393bc046e2c991a6f987b9a78a8ed3fc41eb1db9",
+      "bytes": 7161981
+    },
+    {
+      "path": "game-root/bin/x64/plugins/cyber_engine_tweaks/tweakdb/usedhashes.kark",
+      "sha256": "5d27963ec0dbc606074586134c6ba44cadcf3754e95991240cb8e9e11268835f",
+      "bytes": 3405057
+    },
+    {
+      "path": "game-root/bin/x64/version.dll",
+      "sha256": "67565dd7f899c0e4ee3903b1cc8078ff20ca80b8100497c6ac813392e431d443",
+      "bytes": 905216
+    },
+    {
+      "path": "game-root/bin/x64/winmm.dll",
+      "sha256": "22690f3ac5efbfa825b758028f114d0e7d83833160716f199c56056db01fc8be",
+      "bytes": 214528
+    },
+    {
+      "path": "game-root/engine/config/base/scripts.ini",
+      "sha256": "ea8281682d4130f872e1703b25aa989a823f136fa1d886077af24aedb08b0d4c",
+      "bytes": 39
+    },
+    {
+      "path": "game-root/engine/tools/REDSCRIPT_LICENSE.txt",
+      "sha256": "97ff751dcd16a2ae8e3184910e4e4924b27ee8651b1564765a2cc1ccdbabebea",
+      "bytes": 1064
+    },
+    {
+      "path": "game-root/engine/tools/scc.exe",
+      "sha256": "da2c0de580173010c907a05fdd2f3cd2430d6e62bf748339d65060118ae32edd",
+      "bytes": 449024
+    },
+    {
+      "path": "game-root/engine/tools/scc_lib.dll",
+      "sha256": "49eb60a3613c990cd13b6136e827a74f9f64ad68e2f911d8c93e4e3d3f53c100",
+      "bytes": 1988608
+    },
+    {
+      "path": "game-root/r6/config/cybercmd/scc.toml",
+      "sha256": "05802a334d72e87194d49765b7b852c2a983f8849851abcf3fd1366f64d4a934",
+      "bytes": 228
+    },
+    {
+      "path": "game-root/red4ext/LICENSE.txt",
+      "sha256": "a0b08b28ae3931a5a41a1788aac6c7a391513bfc3599272021ea5b2c1af2f6f6",
+      "bytes": 1101
+    },
+    {
+      "path": "game-root/red4ext/RED4ext.dll",
+      "sha256": "59309a78a9606481d13f87e8fbf9ea9c0b735115389ded0295537180c9e52511",
+      "bytes": 1248256
+    },
+    {
+      "path": "game-root/red4ext/THIRD_PARTY_LICENSES.txt",
+      "sha256": "b49e3d32f961c21e0b15f4c9b11da9455d7c9905a457b1dfa88504f6592220ff",
+      "bytes": 10203
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Codeware.dll",
+      "sha256": "b3fb9aebe185deec3fdabe3db912446c8992423322b56344db8945c764281679",
+      "bytes": 1790976
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Data/KnownHashes.txt",
+      "sha256": "392e48a8b26154f8d34aa3c1268506d84a2b0bcd3db1b374dfb9c212383a1c20",
+      "bytes": 12263138
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/LICENSE",
+      "sha256": "dcd5cfc3e620a938b674b5b74a18bba24ac1d8c1353271dac8599b0620238629",
+      "bytes": 1090
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Scripts/Codeware.Global.reds",
+      "sha256": "6e1e0ebdb8f28dd7011bdc8fc23f2e0e4cb799fd5d10717d785185c41d4b44a5",
+      "bytes": 1580693
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Scripts/Codeware.Localization.reds",
+      "sha256": "9eb492034685084015d25dd5da33a6da5d0ee5ae56015b77e83073e6efa286f0",
+      "bytes": 19187
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Scripts/Codeware.UI.TextInput.reds",
+      "sha256": "b8c71b7e118b758d8583367b533731f42f240a98b94466e469c6f77ca93b9280",
+      "bytes": 28317
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Scripts/Codeware.UI.reds",
+      "sha256": "d93534c5cae4de9bf7c2aae6a1508b49e29872401ef6039c387f9ff4cbae464f",
+      "bytes": 138537
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/Scripts/Codeware.reds",
+      "sha256": "2f034099c0c703a13cc92a7a6bcf9b543395984b19bb02fb49aa02536e375260",
+      "bytes": 37
+    },
+    {
+      "path": "game-root/red4ext/plugins/Codeware/THIRD_PARTY_LICENSES",
+      "sha256": "56e48489d42ce6ebbc4eba4228ebfb422d82d57c79d8fec84763c3889026020e",
+      "bytes": 11950
+    }
+  ]
+}
