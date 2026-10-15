@@ -42,6 +42,7 @@ function Engine:create(descriptor,pose)
     spec.orientation=Quaternion.new(pose.qx,pose.qy,pose.qz,pose.qw)
     spec.persistState=false; spec.persistSpawn=false; spec.alwaysSpawned=true
     spec.spawnInView=true; spec.active=true; spec.tags={CName.new(tag)}
+    self.appearance=descriptor.appearance -- Frozen for this car's lifetime, not a later record default.
     self.system=s -- Retain the exact creator even while native creation is pending.
     self.id=s:CreateEntity(spec)
     self.key=assert(key(self.id),"create_identity_unavailable")
@@ -85,14 +86,25 @@ function Engine:observe(expected)
     local player=assert(Game.GetPlayer(),"player_unavailable")
     -- After deletion, the entity may remain attached briefly but no longer be managed.
     o.player=assert(key(player:GetEntityID()),"player_identity_unavailable")
+    -- Read before Owned: its native record guard can reject before a full sample
+    -- exists. A hard record mismatch is not a recoverable cosmetic quarantine.
+    if actor:GetRecordID()~=TweakDBID.new(record) then self.recordFault=true end
+    if self.recordFault then o.recordFault=true; return o end
     if o.managed and o.player==self.creator then assert(actor:CP2077VehicleProbe_Owned(player),"ownership_unavailable") end
     o.onFoot=player:CP2077VehicleProbe_OnFoot()
     local position=actor:GetWorldPosition(); local q=actor:GetWorldOrientation(); local v=actor:GetLinearVelocity()
     o.pose={x=position.x,y=position.y,z=position.z,qx=q.i,qy=q.j,qz=q.k,qw=q.r}
     o.speed=math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z)
     o.velocity={x=v.x,y=v.y,z=v.z}
-    o.record=actor:GetRecordID()==TweakDBID.new(record) and record or "unsupported_record"
-    o.appearance=actor:CP2077VehicleProbe_Appearance(); o.color=actor:CP2077VehicleProbe_ColorVariant()
+    o.record=record
+    -- Missing cosmetics quarantine new mounts/motion, but must not erase otherwise
+    -- valid identity/seat observations required to safely leave an owned car.
+    local appearanceOk,appearance=pcall(function()return actor:CP2077VehicleProbe_Appearance()end)
+    local colorOk,color=pcall(function()return actor:CP2077VehicleProbe_ColorVariant()end)
+    o.appearanceAvailable=appearanceOk and type(appearance)=="string" and appearance~=""
+    o.colorAvailable=colorOk and type(color)=="string" and color~=""
+    o.appearance=o.appearanceAvailable and appearance or nil
+    o.color=o.colorAvailable and color or nil
     -- No unnamed or customized variant is silently treated as the requested default.
     o.occupants={}; o.slots={}; o.events={}
     for _,mount in ipairs(actor:CP2077VehicleProbe_ReadSeats()) do
@@ -120,6 +132,7 @@ function Engine:request(expected,child,operation,slot)
     -- before the native request, so failure is a definite rejection, not an
     -- ambiguous submitted outcome that would quarantine the pending request.
     local ok,actor,player=pcall(function()
+        assert(not self.recordFault,"request_record_fault")
         local handler=assert(Game.GetSystemRequestsHandler(),"request_context_unavailable")
         assert(handler:IsGamePaused()==false and handler:IsPreGame()==false,"request_context_inactive")
         local current,s,_,_,attached=self:_actor(expected)
@@ -129,14 +142,38 @@ function Engine:request(expected,child,operation,slot)
             and creator and creator:IsAttached()==true
             and key(creator:GetEntityID())==self.creator and child==self.creator,
             "request_identity_unavailable")
+        if current:GetRecordID()~=TweakDBID.new(record) then
+            self.recordFault=true;error("request_record_mismatch")
+        end
+        if operation=="mount" then
+            assert(type(self.appearance)=="string" and self.appearance~="" and self.appearance~="None"
+                and creator:CP2077VehicleProbe_DefaultAppearance()==self.appearance
+                and current:CP2077VehicleProbe_Appearance()==self.appearance
+                and current:CP2077VehicleProbe_ColorVariant()=="None","request_cosmetics_unavailable")
+        elseif operation=="unmount" then
+            local info=creator:CP2077VehicleProbe_MountInfo()
+            assert(key(info.parentId)==expected and key(info.childId)==self.creator
+                and creator:CP2077VehicleProbe_MountSlot()==slot,"request_player_relationship_changed")
+            local matches=0
+            for _,occupant in ipairs(current:CP2077VehicleProbe_ReadSeats()) do
+                local occupantId=key(occupant.child)
+                assert(key(occupant.parent)==expected and occupantId,"request_occupant_identity_unavailable")
+                if occupantId==self.creator or occupant.slot==slot then
+                    assert(occupantId==self.creator and occupant.slot==slot,"request_vehicle_relationship_changed")
+                    matches=matches+1
+                end
+            end
+            assert(matches==1,"request_vehicle_relationship_changed")
+        else error("request_operation_invalid") end
         return current,creator
     end)
     if not ok then return false end
     -- Keep the actual mutation outside that pcall: an exception after entering
     -- the native request still has an unknown outcome and must retain ownership.
-    return actor:CP2077VehicleProbe_Request(player,CName.new(slot),operation=="mount")
+    return actor:CP2077VehicleProbe_Request(player,CName.new(slot),operation=="mount",CName.new(self.appearance))
 end
 function Engine:delete(expected)
+    if self.recordFault then return false end
     local actor,s=self:_actor(expected)
     local player=Game.GetPlayer()
     if not actor or not player or key(player:GetEntityID())~=self.creator
@@ -144,6 +181,7 @@ function Engine:delete(expected)
     return s:DeleteEntity(self.id)
 end
 function Engine:applyPose(expected,child,generation,request,target)
+    if self.recordFault then return false end
     assert(generation==self.generation and child==self.creator,"pose_scope_mismatch")
     -- A pause can begin after the last observation but before this manual call.
     -- No native application has happened yet, so unknown/paused is a rejection.

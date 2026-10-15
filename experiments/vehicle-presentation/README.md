@@ -40,6 +40,17 @@ network/session/authority ownership. Starting revision: upstream main
   context is valid. The native helper independently checks pause/menu context.
   A failure after entering the native request remains an unknown outcome and keeps
   its pending ownership until actual completion can be observed.
+- Mount admission also checks the exact record, frozen creation appearance,
+  current record default, actual appearance and supported color immediately before
+  submission. The native helper rechecks against the same frozen appearance.
+  Missing or throwing cosmetic reads reject a new mount without a pending request.
+- A cosmetic mismatch stays quarantined until empty-car cleanup, even if the
+  original cosmetics return. It blocks new mounts and movement, while safe unmount
+  remains possible for the exact seated local player. Both Lua and the native
+  helper freshly check the player and vehicle sides of that seat relationship.
+  Cosmetic read failure preserves otherwise valid identity/seat observations.
+  Wrong record is a separate persistent identity fault; restoration cannot permit
+  requests, movement or cleanup through that fault.
 - Exact parent/child/slot queries on both sides of a relationship plus a matching
   finished-mounting callback before a request is marked observed. A submitted
   request, callback alone, or occupancy alone never completes it.
@@ -72,6 +83,9 @@ Stage `engine_hooks.reds` with the matched session REDscript and Codeware 1.18.0
 Stage `init.lua`, `fixture.lua`, `movement.lua` and `engine.lua` together in a separate CET mod
 folder named `zz_VehicleSeatFixture`. Do not add these files to the default runtime
 or the currently published movement ZIPs. No automatic installer is included.
+Use the Lua files and native helper from the same checkpoint. The seat-request
+helper now takes the frozen expected appearance as its fourth argument; mixing
+this adapter with an older `engine_hooks.reds` is unsupported.
 
 Start in safe free roam, on foot, with a clear road surface 6-15 metres away and
 within 3 metres vertically. The caller supplies that clear point explicitly;
@@ -93,9 +107,11 @@ GetMod("zz_VehicleSeatFixture").stop()
 ```
 
 `start` and request success mean submission only. Poll status and evidence.
-Seat readiness still uses the last appearance/color observation; a cosmetic change
-between that sample and an injected request is a separately reproduced open issue
-in [VALIDATION.md](VALIDATION.md). This correction qualifies fresh context only.
+If status shows `appearance_mismatch`, an exact safe injected unmount remains
+available while requests are enabled. Observe actual exit before calling `stop`;
+the cosmetic quarantine is cleared only by completed cleanup and a new activation.
+This API behavior is tested offline; manual and injected exit in-game remain
+unqualified. See [VALIDATION.md](VALIDATION.md).
 `stop` disables new requests but cannot cancel an unresolved native mount safely.
 It retains an occupied or uncertain car. If a timed-out request completes late,
 observe reconciliation, then leave the car manually before cleanup proceeds.

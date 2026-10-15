@@ -86,7 +86,7 @@ Private evidence under `D:\Downloads\syncfix\bench-artifacts\20261015-vehicle-se
 `before-after-results.json`, `before-after-entrypoint-repro.lua`, `validation.json`
 and `ctest.log`. No game was launched or installed/configuration file changed.
 
-### Separate open issue: appearance changes between observations
+### Cosmetic issue discovered at that checkpoint
 
 An actual-entrypoint reproduction changes the observed car's appearance from the
 supported default after a ready sample but before mounting. The baseline accepts
@@ -95,11 +95,71 @@ the request using that stale sample (`appearance-seat-repro.lua` and
 does not address appearance or color changes and does not certify those values
 at seat-request time.
 
-A separate follow-up must reject a new mount when current appearance/color is
-unsupported or unknown, while preserving safe unmount for an already seated
-player whose car's cosmetic state changed. It must also define recovery after the
-next observation changes fixture readiness. Do not add a cosmetic check that traps
-an existing occupant; that controller behavior needs its own focused review.
+The following correction addresses this separate issue. The original evidence is
+preserved; those earlier tests do not establish the newer behavior.
+
+## Fresh cosmetic admission and safe exit correction, 2026-10-15
+
+Base: `c129eb384e96b0d780c9f6a56bcdd2ce0959935d`. Exact follow-up ownership:
+`fixture.lua`, `engine.lua`, `engine_hooks.reds`, `README.md`, `VALIDATION.md` in this
+folder, plus `tests/vehicle_fixture_tests.lua` and
+`tests/vehicle_engine_adapter_tests.lua`. No entrypoint, movement-controller,
+CMake, backend/protocol, package or installed-file change.
+
+The original actual-entrypoint reproduction also established that, after an exact
+completed mount, observing a cosmetic mismatch made injected unmount return
+`not_ready`. Restoring the original cosmetics did not clear that refusal. This
+was a fixture API defect, not proof of physical entrapment; manual exit was not
+tested.
+
+New mount admission checks the exact record, current default, frozen creation
+appearance, actual appearance and supported color immediately before submission.
+The native helper receives that frozen appearance and repeats the mount-only
+check. Missing or throwing cosmetic reads reject before the helper, without a
+pending owner. The helper and Lua adapter must be staged from the same checkpoint
+because the helper now takes a fourth expected-appearance argument.
+
+Cosmetic quarantine is deliberately sticky until safe empty-car cleanup. It
+prevents new mounts and motion, but permits an exact safe unmount even after the
+original cosmetics return. The current creator, lifecycle, pause/menu, speed,
+pending-request and exact seat gates remain. Player and vehicle relationships are
+checked freshly in Lua and again in native code. Missing/throwing cosmetic binding
+lookups or calls no longer discard otherwise valid identity/seat observations.
+Exit completion still requires its finished event plus on-foot/occupancy readback.
+An exception after entering the native request retains uncertain ownership.
+
+A wrong record is a persistent noncosmetic fault. Observation checks it before
+the native ownership helper can reject and hide the evidence; fresh request
+preflight also retains that fault. Native ownership independently retains a record
+mismatch. Restoring the record cannot authorize later requests or cleanup.
+
+Passed on the corrected source:
+
+- Compiled Lua 5.4 and LuaJIT 2.1: 544 fixture, 3655 engine adapter, 111 movement
+  and 69 movement-integration checks per interpreter. The new adapter scenarios
+  run the actual entrypoint and modules, with only engine/native boundaries mocked.
+- Five focused actual-entrypoint scenarios fail against `c129eb3` and pass on
+  this source in both runtimes: changed cosmetic mount admission, safe cosmetic
+  exit, throwing cosmetic read, fresh record restoration and observed record
+  restoration.
+- Independent read-only review passes both focused suites and 18 additional
+  actual-entrypoint scenarios per runtime. It identified and verified fixes for
+  a record fault hidden by the ownership helper and a cosmetic method lookup
+  outside its exception guard.
+- 29/29 branch CTests pass against the existing Windows Release build. No C++
+  source changed and no fresh C++ build is claimed for this correction.
+- Parent-run isolated session plus vehicle REDscript compilation passes against
+  installed 2.31/Codeware inputs, with source/game/compiler input hashes unchanged:
+  `redscript/compile-20261015T103546240408Z.json` and its matching log.
+- `git diff --check` passes. No live test or camera restoration is claimed;
+  `cameraVerified=false` remains explicit.
+
+New private evidence directory:
+`D:\Downloads\syncfix\bench-artifacts\20261015-vehicle-cosmetic-exit-fix`.
+It contains `baseline.json`, frozen baseline adapter/controller copies,
+`before-after-repro.lua`, `before-after-results.json`, `validation.json`,
+`ctest.log`, independent review evidence and the isolated compile JSON/log.
+Earlier evidence remains unchanged.
 
 ## Original checkpoint passed locally
 
