@@ -1,6 +1,6 @@
 # Combined game-side source validation
 
-Owner: KyleBuildsAI. UTC checkpoint: 2026-10-15 07:39. Verification branch:
+Owner: KyleBuildsAI. UTC checkpoint: 2026-10-15 08:00. Verification branch:
 `work/game-side-offline-20261015`. No main merge, installation or gameplay release.
 
 This branch combines the following reviewable source slices on upstream main
@@ -10,11 +10,12 @@ This branch combines the following reviewable source slices on upstream main
 | --- | --- | --- |
 | 19 | tooling/movement-log-analysis | 4bb510e2396a98691f0870fecc450e718b63493a |
 | 20 | fix/player-diagnostic-recovery | a4d05313772946d1f3036b218c97e176b094398e |
-| 21 | fix/dynamic-npc-lifecycle | 5f94f7e259900474fb2dc99557f0a87bf940ae33 |
+| 21 | fix/dynamic-npc-lifecycle | 4f56311052bb2949f05aeda036b2a8d0b2883987 |
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
 | 23 | feat/vehicle-pose-application | e8070dd74192bf772415790d4e08852638df9b08 |
+| 24 | fix/passive-asset-validation | 7f96b96a95c0a098116fa5c0875d06fe0622ed16 |
 
-Combined source tested: `e92d7119b3fa0eef3c436160a9b8c3e25cc32531`.
+Combined source tested: `15292d87398c81867941654f6937d69f1a1b1722`.
 PR12 restoration, PR15 map/UI and PR16 player actions are not merged into this
 verification branch. Their earlier evidence remains separate.
 
@@ -29,22 +30,31 @@ a throwing pause method is nonfatal unknown. Other early engine errors invalidat
 both owners at the same timestamp. A failure in player cleanup must not prevent
 the independent NPC pump. The combined real-entrypoint tests cover these cases.
 
+The latest two-NPC regression additionally invalidates cached observations before
+`stop/reset`, preventing cleanup from qualifying a skipped actor with the preceding
+frame's context. Both invalidations reuse one timestamp. Merge resolution retains
+all player regressions and the actual NPC runtime/adapter fixture.
+
 Test registrations merged without dropping any existing suite. No networking,
 protocol, server or shared bridge behavior was changed to resolve integration.
 
 ## Passed offline
 
 - Windows x64 Release plugin, session server and core build.
-- 36/36 CTests, including existing real-socket/core tests and the new suites.
+- 37/37 CTests, including existing real-socket/core tests and the new suites.
 - 15 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs and all vehicle fixture paths.
+- 23 new passive visual-contract mutation tests and the existing 9 hittable tests
+  are included. These validate the fixed reviewed Judy/default assets, not arbitrary
+  HOST appearance matching; authored assets and archives remain unchanged.
 - Isolated current session plus vehicle REDscript compilation against the installed
   2.31 cache/Codeware. Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
 Private logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
-`combined-movement-build.log`, `combined-movement-ctest.log`,
-`combined-movement-luajit.log` and `redscript/compile-20261015T073857786335Z.*`.
+`combined-assets-build.log`, `combined-assets-ctest.log`,
+`combined-assets-luajit.log` and `redscript/compile-20261015T073857786335Z.*`.
+The REDscript sources are unchanged since that successful isolated compilation.
 Hosted branch checks are recorded separately after completion.
 
 ## Open gates
