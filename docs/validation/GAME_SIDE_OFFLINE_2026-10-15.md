@@ -14,11 +14,12 @@ This branch combines the following reviewable source slices on upstream main
 | 20 | fix/player-diagnostic-recovery | 4d12c1c270eff26f152afda2a57ed39fb745bc15 |
 | 21 | fix/dynamic-npc-lifecycle | bd6d941e785b418f5e32370f0258a67241a759eb |
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
-| 23 | feat/vehicle-pose-application | e8070dd74192bf772415790d4e08852638df9b08 |
+| 23 | feat/vehicle-pose-application | f95caccb62f0f46ecb48d0b74749c084f4121f38 |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
+| 26 | feat/passive-model-fixture | e291b75799d7a4db8aff661829343f1f7ae791eb |
 
-Combined source tested: `d6a2daa53b969c1f224096f4fcd456715409b590`.
+Combined source tested: `99c8c1fe9531356bc644b85cb5eeca47944274f5`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -55,11 +56,23 @@ The new NPC reconnect test initially lacked the empty `GetTaggedIDs` method used
 by the existing PR5 player-discovery path; the fixture now provides that method
 alongside `GetTagged`. No runtime behavior was weakened to make the test pass.
 
+The vehicle follow-up pins the original creating system and first attached exact
+actor. A replacement system or malformed later wrapper cannot certify the old
+car's disappearance. Both fault-injection regressions fail the preceding adapter
+and pass the fix. This does not establish that either injected transition occurs
+in a running game.
+
+The separate model fixture selects Judy/Mitch through explicit local slots,
+queues all engine work to onUpdate, checks the exact template and pose, and
+retains pending/unknown lifetimes until observed retirement. It does not bind
+network entities or change production selection. Model and vehicle follow-ups
+merged without conflicts; all prior registrations and regressions remain.
+
 ## Passed offline
 
 - Windows x64 Release plugin, session server and core build.
-- 43/43 CTests, including existing real-socket/core tests and the new suites.
-- 20 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
+- 46/46 CTests, including existing real-socket/core tests and the new suites.
+- 23 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
@@ -70,12 +83,26 @@ alongside `GetTagged`. No runtime behavior was weakened to make the test pass.
   Private WolvenKit builds of both profiles passed serialization roundtrip,
   single-resource archive listing and extracted-byte parity. The existing Judy
   entity, authored idle graph and production builders remain unchanged.
+- 167 focused model-fixture checks per Lua 5.4/LuaJIT run: 45 controller, 89
+  actual adapter and 33 real entrypoint checks. Independent review covered
+  per-slot failure isolation, late callbacks, unknown/duplicate creation,
+  stale generations, wrong templates, observed pose and bounded diagnostics.
+  The real Lua resource catalog matches the Python builder for both profiles.
+- Vehicle follow-up: 596 adapter, 353 fixture, 111 movement and 69 integration
+  checks per Lua interpreter, including retained creator/actor recovery.
 - Isolated current session, vehicle, player action/aim and map capture REDscript
   compilation together against copied installed 2.31 cache/Codeware inputs.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Private logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
+Current combined logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-passive-model-fixture-audit`,
+`combined-build.log`, `combined-ctest.log`, `combined-luajit.log`.
+The full Release plugin/server build, all 46 CTests and all 23 LuaJIT suites pass
+at the current tested source. Its separate compile-only model API probe also
+passes; that checks method signatures without executing engine behavior.
+
+Earlier static cleanup logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
 `combined-static-cleanup-build.log`, `combined-static-cleanup-ctest-final.log`,
 `combined-static-cleanup-luajit-final.log` and
 `redscript/compile-20261015T081404930677Z.*`. The 43 CTests and all 20 LuaJIT suites
@@ -94,8 +121,10 @@ render timing, clipping or arrow facing. Weapon attachment/readback and logical
 Aim do not prove visible ADS/grip. Neither source experiment is default-installed.
 The full goal and all relevant live/two-PC gates remain open. Continue independent
 source work while live testing is deferred and bridge requirements await agreement.
-The next NPC task is a separate explicit local profile selection fixture. PR25
-does not activate a production selector or establish visible model/animation parity.
+PR26 supplies the separate explicit local profile selection fixture. It still
+needs deferred live model/idle/cleanup qualification and an agreed supported
+HOST descriptor mapping before connected production use. Resource presence and
+an exact template hash do not certify the installed mesh or visible appearance.
 Unknown never-completed static spawns remain held if terminal cancellation cannot
 be established; no timeout is treated as evidence of safe cleanup. Actual callback
 scheduling, scene teardown and recovery still need the deferred live validation.
