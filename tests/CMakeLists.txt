@@ -49,3 +49,5 @@ add_test(NAME player_motor COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/pl
 set_tests_properties(player_motor PROPERTIES TIMEOUT 15)
 add_test(NAME player_actions COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_actions_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(player_actions PROPERTIES TIMEOUT 15)
+add_test(NAME player_presentation_fixture COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_presentation_fixture_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(player_presentation_fixture PROPERTIES TIMEOUT 15)
