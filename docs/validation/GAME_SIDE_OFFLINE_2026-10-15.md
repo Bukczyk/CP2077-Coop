@@ -14,13 +14,13 @@ This branch combines the following reviewable source slices on upstream main
 | 20 | fix/player-diagnostic-recovery | 4d12c1c270eff26f152afda2a57ed39fb745bc15 |
 | 21 | fix/dynamic-npc-lifecycle | bd6d941e785b418f5e32370f0258a67241a759eb |
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
-| 23 | feat/vehicle-pose-application | cc66fb9ae1683d3bf5b7384e45578ffcbf9f8a5b |
+| 23 | feat/vehicle-pose-application | d0f8654e5a2b8742968837b078574593d843355d |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
 | 26 | feat/passive-model-fixture | 97fd12f12a15257b76b92ecff102203743c601d9 |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `3d2f4fe1e072d3ff9187f62753f9c38a9f87b4fd`.
+Combined source tested: `447a3ae2983676889e8b7aa159e41409c88bc74c`.
 PR12's connected controller is not integrated here. Only its existing pure
 presentation-state `restore` method is reused by the local fixture. Its connected
 evidence remains separate, and the life-baseline bridge request awaits coordination.
@@ -129,6 +129,15 @@ normalized sample. Queue submission remains unobserved animation, not health or
 network synchronization. The ten files merged without conflicts; native helpers,
 assets, production runtime and shared network contracts are unchanged.
 
+The latest vehicle movement correction rejects stale ready observations at the
+Lua/native boundary. Loaded/unpaused context, original creator/lifecycle and the
+frozen creation appearance are checked again before entry. The matched native
+helper independently checks context and the supplied expected appearance. A
+changed record default plus changed actual appearance cannot admit a move.
+Definite preflight failure creates no pending command; native exceptions retain
+uncertain ownership. Position/rotation/settling readback remains required. The
+six files merged without conflicts; seat policy and the controller are unchanged.
+
 ## Passed offline
 
 - Fresh configure and incremental Windows x64 Release plugin, session server
@@ -171,12 +180,18 @@ assets, production runtime and shared network contracts are unchanged.
   Initial/replacement binding, retained death, stale commands, per-slot pause,
   setter ordering, exact reference checks and partial retry are covered. Shared
   state/adapter and connected-encounter suites also pass with the reused method.
-- Vehicle follow-up: 3655 adapter, 544 fixture, 111 movement and 69 integration
+- Vehicle follow-up: 6846 adapter, 544 fixture, 111 movement and 69 integration
   checks per Lua interpreter, including retained creator/actor recovery and the
   actual-entrypoint paused-request regression. Five additional cosmetic/record
   regressions fail c129eb3 and pass this correction under both interpreters;
   eighteen independent scenarios per interpreter also passed. The earlier
   pause regression against f95cacc remains preserved.
+- Movement admission: five old/fixed actual-entrypoint controls reproduce both
+  pregame and changed-default/current-appearance admissions at cc66fb9, then
+  reject them before helper entry. Twenty independent scenarios per interpreter
+  cover fresh rejection/recovery, changes after Lua preflight, full arguments,
+  observed settling and uncertain native outcome retention. Native behavior is
+  modeled in Lua; compilation does not execute it in the game.
 - NPC observation: 431 focused Lua 5.4 and 434 LuaJIT checks passed on its branch,
   plus 14 independent probes per interpreter. The new actual-entrypoint suite is
   also included in the combined CTest/LuaJIT runs. Its separate branch passed a
@@ -187,7 +202,19 @@ assets, production runtime and shared network contracts are unchanged.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current encounter-fixture logs:
+Current vehicle movement-preflight logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-vehicle-movement-preflight`,
+`combined-validation.json` and configure/build/CTest/LuaJIT logs: 48 CTests and
+27 LuaJIT suites pass at `447a3ae`. Windows Release includes the plugin. All 117
+tracked source hashes stayed unchanged during validation. The branch passed
+29 CTests with its Release plugin build. `combined-compile-20261015T121749844034Z.json`
+and its log record successful isolated compilation of session scripts plus the
+vehicle, player/map, passive-model and NPC-observation experiment groups.
+Separate connected-combat scripts were not added to that compilation. Source,
+installed and compiler inputs stayed unchanged. Final hosted checks are tracked
+against published heads in GitHub and the vault. No package or game was changed.
+
+Previous encounter-fixture logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-passive-encounter-fixture`,
 `combined-validation.json`, configure/build/CTest/LuaJIT logs: 48 CTests and
 27 LuaJIT suites passed at `3d2f4fe1`. The separate branch passed 31 CTests and
