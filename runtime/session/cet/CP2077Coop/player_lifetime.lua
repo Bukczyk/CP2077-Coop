@@ -44,6 +44,7 @@ function Lifetime:_find()
     if actor ~= nil and key(actor:GetEntityID()) ~= self.key then
         error("actor_identity_mismatch")
     end
+    if actor ~= nil and self.observedActor == nil then self.observedActor = actor end
     return actor
 end
 
@@ -79,6 +80,13 @@ function Lifetime:_observe()
     if populationActor ~= nil and key(populationActor:GetEntityID()) ~= self.key then
         error("population_identity_mismatch")
     end
+    if self.observedActor == nil then self.observedActor = populationActor end
+    local retainedAttached = false
+    if self.observedActor ~= nil then
+        if key(self.observedActor:GetEntityID()) ~= self.key then error("retained_identity_mismatch") end
+        retainedAttached = self.observedActor:IsAttached()
+        if type(retainedAttached) ~= "boolean" then error("invalid_retained_attachment") end
+    end
     local attached = actor ~= nil and actor:IsAttached()
     local managed, spawning, spawned = system:IsManaged(self.id),
         system:IsSpawning(self.id), system:IsSpawned(self.id)
@@ -87,7 +95,8 @@ function Lifetime:_observe()
         error("invalid_lifetime_observation")
     end
     return {system=system, actor=actor, populationActor=populationActor,
-        attached=attached, managed=managed, spawning=spawning, spawned=spawned}
+        attached=attached, retainedAttached=retainedAttached,
+        managed=managed, spawning=spawning, spawned=spawned}
 end
 
 function Lifetime:pump(now, paused)
@@ -126,11 +135,13 @@ function Lifetime:pump(now, paused)
 
     if self.deleteIssued then
         local absent = o.actor == nil and o.populationActor == nil
-            and not o.attached and not o.managed and not o.spawning and not o.spawned
+            and not o.attached and not o.retainedAttached
+            and not o.managed and not o.spawning and not o.spawned
         if absent then
             self.absentSince = self.absentSince or self.age
             if self.seenAttached and self.age - self.absentSince >= QUIET_PERIOD then
                 self.done = true
+                self.observedActor = nil
                 self:_status("retired")
                 return true
             end
