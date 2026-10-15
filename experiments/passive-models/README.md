@@ -106,6 +106,63 @@ on the update thread. Submission is not visible playback. It does not connect
 combat, networking or shared interfaces. See
 [FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for hashes and offline evidence.
 
+## Defeated sampled-pose asset prerequisite
+
+The same builder accepts explicit `--presentation defeated_hold`. It builds a
+separate Judy or Mitch entity and a separate authored
+`networkhumanoid_defeated_hold.animgraph`. Omitting that argument retains the
+existing `encounter` build and its one-entity archive. The existing `PROFILES`,
+fixture commands, runtime selectors and shared presentation state are unchanged.
+The new assets are **not selectable by the current Lua fixture**.
+
+```powershell
+python tests/passive_model_defeated_asset_tests.py
+python experiments/passive-models/build_encounter_profile.py --profile mitch_default `
+  --presentation defeated_hold `
+  --wolvenkit 'D:\tools\WolvenKit.Console-9.0.1\WolvenKit.CLI.exe' `
+  --output-dir 'D:\private-builds\mitch-defeated-new'
+```
+
+Use a fresh private output directory. The archive contains exactly two authored
+resources: `cp2077coop_networkhumanoid_mitch_defeated.ent` (or
+`cp2077coop_networkhumanoid_defeated.ent` for Judy) and the new graph. It does not
+overwrite the existing encounter resources or contain vanilla payloads.
+
+The graph exposes `cp_coop_defeated_progress` as a normalized **0..1** input with
+initial/default value **0**. Root/output nodes lead to a sampled `SkFrameAnim`
+node for `defeated_loop_01`; its progress link points to the initialized input
+node. There is no clock, automatic looping, phase/death alias, root-motion
+application, animation event dispatch, gameplay feature or extra database.
+Default zero is an initial sample, not a claim that a useful pose renders.
+
+The source keeps the existing passive three-component `entEntity` structure
+and exact default mesh/rig for each model. It uses one unconditional animation
+set: `wa_gang_unarmed_reaction_defeated.anims` under the female gameplay folder,
+or `ma_gang_unarmed_reaction_defeated.anims` under the male folder. Read-only game
+2.31 metadata confirms matching woman/man-base rigs and a `defeated_loop_01`
+duration of **10.3000002 seconds** with no motion-extraction object in either
+clip. That metadata does not establish rendered parity or playback behavior.
+The ordered dependency table is mesh, graph, animation set; the rig remains an
+explicit component import. No NPC root, template inheritance, AI or collider is
+introduced. Defeated is not treated as Dead or Unconscious.
+
+Validation compares the entire allowed entity/graph data, including explicit
+WolvenKit 9.0.1 defaults, and then reuses the unchanged existing passive validator
+on a private canonical entity. Graph validation additionally preserves handle
+alias relationships: equal copied nodes cannot replace the nodes actually
+initialized. Consistent handle renumbering and equivalent definition/reference
+forms remain valid. Unexpected defaults, ambiguous handles, cross-profile
+resources, template/compiled disagreement and inherited payloads fail closed.
+Both actual compiled roundtrips, exact archive lists and extracted-resource
+hashes passed. All existing asset/controller/runtime source bytes are preserved.
+
+This is an asset prerequisite only. A later explicit game-side controller must
+drive the normalized input and represent nonlethal Defeated separately before
+any held-pose or looping test. Entry, transitions, live sampling/loop continuity,
+recovery, terminal restoration, rendering and authoritative integration remain
+unimplemented or unqualified for these new assets. Nothing is installed,
+activated or added to published game packages by this build.
+
 ## Resource evidence and limits
 
 Read-only inspection of installed Cyberpunk 2077 2.31 resources on 2026-10-15
