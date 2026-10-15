@@ -20,12 +20,14 @@ a new mod/package version.
 
 ## Executed checks
 
-- Python 3.13: 15/15 focused tests passed, including real Lua recorder output.
+- Python 3.13: 16/16 focused tests passed, including real Lua recorder output and
+  finite input values whose derived distance would overflow.
 - Fresh Windows x64 CMake configure with VS2022/MSVC19.41; test Lua executable built.
 - CTest `movement_analysis`, `movement_diagnostics`, `movement_package`: 3/3 passed.
-- Independent read-only review reran all 15 tests with the published build's Lua
+- Independent read-only review reran the initial 15 tests with the published build's Lua
   executable and found no blocking defect. ZIP member naming was checked against
-  the actual collector script.
+  the actual collector script. Parent follow-up reproduced and fixed overflow in
+  derived metrics; malformed distances remain explicit, never JSON Infinity/NaN.
 - `git diff --check` passed before publication.
 
 Hosted native Windows, Debian and sanitizer results must be recorded from the

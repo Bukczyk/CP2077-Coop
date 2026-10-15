@@ -153,6 +153,16 @@ class Analysis(unittest.TestCase):
         self.assertIsNone(p['position_error_m']['p95'])
         self.assertEqual(p['position_error_m']['samples'], 0)
 
+    def test_finite_inputs_cannot_overflow_report_metrics(self):
+        r = report(frame(1,.2), player(1,.2,x='1e308',actualX='-1e308'),
+                   frame(2,.4), player(2,.4,x='1e308',actualX='1e308',yaw='1e308'),
+                   frame(3,.6), player(3,.6,x='-1e308',actualX='-1e308'))
+        p = r['runs'][0]['players'][0]
+        self.assertEqual(p['invalid_derived_samples'], 2)
+        self.assertEqual(p['actual_sample_step_m']['samples'], 0)
+        json.dumps(r, allow_nan=False)
+        self.assertTrue(math.isfinite(a.distribution([1e308,1e308])['median']))
+
     def test_cli_refuses_overwrite_and_separates_two_pc_clocks(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

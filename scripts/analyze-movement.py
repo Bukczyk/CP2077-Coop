@@ -7,7 +7,6 @@ import json
 import math
 from pathlib import Path, PurePosixPath
 import re
-import statistics
 import sys
 import zipfile
 
@@ -52,7 +51,9 @@ def distribution(values):
     if not values:
         return {'samples': 0, 'median': None, 'p95': None, 'max': None}
     ordered = sorted(values)
-    return {'samples': len(values), 'median': statistics.median(ordered),
+    middle = len(ordered)//2
+    median = ordered[middle] if len(ordered) % 2 else ordered[middle-1]/2+ordered[middle]/2
+    return {'samples': len(values), 'median': median,
             'p95': ordered[math.ceil(len(values)*0.95)-1], 'max': ordered[-1]}
 
 
@@ -188,6 +189,7 @@ def summarize_run(run):
                 players[key] = {'session': context[0], 'generation': context[1],
                     'self': context[2], 'host': context[3], 'player': player,
                     'samples': 0, 'eligible_samples': 0, 'unavailable_readbacks': 0,
+                    'invalid_derived_samples': 0,
                     'actors': [], 'fault_samples': Counter(), 'lifecycle_samples': Counter(),
                     'position_errors': [], 'yaw_errors': [], 'actual_steps': [],
                     'target_steps': [], 'counter_increases': Counter(),
@@ -216,11 +218,16 @@ def summarize_run(run):
             if not eligible:
                 previous.pop(key, None)
                 continue
+            error = math.dist(target, actual)
+            if not math.isfinite(error):
+                p['invalid_derived_samples'] += 1
+                previous.pop(key, None)
+                continue
             p['eligible_samples'] += 1
-            p['position_errors'].append(math.dist(target, actual))
+            p['position_errors'].append(error)
             yaw, actual_yaw = number(f.get('yaw')), number(f.get('actualYawDegrees'))
             if yaw is not None and actual_yaw is not None:
-                p['yaw_errors'].append(abs((math.degrees(yaw)-actual_yaw+180) % 360-180))
+                p['yaw_errors'].append(abs((math.degrees(yaw % math.tau)-(actual_yaw % 360)+180) % 360-180))
             age = number(f.get('commandAge'))
             if age is not None and age >= 0:
                 p['pending_command_age_max'] = max(p['pending_command_age_max'] or 0, age)
@@ -228,10 +235,13 @@ def summarize_run(run):
             old = previous.get(key)
             if old and old['actor'] == actor:
                 a_step, t_step = math.dist(actual, old['actual']), math.dist(target, old['target'])
-                p['actual_steps'].append(a_step)
-                p['target_steps'].append(t_step)
-                if t_step >= 0.10 and a_step <= 0.01:
-                    p['target_motion_stationary_actor_intervals'] += 1
+                if math.isfinite(a_step) and math.isfinite(t_step):
+                    p['actual_steps'].append(a_step)
+                    p['target_steps'].append(t_step)
+                    if t_step >= 0.10 and a_step <= 0.01:
+                        p['target_motion_stationary_actor_intervals'] += 1
+                else:
+                    p['invalid_derived_samples'] += 1
                 for name in COUNTERS:
                     a, b = old['counters'][name], counters[name]
                     if a is not None and b is not None:
