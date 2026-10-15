@@ -8,6 +8,8 @@ The appearance follow-up starts from fixture checkpoint
 The coherent color follow-up starts from
 `a105a228d2fd5505f071f0e6dd11d05d6493cedd`, reusing this fixture and adding
 original-native identity checks needed to keep replacement actors safe.
+The pure historical comparison follow-up starts from
+`d6ae28f4018ddf2f95f385270759e6c638997d70`; it adds no native calls.
 
 ## Scope and ownership
 
@@ -18,6 +20,13 @@ and this documentation; CMake registration is unchanged. It does not change
 the authored assets, production adapter, protocol, session server, installed
 game files or existing packages. Judy and Mitch are explicit local labels, not
 network identities or arbitrary HOST appearance mappings.
+
+The comparison follow-up owns exactly seven files: new `comparison.lua`,
+existing `fixture.lua`/`init.lua`, the fixture and entrypoint Lua suites, and
+`README.md`/this note. The existing engine adapter, native helpers, asset builder,
+assets and CMake registration are unchanged. `compare` reads existing copied
+state and returns bounded primitive evidence; it does not retain a comparison,
+enqueue work, log, change lifecycle or select/apply a model.
 
 The controller admits bounded copied commands. Only the real entrypoint's
 `onUpdate` callback invokes the engine adapter. `onShutdown` queues retirement
@@ -32,8 +41,10 @@ spawning replacements. Stop all slots and observe `closed` before unloading.
 | Windows x64 Release portable core, session server and test build | Passed at fixture baseline, MSVC 19.41 / Windows SDK 10.0.22621.0; unchanged native source, no redundant rebuild |
 | Complete CTest suite on this branch | 30/30 passed |
 | Actual engine adapter tests | 248 checks in Lua 5.4; 250 in LuaJIT 2.1 |
-| Pure queue/state controller tests | 60 checks, both runtimes |
-| Real `init.lua` with real adapter/controller and mocked native APIs | 171 checks, both runtimes |
+| Pure queue/state controller and historical comparison tests | 140 checks, both runtimes |
+| Real `init.lua` with real adapter/controller and mocked native APIs | 194 checks, both runtimes |
+| Independent actual PR27 producer to PR26 consumer | 54 checks in each runtime; native/helper boundaries mocked |
+| Audited comparison metadata/hash constants | Four resource SHA256s and seven native hash constants cross-checked |
 | Parent independent Python-builder to Lua catalog comparison | Both profiles match all seven fields in both runtimes; returned copies isolated |
 | Independent lifecycle/source review | Passed; additional per-slot failure, paused/unknown retirement, native spawn throw and duplicate-ID cases passed |
 | REDscript API signature sandbox | Passed against installed 2.31/Codeware declarations; inputs unchanged |
@@ -161,6 +172,43 @@ Coherent color/identity follow-up evidence is under
   independent review reran the focused suites and 30 separate actual-entrypoint
   scenarios in each runtime; no source blocker remained.
 
+Historical comparison evidence is under
+`D:\Downloads\syncfix\bench-artifacts\20261015-passive-appearance-comparison`:
+
+- `lua-validation.json`: 582 Lua 5.4 / 584 LuaJIT checks and eleven exact metadata
+  comparisons. Tests cover both known chains and intentional source/target name
+  differences; record-only and unsupported tuples; exact Uint64s; missing symbols
+  with known/unknown hashes; malformed, cyclic and contradictory input; duplicate
+  target fields; target read failure, stop, recreation and shutdown; detached
+  result copies; raw color inequality; and zero engine reads, mutations or spam.
+- `profile-hash-provenance.json` / `verify_profile_hashes.py`: reproducible ASCII
+  FNV1a64 constants from pinned SDK `ad7277714ad30d6885d7050c5ba24fa0102f6920`.
+  Independent review checked `CName.hpp` and `ResourcePath.hpp`/`FNV1a.hpp`; these
+  canonical lowercase/backslash paths survive resource-path sanitization. Both
+  quest-template constants also match actual extracted metadata. Computed hashes
+  are not native runtime observations or loaded content attestation.
+- `independent-producer-consumer.lua` / `.json`: actual PR27 `ab9d106` observer and
+  entrypoint feed actual PR26 fixture/engine/entrypoint, with only native/helper
+  return values mocked. 54 checks passed per runtime, including missing symbolic
+  source names, historical reset semantics, queued stop and stale generation.
+- `branch-validation.json` and its log: parent reran the whole branch, 30/30
+  CTests passed with source hashes unchanged. Native/runtime/script/CMake diff
+  from `d6ae28f` is empty; the matching Release build was reused. Prior exact
+  helper compile evidence remains applicable; no redundant native build or
+  compile is claimed for this Lua-only comparison.
+- `independent-focused-review.json`: final source/test review approved, rerunning
+  the three focused suites in both runtimes and checking exact resource metadata.
+  `frozen-source-manifest.json` pins all seven final task files.
+
+The source tuple is caller-supplied historical data, not an authenticated handle.
+Old copied captures can still produce historical candidate reports after a
+source-only reset/reload/reconnect; the report never claims to detect those.
+The current fixture has no target capture frame. Source and target capture times
+are not asserted equal, and an observed color pair is not a supported color rule.
+The fixture can observe while paused because observation is read-only; comparison
+does not certify unpaused state or grant mutation permission. A failed target
+read clears cached evidence, and its next comparison returns `unknown`.
+
 ## Reproduce offline checks
 
 From the source root with a configured Windows Release test build:
@@ -172,7 +220,7 @@ ctest --test-dir build/passive-model-fixture -C Release --output-on-failure
 
 Each focused Lua suite also accepts the repository root as its first script
 argument. Run `tests/passive_model_{fixture,engine,entrypoint}_tests.lua` in
-fresh Lua 5.4 and LuaJIT 2.1 states. The suites total 479 and 481 checks,
+fresh Lua 5.4 and LuaJIT 2.1 states. The suites total 582 and 584 checks,
 respectively. Python profile tests and existing asset contract tests run through
 CTest as before.
 
@@ -188,4 +236,6 @@ This fixture has no combat, seats, collision, model selection from network
 descriptors or remote player binding. Unknown spawn outcomes or a never-ready
 actor intentionally keep the slot held; there is no unsafe automatic escape
 or cleanup of actors not owned by this exact instance. The next integration
-step requires live qualification and an agreed supported descriptor mapping.
+step still requires live qualification and an agreed supported descriptor
+mapping. The historical comparison is only a reviewed resource-chain candidate;
+it does not establish rendered parity, effective override bytes or authority.

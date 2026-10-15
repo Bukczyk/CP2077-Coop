@@ -1,5 +1,6 @@
 -- Bounded local command queue. No game API access from public methods.
 local M={}
+local Comparison=require("comparison")
 local Controller={};Controller.__index=Controller
 local MAX_SLOTS=8 -- local diagnostic budget, unrelated to multiplayer capacity
 local function copy(value)
@@ -88,6 +89,12 @@ function Controller:status(slot)
     end
     if slot~=nil then return self.slots[slot] and snapshot(self.slots[slot]) or nil end
     local out={};for name,e in pairs(self.slots) do out[name]=snapshot(e) end;return out
+end
+function Controller:compare(slot,generation,sourceStatus)
+    -- Historical supplied source + current cached target only. No engine access,
+    -- registration, queue, retained comparison state, or automatic profile choice.
+    local target=type(slot)=="string" and self:status(slot) or nil
+    return Comparison.report(slot,generation,sourceStatus,target)
 end
 function Controller:_step(e)
     if e.state=="closed" then return end

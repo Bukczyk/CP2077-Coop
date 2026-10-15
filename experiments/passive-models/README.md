@@ -201,13 +201,87 @@ logged even if the state stays the same. Logging is limited to 64 lines per inst
 unchanged frames stay silent. Status remains available after that limit. See
 [FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for offline evidence and limits.
 
+## Compare historical NPC and fixture observations
+
+`compare(slot, generation, sourceStatus)` is a pure report, available through
+this existing fixture API. Supply a copied status from the separate
+`CP2077NpcAppearanceObservation` experiment (PR27) and an explicitly chosen
+existing fixture slot. It never selects/spawns a profile, changes readiness,
+queues work, logs, queries the engine or changes either actor.
+
+```lua
+local f = GetMod("PassiveModelFixture")
+local probe = GetMod("CP2077NpcAppearanceObservation")
+local selected = f.status("judy") -- slot already started and observed
+local source = probe.status("example") -- an explicitly requested NPC capture
+local report = f.compare("judy", selected.generation, source)
+```
+
+The result distinguishes:
+
+- `candidate_resource_match`: the reported source tuple follows the reviewed
+  resource chain for this explicit target profile.
+- `different_profile`: the reviewed source chain points to the other profile.
+- `unsupported_source`: a complete source tuple does not have a reviewed chain.
+- `unknown`: source evidence or the exact ready target lifetime is unavailable.
+- `invalid_input`: malformed evidence, stale format or contradictory fields.
+
+A stale slot generation returns `unknown` with `stale_generation`. Stop,
+movement submission, shutdown or a failed target observation immediately prevents
+comparison qualification through the existing cached state. This is not a new
+movement/spawn permission check. The fixture permits read-only observation while
+paused; this report does not certify that the game is currently unpaused.
+
+The reviewed game 2.31 chains are deliberately narrow:
+
+| Source record and template | Actual source appearance | Reviewed `.app` entry / proxy | Explicit target profile / appearance |
+| --- | --- | --- | --- |
+| `Character.Judy`, `base\quest\secondary_characters\judy.ent` | `judy_default` | `judy.app/default`, `judy_default.mesh` | `judy_default` / `default` |
+| `Character.Mitch`, `base\quest\tertiary_characters\mitch.ent` | `mitch_default` | `mitch.app/default`, `mitch_default.mesh` | `mitch_default` / `default` |
+
+Record alone, requested appearance alone, or direct source/target name equality
+cannot establish that chain. Source and target EntityIDs intentionally differ.
+The report requires exact record/template/appearance hashes and the target's
+coherent native identity, expected authored template, passive root and observed
+`default` appearance. Duplicated target status fields must agree.
+
+`comparison.lua` embeds the audited template/appearance-resource SHA256s and
+computed decimal identifiers. Constants follow pinned RED4ext SDK
+`ad7277714ad30d6885d7050c5ba24fa0102f6920`: `CName.hpp` uses FNV1a64 and
+`ResourcePath.hpp` sanitizes paths before hashing. These canonical lowercase,
+backslash paths are unchanged by sanitization; both source template hashes also
+match the extracted metadata. SHA256 evidence, resource-path hashes and CName
+hashes are separate domains. No proprietary asset payload is included.
+
+Missing readable source symbols remain empty in `source.observed`. Exact known
+hashes can still identify a reviewed chain; canonical labels appear separately
+under `resourceChain`. Unknown hashes remain unsupported. Known name/hash or
+path/hash contradictions fail. Observed `None`/zero remains distinct from a
+missing color read. `colorObservedEqual` compares both the raw color name and
+hash, but **`colorMatchVerified=false` and `visualQualified=false` always**.
+Neither equality nor a candidate chain proves materials, clothing, facial
+features, deformation, equipment or animation look the same.
+
+All results are **historical reports**, not authenticated or simultaneous
+captures. Source scope/ticket/frame and target slot/generation/entity are copied;
+the fixture has no target capture frame, so none is invented. Scope is not a
+network epoch. A caller can retain, edit or fabricate a plain source table;
+shape validation is not authentication. This API cannot detect a later source
+reset, mod reload, reconnect, appearance change, world unload or newer sample
+from an old supplied copy. Get a fresh source status/capture for each manual
+comparison. Even then `sourceAuthenticated`, `freshnessVerified`,
+`simultaneousCapture` and `resourceBytesVerified` remain false. The report does
+not attest which asset override bytes are currently loaded. Returned evidence
+is copied, bounded and read-only with respect to both input objects.
+
 ## Remaining live gates
 
 Later live gates are both models visible, correct default appearance, idle
 without T-pose/deformation, no autonomous AI, exact orientation/readback and
 cleanup/recreation without duplicates. Those gates remain unperformed.
 
-The current NPC descriptor does not supply an arbitrary chosen appearance. No
-reliable invariant record-to-Mitch mapping was established here. Matching a HOST
-NPC requires an agreed supported descriptor and demonstrated record/appearance
-mapping. This experiment does not change protocol, entity ownership or routing.
+The current NPC descriptor does not supply an arbitrary chosen appearance. The
+historical comparison establishes only the narrow resource relationship above,
+not an invariant record-to-Mitch rule or HOST mapping. Matching a HOST NPC still
+requires an agreed supported descriptor and live appearance/color/rendering
+qualification. This experiment does not change protocol, ownership or routing.

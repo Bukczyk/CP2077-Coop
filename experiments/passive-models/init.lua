@@ -40,6 +40,7 @@ end)
 return {
     start=function(slot,profile,pose) return controller:start(slot,profile,pose) end,
     status=function(slot) return controller:status(slot) end,
+    compare=function(slot,generation,sourceStatus) return controller:compare(slot,generation,sourceStatus) end,
     stop=function(slot) return controller:stop(slot) end,
     move=function(slot,generation,pose) return controller:move(slot,generation,pose) end,
     reset=function() return controller:reset() end,
