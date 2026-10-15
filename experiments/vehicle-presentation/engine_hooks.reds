@@ -52,6 +52,8 @@ public func CP2077VehicleProbe_MountSlot() -> String {
 @addField(VehicleObject)
 private let CP2077VehicleProbe_owned: Bool;
 @addField(VehicleObject)
+private let CP2077VehicleProbe_recordFault: Bool;
+@addField(VehicleObject)
 private let CP2077VehicleProbe_player: EntityID;
 @addField(VehicleObject)
 private let CP2077VehicleProbe_serial: Uint32;
@@ -63,11 +65,14 @@ private let CP2077VehicleProbe_events: array<ref<CP2077VehicleSeatEvent>>;
 @addMethod(VehicleObject)
 public func CP2077VehicleProbe_Owned(player: ref<PlayerPuppet>) -> Bool {
     let dynamic = GameInstance.GetDynamicEntitySystem();
-    if !IsDefined(player) || !player.IsAttached() || !this.IsAttached()
+    if this.CP2077VehicleProbe_recordFault || !IsDefined(player) || !player.IsAttached() || !this.IsAttached()
         || !IsDefined(dynamic) || !dynamic.IsReady() || !dynamic.IsManaged(this.GetEntityID())
         || !dynamic.IsSpawned(this.GetEntityID()) || dynamic.IsSpawning(this.GetEntityID())
-        || !dynamic.IsTagged(this.GetEntityID(), n"CP2077VehicleSeatFixture")
-        || this.GetRecordID() != t"Vehicle.v_standard2_archer_hella_player" { return false; }
+        || !dynamic.IsTagged(this.GetEntityID(), n"CP2077VehicleSeatFixture") { return false; }
+    if this.GetRecordID() != t"Vehicle.v_standard2_archer_hella_player" {
+        this.CP2077VehicleProbe_recordFault = true;
+        return false;
+    }
     if this.CP2077VehicleProbe_owned && this.CP2077VehicleProbe_player != player.GetEntityID() { return false; }
     this.CP2077VehicleProbe_owned = true;
     this.CP2077VehicleProbe_player = player.GetEntityID();
@@ -109,12 +114,14 @@ public func CP2077VehicleProbe_CanRetire(player: ref<PlayerPuppet>) -> Bool {
 }
 
 @addMethod(VehicleObject)
-public func CP2077VehicleProbe_Request(player: ref<PlayerPuppet>, slot: CName, mounting: Bool) -> Bool {
+public func CP2077VehicleProbe_Request(player: ref<PlayerPuppet>, slot: CName, mounting: Bool, expectedAppearance: CName) -> Bool {
     let current: MountingInfo;
     let info: MountingInfo;
     let data: ref<MountEventData>;
     let mount: ref<MountingRequest>;
     let unmount: ref<UnmountingRequest>;
+    let matches: Int32;
+    let record: ref<Vehicle_Record>;
     let requests = GameInstance.GetSystemRequestsHandler();
     // Also protect direct helper calls and changes since Lua's preflight.
     if !IsDefined(requests) || requests.IsGamePaused() || requests.IsPreGame() { return false; }
@@ -122,10 +129,25 @@ public func CP2077VehicleProbe_Request(player: ref<PlayerPuppet>, slot: CName, m
         || Vector4.Length(this.GetLinearVelocity()) >= 0.20 { return false; }
     current = player.CP2077VehicleProbe_MountInfo();
     if mounting {
+        record = TweakDBInterface.GetVehicleRecord(t"Vehicle.v_standard2_archer_hella_player");
+        if !IsDefined(record) || Equals(expectedAppearance, n"") || Equals(expectedAppearance, n"None")
+            || NotEquals(record.AppearanceName(), expectedAppearance)
+            || NotEquals(this.GetCurrentAppearanceName(), expectedAppearance)
+            || NotEquals(this.GetCurrentColorVariantName(), n"None") { return false; }
         if !player.CP2077VehicleProbe_OnFoot() || !VehicleComponent.IsSlotAvailable(this.GetGame(), this, slot) { return false; }
     } else {
         if current.parentId != this.GetEntityID() || current.childId != player.GetEntityID()
             || NotEquals(current.slotId.id, slot) { return false; }
+        // Cosmetics do not authorize a mount, but also cannot prevent a safe exit.
+        // Check the vehicle side again, not only the player's or Lua's last sample.
+        for occupant in this.CP2077VehicleProbe_Mounts() {
+            if occupant.parentId != this.GetEntityID() { return false; }
+            if occupant.childId == player.GetEntityID() || Equals(occupant.slotId.id, slot) {
+                if occupant.childId != player.GetEntityID() || NotEquals(occupant.slotId.id, slot) { return false; }
+                matches += 1;
+            }
+        }
+        if matches != 1 { return false; }
     }
     info.parentId = this.GetEntityID();
     info.childId = player.GetEntityID();

@@ -277,4 +277,116 @@ do
     check(data.deleted==0 and api.status().pending,"unknown native outcome must hold cleanup")
 end
 print=savedPrint
+-- Actual entrypoint regressions for fresh cosmetics and safe quarantined exit.
+local cosmetic
+local expectedRecord="Vehicle.v_standard2_archer_hella_player"
+local function cosmeticValue(field)
+    if cosmetic[field.."Throw"] then error(field.." unavailable")end
+    return cosmetic[field]
+end
+function player:CP2077VehicleProbe_DefaultAppearance()return cosmeticValue("default")end
+function actor:CP2077VehicleProbe_Appearance()return cosmeticValue("appearance")end
+function actor:CP2077VehicleProbe_ColorVariant()return cosmeticValue("color")end
+function actor:GetRecordID()return cosmetic.record end
+function actor:CP2077VehicleProbe_Owned(p)
+    -- Model the real native record rejection, not only the earlier loose shim.
+    return p==player and data.managed and data.spawned and not data.spawning and cosmetic.record==expectedRecord
+end
+function actor:CP2077VehicleProbe_ReadSeats()return cosmetic.seats or data.mounts end
+function actor:CP2077VehicleProbe_Request(p,slot,mounting,expectedAppearance)
+    check(p==player and slot=="seat_front_left" and expectedAppearance=="hella_fixture_default",
+        "native request lost frozen appearance or exact player/seat")
+    data.requests=data.requests+1
+    if data.nativeThrow then error("unknown native outcome")end
+    return not cosmetic.nativeReject
+end
+local function restoreCosmetics()
+    cosmetic={appearance="hella_fixture_default",color="None",default="hella_fixture_default",record=expectedRecord}
+end
+local function cosmeticEntrypoint()
+    restoreCosmetics();return actualEntrypoint()
+end
+local function completeMount(api,callbacks)
+    check(api.request("mount","seat_front_left"));data.mounts={{parent=carId,child=playerId,slot="seat_front_left"}}
+    data.events={{serial=1,child=playerId,slot="seat_front_left",mounting=true}};callbacks.onUpdate(0.1)
+    check(not api.status().pending and api.status().state=="ready")
+end
+print=function()end
+for _,case in ipairs({{key="appearance",value="custom"},{key="appearance"},{key="appearance",value=false},
+    {key="appearanceThrow",value=true},{key="color",value="custom"},{key="color"},{key="colorThrow",value=true},
+    {key="default",value="new_default"},{key="default"},{key="defaultThrow",value=true}})do
+    local api,callbacks=cosmeticEntrypoint();cosmetic[case.key]=case.value
+    local accepted,reason=api.request("mount","seat_front_left")
+    check(not accepted and reason=="request_rejected" and data.requests==0 and not api.status().pending,
+        "fresh cosmetic preflight submitted unsafe mount: "..case.key)
+    restoreCosmetics();completeMount(api,callbacks)
+end
+do
+    local api=cosmeticEntrypoint();cosmetic.default="new_default";cosmetic.appearance="new_default"
+    check(not api.request("mount","seat_front_left") and data.requests==0,"new record default replaced pinned descriptor")
+end
+for _,case in ipairs({{key="appearance",value="custom"},{key="appearance"},{key="appearanceThrow",value=true},
+    {key="color",value="custom"},{key="color"},{key="colorThrow",value=true}})do
+    local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks);cosmetic[case.key]=case.value
+    callbacks.onUpdate(0.1);check(api.status().state=="appearance_mismatch","cosmetic failure discarded valid identity/seats")
+    check(api.request("unmount","seat_front_left") and data.requests==2,"cosmetic quarantine blocked exact exit")
+    data.events={{serial=2,child=playerId,slot="seat_front_left",mounting=false}};callbacks.onUpdate(0.1)
+    check(api.status().pending,"event alone completed quarantined exit")
+    data.mounts={};callbacks.onUpdate(0.1)
+    check(not api.status().pending and api.status().state=="appearance_mismatch" and not api.status().cameraVerified)
+    restoreCosmetics();callbacks.onUpdate(0.1)
+    check(not api.request("mount","seat_front_left") and data.requests==2,"restoration cleared sticky cosmetic quarantine")
+    api.stop();callbacks.onUpdate(0.1);check(data.deleted==1,"safe empty quarantined cleanup blocked")
+end
+do
+    local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks)
+    cosmetic.appearance="custom";callbacks.onUpdate(0.1);restoreCosmetics();callbacks.onUpdate(0.1)
+    check(api.request("unmount","seat_front_left") and data.requests==2,"restored cosmetics must permit exact exit")
+end
+for _,method in ipairs({"CP2077VehicleProbe_Appearance","CP2077VehicleProbe_ColorVariant"})do
+    local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks)
+    local saved=actor[method];actor[method]=nil
+    setmetatable(actor,{__index=function(_,key)if key==method then error("cosmetic binding lookup failed")end end})
+    callbacks.onUpdate(0.1)
+    check(api.status().state=="appearance_mismatch" and api.request("unmount","seat_front_left"),
+        "cosmetic method lookup escaped failure isolation")
+    data.events={{serial=2,child=playerId,slot="seat_front_left",mounting=false}};data.mounts={}
+    callbacks.onUpdate(0.1);check(not api.status().pending and api.status().state=="appearance_mismatch")
+    setmetatable(actor,nil);actor[method]=saved
+end
+for _,fresh in ipairs({false,true})do
+    for _,wrong in ipairs({"wrong_record",false})do
+        local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks)
+        cosmetic.record=wrong
+        if not fresh then callbacks.onUpdate(0.1)end
+        check(not api.request("unmount","seat_front_left") and data.requests==1,"wrong record allowed exit")
+        restoreCosmetics();callbacks.onUpdate(0.1)
+        check(api.status().state=="record_mismatch" and not api.request("unmount","seat_front_left"),
+            "fresh or observed hard record fault was forgotten")
+        data.mounts={};api.stop();callbacks.onUpdate(0.1);check(data.deleted==0,"record restoration permitted cleanup")
+    end
+end
+for _,seats in ipairs({{},{{parent=carId,child=zeroId,slot="seat_front_left"}},
+    {{parent=zeroId,child=playerId,slot="seat_front_left"}},{{parent=carId,child=playerId,slot="seat_front_right"}},
+    {{parent=carId,child=playerId,slot="seat_front_left"},{parent=carId,child=playerId,slot="seat_front_left"}}})do
+    local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks)
+    cosmetic.color="custom";callbacks.onUpdate(0.1);cosmetic.seats=seats -- player-side readback stays exact
+    check(not api.request("unmount","seat_front_left") and data.requests==1 and not api.status().pending,
+        "stale vehicle relationship was accepted")
+end
+do
+    local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks)
+    cosmetic.color="custom";callbacks.onUpdate(0.1);data.mounts={} -- last sample still mounted
+    check(not api.request("unmount","seat_front_left") and data.requests==1 and not api.status().pending,
+        "stale player relationship was accepted")
+end
+for _,unknown in ipairs({false,true})do
+    local api,callbacks=cosmeticEntrypoint();completeMount(api,callbacks)
+    cosmetic.color="custom";callbacks.onUpdate(0.1)
+    data.nativeThrow=unknown;cosmetic.nativeReject=not unknown
+    check(not api.request("unmount","seat_front_left") and data.requests==2)
+    check(api.status().pending==unknown,"native rejection and unknown outcome were conflated")
+    api.stop();callbacks.onUpdate(0.1);check(data.deleted==0)
+end
+print=savedPrint
 print("vehicle_engine_adapter: "..checks.." checks passed")

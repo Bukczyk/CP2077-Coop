@@ -74,8 +74,11 @@ function Fixture:_relationship(o, child, seat)
 end
 function Fixture:request(operation, seat)
     local o=self.last
-    if self.state~="ready" or self.retiring or self.pending or not o
+    local cosmeticExit=operation=="unmount" and self.unsupported and self.state=="appearance_mismatch"
+    if (self.state~="ready" and not cosmeticExit) or self.identityFault or self.retiring or self.pending or not o
+        or o.record~=self.descriptor.record or o.player~=self.player
         or not o.attached or not o.managed or not o.spawned or o.spawning or o.speed>=0.2 then return false,"not_ready" end
+    if operation=="mount" and self.unsupported then return false,"not_ready" end
     if operation~="mount" and operation~="unmount" then return false,"invalid_operation" end
     if not seats[seat] or o.slots[seat]~=true then return false,"unsupported_seat" end
     if operation=="mount" then
@@ -106,6 +109,9 @@ function Fixture:step(dt,paused)
     self.time=self.time+dt
     if not self.id or self.identityFault then return end
     local ok,o=pcall(self.engine.observe,self.engine,self.id)
+    if ok and type(o)=="table" and o.id==self.id and o.recordFault==true then
+        self.identityFault=true; self.last=nil; self:_status("record_mismatch"); return
+    end
     if not ok or not safeObservation(o,self.id) then
         self.stableSince=nil; self.absentSince=nil; self.last=nil
         self:_status("observation_unavailable",ok and "invalid_readback" or tostring(o):sub(1,200)); return
@@ -114,6 +120,9 @@ function Fixture:step(dt,paused)
     if o.attached then
         if self.player and self.player~=o.player then
             self.identityFault=true; self:_status("player_changed"); return
+        end
+        if o.record~=self.descriptor.record then
+            self.identityFault=true; self:_status("record_mismatch"); return
         end
         self.player=o.player
         self.seenAttached=true
@@ -150,7 +159,7 @@ function Fixture:step(dt,paused)
             local ackOk,ack=pcall(self.engine.acknowledge,self.engine,self.id,self.events)
             self.eventAckConfirmed=ackOk and ack==true
         end
-        local descriptorMatches=o.record==self.descriptor.record and o.appearance==self.descriptor.appearance
+        local descriptorMatches=o.appearance==self.descriptor.appearance
             and o.color==self.descriptor.color
         if not descriptorMatches then self.unsupported=true; self:_status("appearance_mismatch") end
         if self.pending then
