@@ -10,6 +10,8 @@ The coherent color follow-up starts from
 original-native identity checks needed to keep replacement actors safe.
 The pure historical comparison follow-up starts from
 `d6ae28f4018ddf2f95f385270759e6c638997d70`; it adds no native calls.
+The separate encounter-asset prerequisite starts from
+`e8bd1d913b35125015c386915b229fb16ee00897`; it does not activate fixture reactions.
 
 ## Scope and ownership
 
@@ -28,6 +30,12 @@ assets and CMake registration are unchanged. `compare` reads existing copied
 state and returns bounded primitive evidence; it does not retain a comparison,
 enqueue work, log, change lifecycle or select/apply a model.
 
+The encounter prerequisite owns six files: one new authored Mitch encounter
+entity, `build_encounter_profile.py`, `tests/passive_model_encounter_asset_tests.py`,
+one registration in `tests/CMakeLists.txt`, and the two fixture documents. The
+existing idle/Judy/hittable assets and encounter graph, native helpers, Lua
+fixture, PR12 restoration and backend contracts remain unchanged.
+
 The controller admits bounded copied commands. Only the real entrypoint's
 `onUpdate` callback invokes the engine adapter. `onShutdown` queues retirement
 without engine access. An unload with no subsequent update can leave pending
@@ -38,13 +46,16 @@ spawning replacements. Stop all slots and observe `closed` before unloading.
 
 | Check | Result |
 | --- | --- |
-| Windows x64 Release portable core, session server and test build | Passed at fixture baseline, MSVC 19.41 / Windows SDK 10.0.22621.0; unchanged native source, no redundant rebuild |
-| Complete CTest suite on this branch | 30/30 passed |
+| Windows x64 Release portable core, session server and test build | Fresh configure and incremental Release passed after the new test registration; native source unchanged, plugin excluded on this branch build |
+| Complete CTest suite on this branch | 31/31 passed, including the new encounter asset test and all previous tests |
 | Actual engine adapter tests | 248 checks in Lua 5.4; 250 in LuaJIT 2.1 |
 | Pure queue/state controller and historical comparison tests | 140 checks, both runtimes |
 | Real `init.lua` with real adapter/controller and mocked native APIs | 194 checks, both runtimes |
 | Independent actual PR27 producer to PR26 consumer | 54 checks in each runtime; native/helper boundaries mocked |
 | Audited comparison metadata/hash constants | Four resource SHA256s and seven native hash constants cross-checked |
+| New encounter-profile asset mutation suite | 23 tests passed; both profiles, copy/handle/dependency/controller safety and output refusal |
+| Existing idle profile / passive contract / hittable suites | 22 / 23 / 9 tests passed |
+| Private WolvenKit 9.0.1 encounter profile builds | Judy and Mitch passed exact roundtrip, single-entry archive listing and unpacked-byte parity |
 | Parent independent Python-builder to Lua catalog comparison | Both profiles match all seven fields in both runtimes; returned copies isolated |
 | Independent lifecycle/source review | Passed; additional per-slot failure, paused/unknown retirement, native spawn throw and duplicate-ID cases passed |
 | REDscript API signature sandbox | Passed against installed 2.31/Codeware declarations; inputs unchanged |
@@ -208,6 +219,48 @@ are not asserted equal, and an observed color pair is not a supported color rule
 The fixture can observe while paused because observation is read-only; comparison
 does not certify unpaused state or grant mutation permission. A failed target
 read clears cached evidence, and its next comparison returns `unknown`.
+
+## Encounter asset prerequisite evidence
+
+Encounter prerequisite evidence is separately retained under
+`D:\Downloads\syncfix\bench-artifacts\20261015-mitch-encounter-profile`:
+
+- `mitch-build-01/manifest.json` and `judy-build-01/manifest.json`: actual pinned
+  WolvenKit builds, commands in `build.log`, roundtrip JSON, archive listing and
+  extracted single payload. All recorded source/tool inputs stayed unchanged.
+- Mitch authored entity SHA256:
+  `3a043bf3ead761ab4d7b193efa90fd1bcb884037975433b37cc1878db655f3f2`.
+  Archive SHA256:
+  `577c972378b7ec4602bdebb2f85333f33f630087e279180bfdf5466779e02ab2`.
+- Judy authored entity SHA256:
+  `fdaece384d3323106c7ee7725f6f1ea68ecca8df57dbef869fbf9d6d2ac3b159`.
+  Archive SHA256:
+  `4cf6fccc05313e66cc8731b29fdecc9d8ae870add81dfbf5c590cbf48c6a7ce8`.
+  `judy-resource-parity.json` verifies exact equality with the earlier encounter
+  `build-03` entity. No timestamp-only archive rebuild was used as a test.
+- The reviewed Judy source LF-normalized SHA256 is
+  `6d86e3be6c538ea886e3cff696739a4aadcb4b836ccaa90772b8e9f25144793f`;
+  the unchanged graph source LF-normalized SHA256 is
+  `5e73fe0bebab9901f4d610143ff6d55e8bd153b63606417c280e4e9b846b5675`.
+  These pin source JSON, not installed resource bytes.
+- `independent-source-review.json` and `independent-build-review.json`: independent
+  reviewer passed the 23 new tests plus 37 additional controls, revalidated both
+  actual roundtrips, ran CLI archive listing, checked payload/input hashes and
+  existing-output refusal, and confirmed 14 protected asset/runtime files were
+  unchanged. No remaining source/build blocker was found.
+- `branch-validation.json` and logs: fresh configure, incremental Release and
+  31/31 CTests passed. Code/test hashes stayed unchanged during validation.
+  Native/plugin source is unchanged; this branch build has
+  `COOP_BUILD_PLUGIN=OFF`. No new REDscript compilation was needed or claimed.
+  `frozen-source-manifest.json` records the six scoped files for publication.
+
+Both archives contain only the authored entity. The unchanged encounter graph
+is required separately; no game mesh/rig/animation payload is bundled. This
+prepares a presentation asset, not physical hit detection or a connected
+male reaction/death implementation. Fixed front-torso clips do not reproduce
+arbitrary HOST reactions, ragdoll or final bone poses. Actual idle/impact/death
+deformation, transitions, terminal pose and recreation without idle flash remain
+deferred live gates. The existing fixture still uses the idle assets.
 
 ## Reproduce offline checks
 
