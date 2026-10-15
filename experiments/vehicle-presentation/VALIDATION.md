@@ -51,7 +51,57 @@ Private evidence: `D:\Downloads\syncfix\bench-artifacts\20261015-vehicle-followu
 `git diff --check` passed. No REDscript/native code changed, no new compiler/build
 claim is made for this Lua-only correction, and no game was launched.
 
-## Passed locally
+## Fresh seat-request context correction, 2026-10-15
+
+The real CET entrypoint accepted a mount after the game became paused between its
+last ready observation and the request. The existing native helper also lacked a
+pause/menu gate. An actual-entrypoint regression fails against `f95cacc` and passes
+with this correction under Lua 5.4 and LuaJIT 2.1.
+
+The adapter now requires explicit false pause/pregame flags, the exact attached
+creator and a completed managed spawn immediately before requesting a seat. A
+missing/throwing context read or incomplete identity/readiness returns a definite
+rejection before the native request, with no pending request left behind. The
+native helper independently checks pause/pregame. An exception after entering the
+native helper still retains ambiguous request ownership. No queued call is treated
+as a completed seat transition.
+
+Validation on this source:
+
+- Compiled Lua 5.4 and LuaJIT 2.1 each pass all four suites: 353 fixture, 1645 engine
+  adapter, 111 movement and 69 movement-integration checks. The adapter suite uses
+  the actual `init.lua`, `Engine` and `Fixture`, covering pause/pregame true or
+  unknown, missing/throwing reads, detached creator and unknown spawn flags after
+  the last ready update. It verifies rejection without a pending lock, subsequent
+  exact-event/relationship mount and unmount recovery, and retained ownership
+  after a native exception.
+- 29/29 branch CTests pass using the existing Windows Release build. This is not a
+  fresh C++ build; no C++ source changed.
+- Isolated session plus vehicle REDscript compilation passes against the installed
+  game 2.31 cache and Codeware scripts. Original source/game/compiler input hashes
+  remain unchanged. Evidence:
+  `D:\Downloads\syncfix\bench-artifacts\20261015-vehicle-seat-preflight-audit\redscript\compile-20261015T100956741471Z.json`.
+
+Private evidence under `D:\Downloads\syncfix\bench-artifacts\20261015-vehicle-seat-preflight-audit`:
+`before-after-results.json`, `before-after-entrypoint-repro.lua`, `validation.json`
+and `ctest.log`. No game was launched or installed/configuration file changed.
+
+### Separate open issue: appearance changes between observations
+
+An actual-entrypoint reproduction changes the observed car's appearance from the
+supported default after a ready sample but before mounting. The baseline accepts
+the request using that stale sample (`appearance-seat-repro.lua` and
+`appearance-results.json`, both interpreters). The fresh pause/context correction
+does not address appearance or color changes and does not certify those values
+at seat-request time.
+
+A separate follow-up must reject a new mount when current appearance/color is
+unsupported or unknown, while preserving safe unmount for an already seated
+player whose car's cosmetic state changed. It must also define recovery after the
+next observation changes fixture readiness. Do not add a cosmetic check that traps
+an existing occupant; that controller behavior needs its own focused review.
+
+## Original checkpoint passed locally
 
 - Fresh Windows x64 Release plugin/server/core build with MSVC 19.41, VS 2022.
 - 29/29 CTests, including all four vehicle suites.

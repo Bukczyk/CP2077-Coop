@@ -61,7 +61,7 @@ function system:GetEntity(id) check(id==carId);return data.present and actor or 
 function system:DeleteEntity(id) check(id==carId);data.deleted=data.deleted+1;return true end
 Game={GetPlayer=function() return player end,GetDynamicEntitySystem=function() return system end,
     FindEntityByID=function(id) check(id==carId);return data.present and actor or nil end,
-    GetSystemRequestsHandler=function() return {IsGamePaused=function() return data.paused end} end}
+    GetSystemRequestsHandler=function() return {IsGamePaused=function() return data.paused end,IsPreGame=function() return false end} end}
 CName={new=function(s) return s end};TweakDBID={new=function(s) return s end}
 DynamicEntitySpec={new=function() return {} end}
 Vector4={new=function(x,y,z,w) return {x=x,y=y,z=z,w=w} end}
@@ -84,7 +84,7 @@ check(o.occupants[1].parent=="9007199254740993" and o.occupants[1].child=="90071
 check(o.playerMount.parent=="9007199254740993" and o.events[1].child=="9007199254740995")
 check(not e:delete("9007199254740993") and data.deleted==0)
 check(not pcall(e.delete,e,"9007199254740992") and data.deleted==0)
-check(not pcall(e.request,e,"9007199254740993","100","mount","seat_front_left") and data.requests==0)
+check(not e:request("9007199254740993","100","mount","seat_front_left") and data.requests==0)
 data.mounts={};check(e:delete("9007199254740993") and data.deleted==1)
 check(not pcall(e.create,e,desc,target) and data.created==1)
 data.present=false;data.managed=false;data.spawned=false
@@ -206,4 +206,75 @@ for _,sample in ipairs({{}, {value="false"}, {value=0}, {value=false}, {value=tr
 end
 system.GetEntity,system.DeleteEntity,system.IsReady=baseGet,baseDelete,baseReady
 Game.GetDynamicEntitySystem=function()return system end;Game.FindEntityByID=baseFind
+
+-- Actual init + Engine + Fixture regression: a fresh pause/context change after
+-- the last ready sample must reject before native request and leave no pending
+-- owner. The next valid request can complete through its event + relationship.
+local function restoreRequestContext()
+    data.paused,data.preGame,data.playerAttached=false,false,true
+    data.handlerMissing,data.handlerThrow,data.pauseThrow,data.preGameThrow=false,false,false,false
+    data.present,data.attached,data.managed,data.spawned,data.spawning=true,true,true,true,false
+end
+function player:IsAttached()return data.playerAttached end
+Game.GetSystemRequestsHandler=function()
+    if data.handlerThrow then error("handler unavailable")end
+    if data.handlerMissing then return nil end
+    return {IsGamePaused=function()if data.pauseThrow then error("pause read failed")end return data.paused end,
+        IsPreGame=function()if data.preGameThrow then error("pregame read failed")end return data.preGame end}
+end
+function actor:CP2077VehicleProbe_Request(p,slot,mounting)
+    check(p==player and slot=="seat_front_left")
+    data.requests=data.requests+1
+    if data.nativeThrow then error("unknown native request outcome")end
+    return true
+end
+local function actualEntrypoint()
+    restoreRequestContext()
+    data.present,data.attached,data.managed,data.spawned=false,false,false,false
+    data.mounts,data.events,data.cameraFailure,data.nativeThrow={}, {},false,false
+    data.created,data.deleted,data.requests=0,0,0
+    local callbacks={};registerForEvent=function(name,fn)callbacks[name]=fn end
+    local api=dofile(root.."/experiments/vehicle-presentation/init.lua")
+    check(api.start(target));for _=1,6 do callbacks.onUpdate(0.1)end
+    check(api.status().state=="ready" and api.enableRequests(true))
+    return api,callbacks
+end
+local savedPrint=print;print=function()end
+for _,case in ipairs({{key="paused",value=true},{key="paused"},{key="paused",value="false"},
+    {key="preGame",value=true},{key="preGame"},{key="preGame",value=0},
+    {key="handlerMissing",value=true},{key="handlerThrow",value=true},
+    {key="pauseThrow",value=true},{key="preGameThrow",value=true},
+    {key="playerAttached",value=false},{key="playerAttached"},
+    {key="managed"},{key="spawned"},{key="spawning"}})do
+    local api,callbacks=actualEntrypoint()
+    data[case.key]=case.value -- change after the last good onUpdate sample
+    local accepted,reason=api.request("mount","seat_front_left")
+    check(not accepted and reason=="request_rejected" and data.requests==0,
+        "fresh inactive/unknown context must reject before native request: "..case.key)
+    check(not api.status().pending and api.status().state=="ready","preflight rejection must not quarantine")
+    restoreRequestContext()
+    check(api.request("mount","seat_front_left") and data.requests==1 and api.status().pending,
+        "known valid context must recover without a new fixture")
+    data.mounts={{parent=carId,child=playerId,slot="seat_front_left"}}
+    data.events={{serial=1,child=playerId,slot="seat_front_left",mounting=true}}
+    callbacks.onUpdate(0.1)
+    check(not api.status().pending and api.status().state=="ready","exact completion still observed")
+    data.paused=true
+    check(not api.request("unmount","seat_front_left") and data.requests==1 and not api.status().pending,
+        "fresh pause also rejects unmount before submission")
+    data.paused=false
+    check(api.request("unmount","seat_front_left") and data.requests==2)
+    data.mounts={};data.events={{serial=2,child=playerId,slot="seat_front_left",mounting=false}}
+    callbacks.onUpdate(0.1)
+    check(not api.status().pending and api.status().state=="ready","unmount recovery still observes both conditions")
+end
+do
+    local api,callbacks=actualEntrypoint();data.nativeThrow=true
+    local accepted,reason=api.request("mount","seat_front_left")
+    check(not accepted and reason=="request_unresolved" and data.requests==1 and api.status().pending,
+        "actual native exception must retain ambiguous ownership")
+    check(not api.stop());callbacks.onUpdate(0.1)
+    check(data.deleted==0 and api.status().pending,"unknown native outcome must hold cleanup")
+end
+print=savedPrint
 print("vehicle_engine_adapter: "..checks.." checks passed")
