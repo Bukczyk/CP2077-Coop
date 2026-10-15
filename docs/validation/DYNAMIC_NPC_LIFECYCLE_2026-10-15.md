@@ -93,6 +93,28 @@ adapter to forget or replace the ID. Other cases cover paused/same-frame updates
 global-only and retained-handle-only presence, cleanup retry limits, exact scope
 reset, bubble reentry and foreign entity protection.
 
+### Pause observation failure follow-up
+
+2026-10-15T07:25:39Z: review found that the pause handler getter itself could throw
+before the protected `IsGamePaused()` call. That skipped the NPC clock pump,
+leaving old attachment/absence observations valid across an unknown interval.
+The entire lookup is now protected. A throwing handler getter supplies unknown
+pause before preserving the existing ordinary-update bridge failure. Latched
+failure ticks continue delivering unknown while the getter is unavailable.
+Any earlier update exception also invalidates NPC observations after cleanup,
+using the same timestamp without advancing the clock a second time.
+
+The actual entrypoint regression seeds a real dynamic-adapter retirement and
+checks handler failure both before deletion and during the absence quiet period,
+plus an earlier `GetPlayer()` exception. Recovery needs fresh attachment samples
+or a fresh 0.25-second unpaused absence interval. It also checks exact clock deltas
+and that a handler error does not continue normal session work. Each of the three
+cases fails against pre-follow-up commit `88a144d` and passes with this change.
+Four focused suites pass under both built Lua 5.4 and LuaJIT 2.1; logs are
+`build/dynamic-npc/pause-ctest.log` and `pause-luajit.log`. This follow-up changes
+only CET source, the lifecycle fixture and this note, so no native rebuild or new
+live-game test was performed.
+
 ## Remaining gates and limitations
 
 A never-attached token, lost ownership or an exhausted deletion retry stays
