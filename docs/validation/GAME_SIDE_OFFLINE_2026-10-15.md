@@ -17,9 +17,9 @@ This branch combines the following reviewable source slices on upstream main
 | 23 | feat/vehicle-pose-application | f95caccb62f0f46ecb48d0b74749c084f4121f38 |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | e291b75799d7a4db8aff661829343f1f7ae791eb |
+| 26 | feat/passive-model-fixture | a105a228d2fd5505f071f0e6dd11d05d6493cedd |
 
-Combined source tested: `99c8c1fe9531356bc644b85cb5eeca47944274f5`.
+Combined source tested: `5f4e409c7422afde60a0762cfa92a3c4f343be10`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -68,9 +68,17 @@ retains pending/unknown lifetimes until observed retirement. It does not bind
 network entities or change production selection. Model and vehicle follow-ups
 merged without conflicts; all prior registrations and regressions remain.
 
+The appearance follow-up adds a separate read-only Entity helper. The local
+fixture requires an observed current name exactly matching requested `default`;
+missing/wrong names block readiness and movement while exact retirement remains
+available. The final mutation actor is rechecked, and rejected preflight clears
+cached qualification. A current name is not proof of visible mesh/animation.
+
 ## Passed offline
 
-- Windows x64 Release plugin, session server and core build.
+- Windows x64 Release plugin, session server and core build at the preceding
+  checkpoint. Native source/build definitions are unchanged by this Lua/REDscript
+  follow-up; existing matching binaries were used for the repeated CTests.
 - 46/46 CTests, including existing real-socket/core tests and the new suites.
 - 23 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
@@ -83,24 +91,30 @@ merged without conflicts; all prior registrations and regressions remain.
   Private WolvenKit builds of both profiles passed serialization roundtrip,
   single-resource archive listing and extracted-byte parity. The existing Judy
   entity, authored idle graph and production builders remain unchanged.
-- 167 focused model-fixture checks per Lua 5.4/LuaJIT run: 45 controller, 89
-  actual adapter and 33 real entrypoint checks. Independent review covered
+- 299 focused model-fixture checks per Lua 5.4/LuaJIT run: 52 controller, 153
+  actual adapter and 94 real entrypoint checks. Independent review covered
   per-slot failure isolation, late callbacks, unknown/duplicate creation,
   stale generations, wrong templates, observed pose and bounded diagnostics.
+  Current-name mismatch/unavailability, sibling isolation, recovery, exact
+  cleanup and final-actor appearance changes are covered by the actual modules.
   The real Lua resource catalog matches the Python builder for both profiles.
 - Vehicle follow-up: 596 adapter, 353 fixture, 111 movement and 69 integration
   checks per Lua interpreter, including retained creator/actor recovery.
-- Isolated current session, vehicle, player action/aim and map capture REDscript
+- Isolated current session, vehicle, player action/aim, map capture and the new
+  passive-model current-appearance helper REDscript
   compilation together against copied installed 2.31 cache/Codeware inputs.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
 Current combined logs:
-`D:/Downloads/syncfix/bench-artifacts/20261015-passive-model-fixture-audit`,
-`combined-build.log`, `combined-ctest.log`, `combined-luajit.log`.
-The full Release plugin/server build, all 46 CTests and all 23 LuaJIT suites pass
-at the current tested source. Its separate compile-only model API probe also
-passes; that checks method signatures without executing engine behavior.
+`D:/Downloads/syncfix/bench-artifacts/20261015-passive-model-appearance`,
+`combined-ctest.log` and `combined-luajit.log`: 46 CTests and 23 LuaJIT suites pass
+again at the current tested source. The prior native Release build is recorded
+in `20261015-passive-model-fixture-audit/combined-build.log`.
+That folder also contains `combined-compile-20261015T094012683483Z.json` and `.log`:
+all current session and selected experiment REDscript sources compile together,
+with distinct experiment folders preventing same-name source overwrites.
+Original inputs remained unchanged. Compilation does not execute engine behavior.
 
 Earlier static cleanup logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
 `combined-static-cleanup-build.log`, `combined-static-cleanup-ctest-final.log`,
