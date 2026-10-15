@@ -389,4 +389,133 @@ for _,unknown in ipairs({false,true})do
     api.stop();callbacks.onUpdate(0.1);check(data.deleted==0)
 end
 print=savedPrint
+-- Actual init/fixture/movement/engine path. Only native boundary methods are
+-- modeled; the helper's independent checks are compiled separately, not run here.
+local poseCalls,poseAccepted,poseNativeThrow,poseNativeReject,poseNativeHook
+local observedPosition
+function actor:GetWorldPosition()return observedPosition or {x=10,y=0,z=0}end
+function actor:CP2077VehicleProbe_ApplyPose(p,generation,request,position,q,expectedAppearance)
+    poseCalls=poseCalls+1
+    check(p==player and generation>=1 and request>=1 and request<=16
+        and expectedAppearance=="hella_fixture_default","pose helper must receive frozen appearance")
+    if poseNativeHook then poseNativeHook()end
+    if poseNativeThrow then error("unknown pose application")end
+    if poseNativeReject or data.paused~=false or data.preGame~=false
+        or not self:CP2077VehicleProbe_CanRetire(p) or cosmetic.record~=expectedRecord
+        or cosmetic.default~=expectedAppearance or cosmetic.appearance~=expectedAppearance
+        or cosmetic.color~="None"then return false end
+    poseAccepted=poseAccepted+1
+    return true
+end
+local moveTarget={};for k,v in pairs(target)do moveTarget[k]=v end;moveTarget.x=10.3
+local function movementEntrypoint()
+    poseCalls,poseAccepted,poseNativeThrow,poseNativeReject,poseNativeHook=0,0,false,false,nil
+    observedPosition=nil
+    local api,callbacks=cosmeticEntrypoint()
+    check(api.enableRequests(false) and api.enableMovement(true),"movement is explicitly enabled without seat requests")
+    return api,callbacks
+end
+local function recoveredMovement(api,callbacks)
+    restoreRequestContext();restoreCosmetics()
+    check(api.move(moveTarget,api.status().generation) and poseAccepted==1 and api.status().movement.pending,
+        "fresh valid descriptor/context recovers without another fixture")
+    observedPosition={x=10.3,y=0,z=0}
+    for _=1,6 do callbacks.onUpdate(0.1)end
+    check(not api.status().movement.pending and api.status().movement.state=="observed",
+        "accepted move still needs later actual settling observation")
+end
+print=function()end
+for _,case in ipairs({{key="paused",value=true},{key="paused"},{key="paused",value="false"},
+    {key="preGame",value=true},{key="preGame"},{key="preGame",value=0},
+    {key="handlerMissing",value=true},{key="handlerThrow",value=true},
+    {key="pauseThrow",value=true},{key="preGameThrow",value=true},
+    {key="playerAttached",value=false},{key="playerAttached"},
+    {key="managed"},{key="spawned"},{key="spawning"},{key="spawning",value=true}})do
+    local api,callbacks=movementEntrypoint();data[case.key]=case.value
+    local accepted,reason=api.move(moveTarget,api.status().generation)
+    check(not accepted and reason=="application_rejected" and poseCalls==0,
+        "fresh movement context/lifecycle rejection before helper: "..case.key)
+    check(not api.status().movement.pending and not api.status().movement.fault,"definite preflight failure cannot quarantine movement")
+    recoveredMovement(api,callbacks)
+end
+for _,case in ipairs({{key="appearance",value="custom"},{key="appearance"},{key="appearance",value=false},
+    {key="appearanceThrow",value=true},{key="color",value="custom"},{key="color"},{key="colorThrow",value=true},
+    {key="default",value="new_default"},{key="default"},{key="defaultThrow",value=true}})do
+    local api,callbacks=movementEntrypoint();cosmetic[case.key]=case.value
+    local accepted,reason=api.move(moveTarget,api.status().generation)
+    check(not accepted and reason=="application_rejected" and poseCalls==0
+        and not api.status().movement.pending and not api.status().movement.fault,
+        "fresh movement cosmetics rejected before helper: "..case.key)
+    recoveredMovement(api,callbacks)
+end
+do
+    local api,callbacks=movementEntrypoint();cosmetic.default="changed";cosmetic.appearance="changed"
+    check(not api.move(moveTarget,api.status().generation) and poseCalls==0 and not api.status().movement.pending,
+        "matching changed default/current appearance cannot replace lifetime-frozen descriptor")
+    recoveredMovement(api,callbacks)
+end
+for _,method in ipairs({"CP2077VehicleProbe_Appearance","CP2077VehicleProbe_ColorVariant","GetRecordID"})do
+    local api,callbacks=movementEntrypoint();local saved=actor[method];actor[method]=nil
+    check(not api.move(moveTarget,api.status().generation) and poseCalls==0 and not api.status().movement.pending,
+        "missing getter is definite pre-entry rejection: "..method)
+    actor[method]=saved;recoveredMovement(api,callbacks)
+end
+for _,fault in ipairs({"system_unready","system_throw","player_missing","player_throw","player_id","actor_id"})do
+    local api,callbacks=movementEntrypoint()
+    local ready,getPlayer,playerHash,carHash=system.IsReady,Game.GetPlayer,playerId.hash,carId.hash
+    if fault=="system_unready"then system.IsReady=function()return nil end
+    elseif fault=="system_throw"then system.IsReady=function()error("original system unavailable")end
+    elseif fault=="player_missing"then Game.GetPlayer=function()return nil end
+    elseif fault=="player_throw"then Game.GetPlayer=function()error("player unavailable")end
+    elseif fault=="player_id"then playerId.hash="700ULL" else carId.hash="701ULL"end
+    check(not api.move(moveTarget,api.status().generation) and poseCalls==0 and not api.status().movement.pending,
+        "original creator or identity failure rejects before helper: "..fault)
+    system.IsReady,Game.GetPlayer,playerId.hash,carId.hash=ready,getPlayer,playerHash,carHash
+    recoveredMovement(api,callbacks)
+end
+for _,late in ipairs({"paused","pregame","default_and_appearance","color"})do
+    local api,callbacks=movementEntrypoint()
+    local savedName=CName.new
+    CName.new=function(value)
+        local result=savedName(value)
+        if value=="hella_fixture_default"then
+            if late=="paused"then data.paused=true
+            elseif late=="pregame"then data.preGame=true
+            elseif late=="color"then cosmetic.color="other"
+            else cosmetic.default="other";cosmetic.appearance="other"end
+        end
+        return result
+    end
+    local accepted,reason=api.move(moveTarget,api.status().generation);CName.new=savedName
+    check(not accepted and reason=="application_rejected" and poseCalls==1 and poseAccepted==0
+        and not api.status().movement.pending,"matched native guard rejects change after Lua preflight: "..late)
+    recoveredMovement(api,callbacks)
+end
+do
+    local api=movementEntrypoint();cosmetic.record="wrong_vehicle"
+    check(not api.move(moveTarget,api.status().generation) and poseCalls==0 and not api.status().movement.pending,
+        "fresh hard record mismatch cannot enter pose helper")
+    restoreCosmetics()
+    check(not api.move(moveTarget,api.status().generation) and poseCalls==0,"record mismatch remains sticky")
+end
+do
+    local api,callbacks=movementEntrypoint();poseNativeThrow=true
+    local accepted,reason=api.move(moveTarget,api.status().generation)
+    check(not accepted and reason=="application_outcome_unknown" and poseCalls==1
+        and api.status().movement.pending,"native exception must not become definite rejection")
+    check(not api.stop());callbacks.onUpdate(0.1)
+    check(data.deleted==0 and api.status().movement.pending,"unknown native result blocks cleanup")
+    poseNativeThrow=false;observedPosition={x=10.3,y=0,z=0}
+    for _=1,6 do callbacks.onUpdate(0.1)end
+    check(poseCalls==1 and not api.status().movement.pending and data.deleted>0,
+        "later exact pose observation resolves unknown without automatic resubmission")
+end
+do
+    local api=movementEntrypoint();local saved=Vector4.new
+    Vector4.new=function()error("position construction failed")end
+    check(not api.move(moveTarget,api.status().generation) and poseCalls==0 and not api.status().movement.pending,
+        "pre-entry argument constructor failure cannot create ambiguous movement")
+    Vector4.new=saved
+end
+print=savedPrint
 print("vehicle_engine_adapter: "..checks.." checks passed")

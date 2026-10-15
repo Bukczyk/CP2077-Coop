@@ -181,16 +181,33 @@ function Engine:delete(expected)
     return s:DeleteEntity(self.id)
 end
 function Engine:applyPose(expected,child,generation,request,target)
-    if self.recordFault then return false end
-    assert(generation==self.generation and child==self.creator,"pose_scope_mismatch")
-    -- A pause can begin after the last observation but before this manual call.
-    -- No native application has happened yet, so unknown/paused is a rejection.
-    local pauseOk,paused=pcall(function() return Game.GetSystemRequestsHandler():IsGamePaused() end)
-    if not pauseOk or paused~=false then return false end
-    local actor=self:_actor(expected)
-    local player=Game.GetPlayer()
-    assert(actor and player and key(player:GetEntityID())==self.creator,"pose_identity_unavailable")
-    return actor:CP2077VehicleProbe_ApplyPose(player,generation,request,
-        Vector4.new(target.x,target.y,target.z,1),Quaternion.new(target.qx,target.qy,target.qz,target.qw))
+    -- The cached ready sample may predate a save/menu, lifecycle or cosmetic
+    -- change. Every failure here is before native entry: reject without creating
+    -- an ambiguous pending movement or replacing the frozen creation descriptor.
+    local ok,actor,player,position,orientation,appearance=pcall(function()
+        assert(not self.recordFault,"pose_record_fault")
+        assert(generation==self.generation and child==self.creator,"pose_scope_mismatch")
+        local handler=assert(Game.GetSystemRequestsHandler(),"pose_context_unavailable")
+        assert(handler:IsGamePaused()==false and handler:IsPreGame()==false,"pose_context_inactive")
+        local current,s,_,_,attached=self:_actor(expected)
+        local creator=Game.GetPlayer()
+        assert(current and attached==true and s:IsManaged(self.id)==true
+            and s:IsSpawned(self.id)==true and s:IsSpawning(self.id)==false
+            and creator and creator:IsAttached()==true
+            and key(creator:GetEntityID())==self.creator,"pose_identity_unavailable")
+        if current:GetRecordID()~=TweakDBID.new(record) then
+            self.recordFault=true;error("pose_record_mismatch")
+        end
+        assert(type(self.appearance)=="string" and self.appearance~="" and self.appearance~="None"
+            and creator:CP2077VehicleProbe_DefaultAppearance()==self.appearance
+            and current:CP2077VehicleProbe_Appearance()==self.appearance
+            and current:CP2077VehicleProbe_ColorVariant()=="None","pose_cosmetics_unavailable")
+        return current,creator,Vector4.new(target.x,target.y,target.z,1),
+            Quaternion.new(target.qx,target.qy,target.qz,target.qw),CName.new(self.appearance)
+    end)
+    if not ok then return false end
+    -- Do not catch exceptions from the native mutation. Its outcome may already
+    -- be submitted, so the existing movement controller must retain ownership.
+    return actor:CP2077VehicleProbe_ApplyPose(player,generation,request,position,orientation,appearance)
 end
 return Engine

@@ -100,28 +100,39 @@ package.loaded.engine=nil;local Engine=require("engine")
 local carId={hash=ID.."ULL"};local playerId={hash=PLAYER.."ULL"}
 local data={calls=0,paused=false};local player,actor,system={},{},{}
 function player:GetEntityID()return playerId end
+function player:IsAttached()return true end
+function player:CP2077VehicleProbe_DefaultAppearance()return descriptor.appearance end
 function actor:GetEntityID()return carId end
 function actor:IsAttached()return true end
-function actor:CP2077VehicleProbe_ApplyPose(p,generation,request,position,q)
-    check(p==player and generation==9 and request==1 and position.x==10.3 and q.i~=0 and q.k==0)
+function actor:GetRecordID()return descriptor.record end
+function actor:CP2077VehicleProbe_Appearance()return descriptor.appearance end
+function actor:CP2077VehicleProbe_ColorVariant()return "None" end
+function actor:CP2077VehicleProbe_ApplyPose(p,generation,request,position,q,expectedAppearance)
+    check(p==player and generation==9 and request==1 and position.x==10.3 and q.i~=0 and q.k==0
+        and expectedAppearance==descriptor.appearance,"native pose arguments preserve frozen descriptor and full quaternion")
     data.calls=data.calls+1;return true
 end
 function system:IsReady()return true end
 function system:GetEntity()return actor end
+function system:IsManaged()return true end
+function system:IsSpawned()return true end
+function system:IsSpawning()return false end
 Game={GetPlayer=function()return player end,GetDynamicEntitySystem=function()return system end,FindEntityByID=function()return actor end,
-    GetSystemRequestsHandler=function()if data.pauseFailure then error("pause unavailable")end return{IsGamePaused=function()return data.paused end}end}
+    GetSystemRequestsHandler=function()if data.pauseFailure then error("pause unavailable")end
+        return{IsGamePaused=function()return data.paused end,IsPreGame=function()return false end}end}
+CName={new=function(value)return value end};TweakDBID={new=function(value)return value end}
 Vector4={new=function(x,y,z,w)return{x=x,y=y,z=z,w=w}end}
 Quaternion={new=function(i,j,k,r)return{i=i,j=j,k=k,r=r}end}
-local engine=Engine.new(9);engine.id=carId;engine.key=ID;engine.creator=PLAYER;engine.system=system
+local engine=Engine.new(9);engine.id=carId;engine.key=ID;engine.creator=PLAYER;engine.system=system;engine.appearance=descriptor.appearance
 local target=copy(origin);target.x=10.3;target.qx=math.sin(math.rad(6)/2);target.qw=math.cos(math.rad(6)/2)
 data.paused=true;check(not engine:applyPose(ID,PLAYER,9,1,target) and data.calls==0)
 data.paused=nil;check(not engine:applyPose(ID,PLAYER,9,1,target) and data.calls==0)
 data.pauseFailure=true;check(not engine:applyPose(ID,PLAYER,9,1,target) and data.calls==0)
 data.pauseFailure=false;data.paused=false
-check(not pcall(engine.applyPose,engine,ID,PLAYER,8,1,target) and data.calls==0)
-check(not pcall(engine.applyPose,engine,"12",PLAYER,9,1,target) and data.calls==0)
-check(not pcall(engine.applyPose,engine,ID,"13",9,1,target) and data.calls==0)
-playerId.hash="14ULL";check(not pcall(engine.applyPose,engine,ID,PLAYER,9,1,target) and data.calls==0)
+check(not engine:applyPose(ID,PLAYER,8,1,target) and data.calls==0,"scope failure is definite pre-native rejection")
+check(not engine:applyPose("12",PLAYER,9,1,target) and data.calls==0)
+check(not engine:applyPose(ID,"13",9,1,target) and data.calls==0)
+playerId.hash="14ULL";check(not engine:applyPose(ID,PLAYER,9,1,target) and data.calls==0)
 playerId.hash=PLAYER.."ULL";check(engine:applyPose(ID,PLAYER,9,1,target) and data.calls==1)
 package.loaded.engine=originalEngine;print=originalPrint
 print("vehicle_movement_integration: "..checks.." checks passed")

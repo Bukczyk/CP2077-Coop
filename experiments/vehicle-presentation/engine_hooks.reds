@@ -229,18 +229,26 @@ private let CP2077VehicleProbe_poseOrientation: Quaternion;
 
 @addMethod(VehicleObject)
 public func CP2077VehicleProbe_ApplyPose(player: ref<PlayerPuppet>, generation: Uint32,
-    request: Uint32, position: Vector4, orientation: Quaternion) -> Bool {
+    request: Uint32, position: Vector4, orientation: Quaternion, expectedAppearance: CName) -> Bool {
     let currentPosition: Vector4;
     let currentOrientation: Quaternion;
     let dot: Float;
+    let record: ref<Vehicle_Record>;
+    let requests = GameInstance.GetSystemRequestsHandler();
+    // Direct calls and changes since Lua's preflight must satisfy the same
+    // loaded/unpaused context and lifetime-frozen appearance contract.
+    if !IsDefined(requests) || requests.IsGamePaused() || requests.IsPreGame() { return false; }
     if generation == 0u || generation > 1000000000u || request == 0u || request > 16u
         || request <= this.CP2077VehicleProbe_poseRequest
         || (this.CP2077VehicleProbe_poseGeneration != 0u && generation != this.CP2077VehicleProbe_poseGeneration)
         || !this.CP2077VehicleProbe_CanRetire(player) { return false; }
     if !(AbsF(position.X) < 100000.0 && AbsF(position.Y) < 100000.0 && AbsF(position.Z) < 100000.0)
         || !(AbsF(Quaternion.MagnitudeSq(orientation) - 1.0) <= 0.001) { return false; }
-    if NotEquals(this.CP2077VehicleProbe_Appearance(), player.CP2077VehicleProbe_DefaultAppearance())
-        || NotEquals(this.CP2077VehicleProbe_ColorVariant(), "None") { return false; }
+    record = TweakDBInterface.GetVehicleRecord(t"Vehicle.v_standard2_archer_hella_player");
+    if !IsDefined(record) || Equals(expectedAppearance, n"") || Equals(expectedAppearance, n"None")
+        || NotEquals(record.AppearanceName(), expectedAppearance)
+        || NotEquals(this.GetCurrentAppearanceName(), expectedAppearance)
+        || NotEquals(this.GetCurrentColorVariantName(), n"None") { return false; }
     currentPosition = this.GetWorldPosition();
     currentOrientation = Quaternion.Normalized(this.GetWorldOrientation());
     orientation = Quaternion.Normalized(orientation);
