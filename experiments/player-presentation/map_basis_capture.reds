@@ -122,8 +122,10 @@ public class CP2077MapBasisProbe extends IScriptable {
             if IsDefined(current) {
                 // An ID reused by somebody else is never ours to unregister.
                 if current.GetScriptData() != point { return false; }
-                system.UnregisterMappin(point.id);
-                point.deleteIssued = true;
+                if !point.deleteIssued {
+                    system.UnregisterMappin(point.id);
+                    point.deleteIssued = true;
+                }
             }
             // A never-observed registration may still be pending. Absence
             // before our exact unregister is not proof of cancellation.
