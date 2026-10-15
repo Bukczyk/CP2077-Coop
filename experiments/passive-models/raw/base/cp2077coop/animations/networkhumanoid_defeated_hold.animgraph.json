@@ -1,0 +1,312 @@
+{
+  "Header": {
+    "WolvenKitVersion": "9.0.1",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-10-07T02:05:13.707697+00:00",
+    "DataType": "CR2W"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "animAnimGraph",
+      "additionalAnimDatabases": [],
+      "animFeatures": [],
+      "cookingPlatform": "PLATFORM_PC",
+      "hackAlwaysSample": 0,
+      "hasMixerSlot": 0,
+      "isPaused": 0,
+      "jsonFilesDirectory": "",
+      "nodesToInit": [
+        {
+          "HandleId": "0",
+          "Data": {
+            "$type": "animAnimNode_Root",
+            "id": 4294967295,
+            "debugName": {
+              "$type": "CName",
+              "$storage": "string",
+              "$value": "None"
+            },
+            "nodes": [
+              {
+                "HandleId": "1",
+                "Data": {
+                  "$type": "animAnimNode_Output",
+                  "id": 4294967295,
+                  "debugName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  },
+                  "node": {
+                    "$type": "animPoseLink",
+                    "node": {
+                      "HandleId": "2",
+                      "Data": {
+                        "$type": "animAnimNode_SkFrameAnim",
+                        "id": 4294967295,
+                        "debugName": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "animation": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "defeated_loop_01"
+                        },
+                        "isLooped": 0,
+                        "applyMotion": 0,
+                        "collectEvents": 0,
+                        "fireAnimLoopEvent": 0,
+                        "resume": 0,
+                        "progressLink": {
+                          "$type": "animFloatLink",
+                          "node": {
+                            "HandleId": "3",
+                            "Data": {
+                              "$type": "animAnimNode_FloatVariable",
+                              "id": 4294967295,
+                              "debugName": {
+                                "$type": "CName",
+                                "$storage": "string",
+                                "$value": "None"
+                              },
+                              "variableName": {
+                                "$type": "CName",
+                                "$storage": "string",
+                                "$value": "cp_coop_defeated_progress"
+                              },
+                              "poseInfoLogger": null,
+                              "visAxes": 0,
+                              "visMask": null,
+                              "visNames": 0,
+                              "visPostPose": 0,
+                              "visPostPoseColor": {
+                                "$type": "Color",
+                                "Alpha": 0,
+                                "Blue": 0,
+                                "Green": 0,
+                                "Red": 0
+                              },
+                              "visPrePose": 0,
+                              "visPrePoseColor": {
+                                "$type": "Color",
+                                "Alpha": 0,
+                                "Blue": 0,
+                                "Green": 0,
+                                "Red": 0
+                              },
+                              "visRigPartMask": {
+                                "$type": "CName",
+                                "$storage": "string",
+                                "$value": "None"
+                              },
+                              "visWhenActive": 0
+                            }
+                          }
+                        },
+                        "fireAnimEndOnceOnAnimEnd": 0,
+                        "poseInfoLogger": null,
+                        "visAxes": 0,
+                        "visMask": null,
+                        "visNames": 0,
+                        "visPostPose": 0,
+                        "visPostPoseColor": {
+                          "$type": "Color",
+                          "Alpha": 0,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        },
+                        "visPrePose": 0,
+                        "visPrePoseColor": {
+                          "$type": "Color",
+                          "Alpha": 0,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        },
+                        "visRigPartMask": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "visWhenActive": 0,
+                        "applyInertializationOnAnimSetSwap": 1,
+                        "clipEnd": 0,
+                        "clipFront": 0,
+                        "convertToAdditive": 0,
+                        "debug": 0,
+                        "debugFootsteps": 0,
+                        "motionProvider": null,
+                        "frameLink": {
+                          "$type": "animFloatLink",
+                          "node": null
+                        },
+                        "timeLink": {
+                          "$type": "animFloatLink",
+                          "node": null
+                        },
+                        "animLoopEventName": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "clipEndByEvent": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "clipFrontByEvent": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "popDataByTag": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "pushDataByTag": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        },
+                        "pushSafeCutTag": {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "None"
+                        }
+                      }
+                    }
+                  },
+                  "poseInfoLogger": null,
+                  "visAxes": 0,
+                  "visMask": null,
+                  "visNames": 0,
+                  "visPostPose": 0,
+                  "visPostPoseColor": {
+                    "$type": "Color",
+                    "Alpha": 0,
+                    "Blue": 0,
+                    "Green": 0,
+                    "Red": 0
+                  },
+                  "visPrePose": 0,
+                  "visPrePoseColor": {
+                    "$type": "Color",
+                    "Alpha": 0,
+                    "Blue": 0,
+                    "Green": 0,
+                    "Red": 0
+                  },
+                  "visRigPartMask": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  },
+                  "visWhenActive": 0
+                }
+              },
+              {
+                "HandleRefId": "2"
+              },
+              {
+                "HandleRefId": "3"
+              }
+            ],
+            "outputNode": {
+              "$type": "animPoseLink",
+              "node": null
+            },
+            "poseInfoLogger": null,
+            "visAxes": 0,
+            "visMask": null,
+            "visNames": 0,
+            "visPostPose": 0,
+            "visPostPoseColor": {
+              "$type": "Color",
+              "Alpha": 0,
+              "Blue": 0,
+              "Green": 0,
+              "Red": 0
+            },
+            "visPrePose": 0,
+            "visPrePoseColor": {
+              "$type": "Color",
+              "Alpha": 0,
+              "Blue": 0,
+              "Green": 0,
+              "Red": 0
+            },
+            "visRigPartMask": {
+              "$type": "CName",
+              "$storage": "string",
+              "$value": "None"
+            },
+            "visWhenActive": 0
+          }
+        },
+        {
+          "HandleRefId": "1"
+        },
+        {
+          "HandleRefId": "2"
+        },
+        {
+          "HandleRefId": "3"
+        }
+      ],
+      "oneFrameToggle": 0,
+      "rootNode": {
+        "HandleRefId": "0"
+      },
+      "timeDeltaMultiplier": 1,
+      "useAnimCommands": 0,
+      "useAnimCommandsForCrowd": 0,
+      "useAnimStaticCommands": 0,
+      "useLunaticMode": 0,
+      "variables": {
+        "HandleId": "4",
+        "Data": {
+          "$type": "animAnimVariableContainer",
+          "boolVariables": [],
+          "intVariables": [],
+          "floatVariables": [
+            {
+              "HandleId": "5",
+              "Data": {
+                "$type": "animAnimVariableFloat",
+                "name": {
+                  "$type": "CName",
+                  "$storage": "string",
+                  "$value": "cp_coop_defeated_progress"
+                },
+                "value": 0,
+                "default": 0,
+                "min": 0,
+                "max": 1,
+                "enableDebug": 0
+              }
+            }
+          ],
+          "quaternionVariables": [],
+          "transformVariables": [],
+          "vectorVariables": []
+        }
+      },
+      "staticCommandsRig": {
+        "DepotPath": {
+          "$type": "ResourcePath",
+          "$storage": "uint64",
+          "$value": "0"
+        },
+        "Flags": "Default"
+      }
+    },
+    "EmbeddedFiles": []
+  }
+}

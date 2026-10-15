@@ -333,6 +333,93 @@ an unknown partial pair. This does not prove visible continuity or engine
 delivery. Terminality is local fixture intent, never inferred HOST authority.
 `animationObserved`, `visualQualified` and color matching remain false.
 
+## Defeated held-pose asset checkpoint
+
+From PR26 `97fd12f12a15257b76b92ecff102203743c601d9`, the existing private
+builder adds only explicit `--presentation defeated_hold`. The two authored
+entities and separate sampled graph do not change the existing Lua fixture,
+shared state, native helpers, protocol or packages. Default `encounter` mode and
+its original profile table are preserved. This checkpoint does not encode a
+nonlethal state as death or activate a runtime profile.
+
+Evidence is under
+`D:\Downloads\syncfix\bench-artifacts\20261015-defeated-held-assets`:
+
+- `tests/passive_model_defeated_asset_tests.py`: 24 focused tests cover both
+  profiles, default behavior, exact resource/dependency/rig/clip contracts,
+  passive roots and inheritance, template/compiled parity, controller bindings,
+  sampling input, motion/events/features, ambiguous/dangling/conflicting/cyclic
+  handles, alias identity, WK defaults and LF/CRLF equivalence.
+- Existing encounter/profile/passive/hittable suites also pass: 23, 22, 23 and
+  9 tests. The old entity/graph bytes and old production validators are unchanged.
+- `private-builds-03.json`, `judy_default-build-03/` and
+  `mitch_default-build-03/` contain the final pinned WolvenKit Console 9.0.1
+  commands, compilation logs, actual entity and graph roundtrips, strict
+  validation, archive lists, extraction and source/input hashes. Each archive
+  has exactly the selected authored entity plus the authored graph. There are
+  no proprietary resource payloads. All inputs remained unchanged during build.
+- `independent-final-metadata-and-build-review.json`: independent reviewer reran
+  the 24 new and 23 encounter tests, actual pinned CLI listings for both
+  archives, strict roundtrip/alias checks, compiled/extracted hash parity and
+  metadata checks. No source/build blocker remained.
+- `branch-validation.json` and logs record fresh configure, incremental Windows
+  Release and **32/32 CTests**, preserving all 31 prior registrations. Generator
+  is Visual Studio 17 2022; `COOP_BUILD_PLUGIN=OFF`. Code/test hashes stayed
+  unchanged. This is a core/session build, not a new in-game plugin result.
+  Unchanged Lua/native/REDscript files did not require a new independent script
+  compilation or extra LuaJIT run. Hosted CI remains a publication check.
+- `default-mode-regression.json` and `default-encounter-regression/` exercise
+  the extended builder with no `--presentation` argument. Actual compile,
+  roundtrip and single-entity archive/extraction pass; the entity SHA256 exactly
+  matches the prior validated Judy encounter build (`fdaece384d3323106c7ee7725f6f1ea68ecca8df57dbef869fbf9d6d2ac3b159`).
+  The default manifest shape and external graph prerequisite are preserved.
+  This checks the changed packaging branch, not timestamp-only repeatability.
+- `frozen-source-manifest.json` records the exact eight scoped source/doc paths.
+
+Final private artifact SHA256s:
+
+| Artifact | SHA256 |
+| --- | --- |
+| Judy defeated entity | `db028a5c46a99286f6828c6c66e7e956db08ba44670a2d5c142ccc8fbad93688` |
+| Mitch defeated entity | `0017b629725ee4fa2e99d17410481cf3f6f8f301f57245f4a371c338bc8b0df6` |
+| Shared defeated graph | `fbcde5377c94226d50bd31b011724bf63c5cf348a3d5cea2ac22acf6094491e8` |
+| Judy two-resource archive | `74e1a1a77559a54162d71dfc2c8574d0f7d4a26141baad6457bd7573f85945d7` |
+| Mitch two-resource archive | `d0100d621429664f42bbd0240d80fa4ca33e4f29c69c2785e155013bbcf555ff` |
+
+Metadata provenance is retained separately in
+`20261015-defeated-presentation-audit/animation-metadata.json`. Both game 2.31
+sets declare `defeated_loop_01`, duration 10.3000002 s and no motion-extraction
+object. The female set SHA256 is
+`866b9e1e6f1a043c95a697e02ae3be6a53898a60ca494c5888384bdaf900c16a`;
+the male set SHA256 is
+`3fc33c80788b9a863f71df3ebe4ce76fe0c83b4018b2699124bc51cb149c81aa`.
+Their exact rig/resource references are pinned in the builder. These are metadata
+observations, not redistributed animation bytes or rendered validation.
+
+Validation caught and corrected three source/build issues before acceptance:
+
+1. The first authored graph used a forward handle reference. WK reported a
+   deserialization error and no compiled graph, despite its process exit zero.
+   The builder rejected the missing output. `judy_default-build-01` preserves
+   that evidence. The new graph now defines nodes before referring to them.
+2. Flattened handle data could accept a copied identical active root or input
+   with a different object identity from the initialized node. The graph-only
+   alias check rejects those mutations while retaining renumbered/equivalent
+   WK forms. Independent and parent probes are preserved in this evidence folder.
+   Existing entity normalization was not broadened or changed.
+3. The corrected build02 compiled, but strict roundtrip comparison rejected
+   defaults materialized by WK that were absent from the terse authored node
+   shapes. `wk-roundtrip-defaults.json` and the independent defaults review
+   establish that no old field or alias changed. The new graph now authors those
+   exact values, with mutation tests; no unknown field is stripped or ignored.
+   Failed build02 evidence is retained. Final build03 uses new output folders.
+
+These were offline authoring/validation findings, not observed game bugs. The
+new graph exposes normalized 0..1 sampling, default0, without an automatic time
+source. No live held pose, loop, entry/recovery transition, deformation, cleanup
+or synchronized Defeated behavior is claimed. The next runtime slice must add an
+explicit nonlethal state/controller route and then qualify both models in game.
+
 ## Reproduce offline checks
 
 From the source root with a configured Windows Release test build:
