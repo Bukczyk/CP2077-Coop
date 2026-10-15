@@ -44,6 +44,7 @@ def validate_sources(entity_path, graph_path):
     chunks = root["compiledData"]["Data"]["Chunks"]
     require([x["$type"] for x in chunks] == ["entEntity"] + types, "Unexpected compiled component, including possible AI/collision")
     require([x["$type"] for x in root["components"]] == types, "Unexpected template component")
+    idle.validate_passive_visuals(root)
     for components in (chunks[1:], root["components"]):
         animated, _, controller = components
         require(idle.resource_path(animated["graph"]) == GRAPH, "Wrong graph path")
