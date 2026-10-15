@@ -7,4 +7,8 @@ return {
     experimentalPassivePlayers = false,
     -- Optional locomotion experiment; keep the latest main pose path by default.
     experimentalPlayerMovement = false,
+    -- Independent per-player map markers; visual qualification still pending.
+    experimentalPlayerMarkers = false,
+    -- Status panel is shown only while the CET overlay is open.
+    showSessionUI = true,
 }
