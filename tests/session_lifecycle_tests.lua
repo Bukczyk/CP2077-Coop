@@ -17,7 +17,7 @@ local function fixture(role, experimental)
     local state = {
         attached=true, pregame=false, hasPlayer=true, hash=uint64(1),
         activations={}, bindings={}, logs={}, observations=0, cleared=0,
-        npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false,
+        npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false, paused=false, npcClocks={},
     }
     local events, hotkeys = {}, {}
     Game, Observe, CName = nil, nil, nil
@@ -30,7 +30,19 @@ local function fixture(role, experimental)
         events[name] = callback
     end
     registerHotkey = function(name, _, callback) hotkeys[name] = callback end
+    local runtime = require("npc_runtime")
+    local newRuntime = runtime.new
+    runtime.new = function(adapter)
+        state.npcProjection = newRuntime(adapter)
+        return state.npcProjection
+    end
     assert(loadfile(root .. "/runtime/session/cet/CP2077Coop/init.lua"))()
+    local population=package.loaded.npc_population
+    local observe=population.observe
+    population.observe=function(now,paused)
+        state.npcClocks[#state.npcClocks+1]={now=now,paused=paused}
+        return observe(now,paused)
+    end
     assert(events.onInit, "entrypoint must register onInit")
     assert(state.observations == 0, "no engine observation during module load")
     -- These callbacks must also be harmless before the engine API is ready.
@@ -53,16 +65,27 @@ local function fixture(role, experimental)
         return {ToEulerAngles=function() return {yaw=30} end}
     end
     local native = {
-        GetPlayer=function() if state.hasPlayer then return player end end,
+        GetPlayer=function()
+            if state.playerUnavailable then error("player lookup unavailable") end
+            if state.hasPlayer then return player end
+        end,
         GetSystemRequestsHandler=function()
-            return {IsPreGame=function() return state.pregame end}
+            if state.requestsUnavailable then error("requests handler unavailable") end
+            return {IsPreGame=function() return state.pregame end,
+                IsGamePaused=function()
+                    if state.pauseUnavailable then error("pause observation unavailable") end
+                    return state.paused
+                end}
         end,
         GetDynamicEntitySystem=function() return system end,
         CP2077Session_SetActive=function(value)
             state.activations[#state.activations+1]=value
         end,
         CP2077Session_PushLocal=function() state.pushes=state.pushes+1 end,
-        CP2077Session_BeginFrame=function() return 0 end,
+        CP2077Session_BeginFrame=function()
+            if state.bridgeFailure then error("test bridge failure") end
+            return 0
+        end,
         CP2077Session_Generation=function() return 1 end,
         CP2077Session_Session=function() return uint64(1) end,
         CP2077Session_Epoch=function() return 1 end,
@@ -96,6 +119,7 @@ local function fixture(role, experimental)
         end
     end
     state.reconnect=hotkeys.cp2077_session_reconnect
+    state.rawTick=events.onUpdate
     state.shutdown=events.onShutdown
     return state
 end
@@ -154,6 +178,157 @@ for _, role in ipairs({"HOST","JOINER"}) do
     s.tick()
     assert(s.npcReads == 0 and s.npcOffers == 0 and s.npcSpawns == 0)
 end
+-- The actual entrypoint supplies one timestamp and explicit pause state to NPC
+-- retirement even after unload or a latched bridge failure. Unknown is not false.
+do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local first=s.npcClocks[#s.npcClocks]
+    assert(first.paused==false and first.now>0,"normal NPC pump is explicitly unpaused")
+    s.paused=true; s.tick()
+    local paused=s.npcClocks[#s.npcClocks]
+    assert(paused.paused==true and paused.now>first.now)
+    s.pauseUnavailable=true; s.tick()
+    assert(s.npcClocks[#s.npcClocks].paused==nil,"unknown pause must reach fail-closed adapter")
+    s.pauseUnavailable=false; s.paused=false; s.hasPlayer=false; s.tick(3)
+    local unloaded=s.npcClocks[#s.npcClocks]
+    assert(unloaded.now>paused.now and unloaded.paused==false,"unloaded game still pumps retained NPCs")
+    s.hasPlayer=true; s.bridgeFailure=true; s.rawTick(1/60)
+    local failed=s.npcClocks[#s.npcClocks]
+    s.rawTick(1/60)
+    assert(s.npcClocks[#s.npcClocks].now>failed.now,"latched failure still pumps NPC retirement")
+end
+
+-- A throwing handler getter must still invalidate the real dynamic adapter's
+-- pending observations, on both the first failed update and latched-error ticks.
+for _,phase in ipairs({"attachment","absence","early-engine-error"}) do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local population=package.loaded.npc_population
+    local system=Game.GetDynamicEntitySystem()
+    local localId={hash="123ULL"}
+    local gone,deletes=false,0
+    local actor={GetEntityID=function() return localId end,IsAttached=function() return not gone end}
+    function system:CreateEntity() return localId end
+    function system:GetEntity() if not gone then return actor end end
+    function system:IsManaged() return not gone end
+    function system:IsSpawning() return false end
+    function system:IsSpawned() return not gone end
+    function system:DeleteEntity() deletes=deletes+1; return true end
+    Game.FindEntityByID=function() if not gone then return actor end end
+    TweakDB={GetRecord=function() return {} end}
+    DynamicEntitySpec={new=function() return {} end}
+    Vector4={new=function() return {} end}
+    Quaternion={new=function() return {} end}
+    local id=assert(population.spawn({entity="456ULL",record=123,x=0,y=0,z=0,yaw=0}))
+    assert(not population.remove(id) and deletes==0,"one attachment sample must not delete")
+    if phase=="absence" then
+        s.rawTick(0.01)
+        assert(not population.remove(id) and deletes==1)
+        gone=true; s.rawTick(0.1)
+        assert(not population.remove(id),"one absence sample must not release ownership")
+    end
+    local deletesBefore,pushesBefore=deletes,s.pushes
+    if phase=="early-engine-error" then
+        s.playerUnavailable=true
+        local count=#s.npcClocks
+        local before=s.npcClocks[count].now
+        s.rawTick(5)
+        assert(#s.npcClocks>count,"error before pause lookup must invalidate NPC observations")
+        local sample=s.npcClocks[#s.npcClocks]
+        assert(sample.paused==nil and math.abs(sample.now-before-5)<1e-9)
+        for index=count+1,#s.npcClocks do
+            assert(s.npcClocks[index].now==sample.now,"cleanup invalidation never advances the clock twice")
+        end
+        assert(not population.remove(id) and deletes==0,"early engine error cannot qualify deletion")
+        s.playerUnavailable=false
+    end
+    s.requestsUnavailable=true
+    for _,delta in ipairs({5,7}) do
+        local count=#s.npcClocks
+        local before=s.npcClocks[count].now
+        s.rawTick(delta)
+        assert(#s.npcClocks>count,"getter failure must still pump NPC retirement")
+        local sample=s.npcClocks[#s.npcClocks]
+        assert(sample.paused==nil,"throwing handler getter supplies unknown pause")
+        assert(math.abs(sample.now-before-delta)<1e-9,"failed tick advances clock by exactly one delta")
+        for index=count+1,#s.npcClocks do
+            assert(s.npcClocks[index].now==sample.now,"error invalidation reuses the current timestamp")
+        end
+        assert(not population.remove(id) and deletes==deletesBefore,"unknown interval cannot retire NPC")
+        assert(s.pushes==pushesBefore,"handler failure must not continue normal session work")
+    end
+    s.requestsUnavailable=false
+    local before=s.npcClocks[#s.npcClocks].now
+    s.rawTick(0.01)
+    local recovered=s.npcClocks[#s.npcClocks]
+    assert(recovered.paused==false and math.abs(recovered.now-before-0.01)<1e-9)
+    assert(not population.remove(id) and deletes==deletesBefore,"recovery requires fresh qualification")
+    if phase~="absence" then
+        s.rawTick(0.01)
+        assert(not population.remove(id) and deletes==1,"second recovered observation may submit deletion")
+    else
+        s.rawTick(0.2)
+        assert(not population.remove(id),"unknown interval cannot satisfy absence quiet time")
+        s.rawTick(0.06)
+        assert(population.remove(id),"fresh unpaused quiet interval can complete retirement")
+    end
+end
+
+-- Cleanup can return early on one NPC, leaving a second NPC's last sample at
+-- an older clock. A failed frame must invalidate BEFORE stop/reset samples it.
+do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local system=Game.GetDynamicEntitySystem()
+    local actors,nextId,deletes={},100,0
+    function system:CreateEntity()
+        nextId=nextId+1
+        local id={hash=tostring(nextId).."ULL"}
+        actors[id.hash]={GetEntityID=function() return id end,IsAttached=function() return true end}
+        return id
+    end
+    function system:GetEntity(id) return actors[id.hash] end
+    function system:IsManaged(id) return actors[id.hash]~=nil end
+    function system:IsSpawning() return false end
+    function system:IsSpawned(id) return actors[id.hash]~=nil end
+    function system:DeleteEntity() deletes=deletes+1; return true end
+    Game.FindEntityByID=function(id) return actors[id.hash] end
+    Game.CP2077Session_Resolve=function() return "0ULL" end
+    Game.GetTeleportationFacility=function() return {Teleport=function() end} end
+    TweakDB={GetRecord=function() return {} end}
+    DynamicEntitySpec={new=function() return {} end}
+    Vector4={new=function() return {} end}
+    Quaternion={new=function() return {} end}
+    EulerAngles={new=function() return {} end}
+    local c=s.npcProjection
+    local identity=c.identity
+    local bubble={radius=100,centers={{x=0,y=0,z=0}}}
+    local a={entity="456ULL",record=123,x=0,y=0,z=0,yaw=0}
+    local b={entity="789ULL",record=123,x=0,y=0,z=0,yaw=0}
+    local byId={[a.entity]=a,[b.entity]=b}
+    assert(c:step(identity,bubble,{a,b}))
+    -- Choose the runtime's iteration order rather than relying on hash order.
+    local first=next(c.owned)
+    local second=first==a.entity and b.entity or a.entity
+    assert(not c:step(identity,bubble,{byId[first]}))
+    s.rawTick(1)
+    assert(not c:step(identity,bubble,{byId[second]}))
+    assert(deletes==0,"both retirements have only one attachment observation")
+    local count=#s.npcClocks
+    local before=s.npcClocks[count].now
+    s.playerUnavailable=true
+    s.rawTick(1)
+    assert(deletes==0,"early failure must invalidate cached NPC context before reset deletes")
+    assert(c.owned[first] and c.owned[second],"failed frame retains both owned IDs")
+    for index=count+1,#s.npcClocks do
+        assert(s.npcClocks[index].paused==nil and math.abs(s.npcClocks[index].now-before-1)<1e-9,
+            "pre/post cleanup invalidation uses one unknown timestamp")
+    end
+    s.playerUnavailable=false
+    s.rawTick(0.01)
+    assert(deletes==0,"recovery must collect a fresh first attachment sample")
+    s.rawTick(0.01)
+    assert(deletes==2,"only fresh second attachment samples may submit deletion")
+end
+
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

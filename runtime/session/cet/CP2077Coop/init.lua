@@ -29,6 +29,13 @@ local proxies = {} -- PlayerId -> { tag, SessionEntityId (opaque Uint64), nextSp
 local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
+local function readNpcPauseContext()
+    local requestsOk, requests = pcall(function() return Game.GetSystemRequestsHandler() end)
+    if not requestsOk then return nil, nil, false, requests end
+    local pauseOk, paused = pcall(function() return requests:IsGamePaused() end)
+    if not pauseOk then paused = nil end
+    return requests, paused, true
+end
 local function clear()
     if passivePlayers then passivePlayers:reset() end
     for _, entry in pairs(proxies) do if entry.pose then entry.pose:reset() end end
@@ -51,7 +58,12 @@ local function update(delta)
     -- Continue observing asynchronous retirement even while no save is loaded.
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
-    local requests = Game.GetSystemRequestsHandler()
+    ensureNpcProjection()
+    local requests, npcPaused, requestsOk, requestsError = readNpcPauseContext()
+    npcProjection:pump(time, npcPaused)
+    -- Invalidate cleanup qualification before preserving the existing bridge
+    -- failure behavior. A missing handler sample must never become elapsed time.
+    if not requestsOk then error(requestsError) end
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
@@ -229,12 +241,23 @@ registerForEvent("onUpdate", function(delta)
     if failed then
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
+        pcall(function()
+            time = time + delta
+            local _, npcPaused = readNpcPauseContext()
+            if npcProjection then npcProjection:pump(time, npcPaused) end
+        end)
         return
     end
     local ok, reason = pcall(update, delta)
     if not ok then
         failed = true
+        -- stop/reset can revisit an NPC skipped by an earlier cleanup retry.
+        -- Invalidate its cached context before any cleanup side effect.
+        if npcProjection then pcall(function() npcProjection:pump(time, nil) end) end
         pcall(stop)
+        -- An earlier engine call may have failed before the normal pause pump.
+        -- Invalidate that missing observation without advancing the clock again.
+        if npcProjection then pcall(function() npcProjection:pump(time, nil) end) end
         print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason))
     end
 end)

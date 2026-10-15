@@ -13,11 +13,44 @@ local function system()
     if Game == nil or Game.GetStaticEntitySystem == nil then return nil end
     local ok, result = pcall(function()
         local value = Game.GetStaticEntitySystem()
-        if value == nil or not value:IsReady() then return nil end
+        if value == nil or value:IsReady() ~= true then return nil end
         return value
     end)
     if not ok or result == nil then return nil end
     return result
+end
+local function observe(entry)
+    -- Retain the creator itself. A replacement returned by Game cannot prove
+    -- absence, and CET is not required to return the same Lua wrapper each time.
+    local s = entry.creator
+    local ok, result = pcall(function()
+        if s == nil or s:IsReady() ~= true then return nil end
+        local managed, spawning, spawned = s:IsManaged(entry.id), s:IsSpawning(entry.id), s:IsSpawned(entry.id)
+        if type(managed) ~= "boolean" or type(spawning) ~= "boolean"
+            or type(spawned) ~= "boolean" then error("invalid static lifetime observation") end
+        local function attachment(entity)
+            if entity == nil then return false end
+            if key(entity:GetEntityID()) ~= key(entry.id) then error("static projection identity changed") end
+            local attached = entity:IsAttached()
+            if type(attached) ~= "boolean" then error("invalid static attachment observation") end
+            return attached
+        end
+        local entity = s:GetEntity(entry.id)
+        local attached = attachment(entity)
+        -- Never overwrite the first exact handle with a detached replacement.
+        -- Both it and the global registry can outlive creator-map visibility.
+        if entry.retained == nil and entity ~= nil then entry.retained = entity end
+        local retainedAttached = attachment(entry.retained)
+        local globalEntity = Game.FindEntityByID(entry.id)
+        local globalAttached = attachment(globalEntity)
+        if entity ~= nil and attached and managed and spawned and not spawning then
+            entry.completed = true
+        end
+        return {system=s,entity=entity,attached=attached,retainedAttached=retainedAttached,
+            globalEntity=globalEntity,globalAttached=globalAttached,
+            managed=managed,spawning=spawning,spawned=spawned}
+    end)
+    return ok and result or nil
 end
 local function transform(npc)
     local x, y, z, yaw = tonumber(npc.x), tonumber(npc.y), tonumber(npc.z), tonumber(npc.yaw)
@@ -47,7 +80,7 @@ function M.spawn(npc)
         return s:SpawnEntity(spec)
     end)
     if not ok or id == nil or key(id):match("^0[uUlL]*$") then return nil end
-    local entry = { id = id, session = sid, entity = nil, bound = false }
+    local entry = { id = id, session = sid, creator = s, entity = nil, bound = false, completed = false }
     bySessionEntity[sid], byLocalEntity[key(id)] = entry, entry
     return id
 end
@@ -56,31 +89,23 @@ function M.bind(sessionEntity, localId)
     if entry == nil or key(entry.id) ~= key(localId) then return false end
     -- Codeware can still return a handle after accepting asynchronous despawn.
     -- Its existence is not permission to revive or drive a retiring entity.
-    if entry.removing then return false, "removing" end
+    if entry.retiring then return false, "removing" end
     if entry.bound then return true end
-    local s = system()
-    if s == nil then return false end
-    local ok, entity, spawning, spawned, managed = pcall(function()
-        return s:GetEntity(entry.id), s:IsSpawning(entry.id), s:IsSpawned(entry.id), s:IsManaged(entry.id)
-    end)
-    if not ok then return false end
-    if entity == nil then
-        -- Codeware removes failed/aborted spawn tokens. Only an actual managed
-        -- or in-flight entity is pending; an absent ID cannot complete later.
-        -- Reads can straddle the asynchronous token-to-entity transition.
-        if managed or spawning or spawned then return nil, "pending" end
-        return false
+    local o = observe(entry)
+    if o == nil then return false end
+    -- Codeware v1.18.0 can erase a pending token while its successful callback
+    -- remains able to insert the actor. Never interpret that gap as final loss.
+    if not (o.entity ~= nil and o.attached and o.managed and o.spawned and not o.spawning) then
+        return nil, "pending"
     end
-    local readOk, actual = pcall(function() return entity:GetEntityID() end)
-    if not readOk or key(actual) ~= key(entry.id) then return false end
-    local boundOk, bound = pcall(function() return Game.CP2077Session_Bind(sessionEntity, actual) end)
-    if not boundOk or not bound then return false end
-    entry.entity, entry.bound = entity, true
+    local boundOk, bound = pcall(function() return Game.CP2077Session_Bind(sessionEntity, entry.id) end)
+    if not boundOk or bound ~= true then return false end
+    entry.entity, entry.bound = o.entity, true
     return true
 end
 function M.move(localId, npc)
     local entry = byLocalEntity[key(localId)]
-    if entry == nil or entry.removing or not entry.bound or entry.entity == nil then return false end
+    if entry == nil or entry.retiring or not entry.bound or entry.entity == nil then return false end
     local x, y, z, yaw = transform(npc)
     if not x then return false end
     local ok = pcall(function()
@@ -96,26 +121,28 @@ function M.remove(localId)
     local entry = byLocalEntity[key(localId)]
     if entry == nil then return true end
     if entry.bound then return false end
-    local s = system()
-    if s == nil then return false end
-    local function isGone()
-        return not s:IsManaged(entry.id) and not s:IsSpawning(entry.id)
-            and not s:IsSpawned(entry.id) and s:GetEntity(entry.id) == nil
+    entry.retiring = true
+    local function isGone(o)
+        return o ~= nil and entry.completed and not o.managed and not o.spawning
+            and not o.spawned and o.entity == nil and o.globalEntity == nil and not o.retainedAttached
     end
-    -- Failed creation, a world reset or another completed removal may already
-    -- have retired the owned ID. DespawnEntity then legitimately returns false.
-    local observed, gone = pcall(isGone)
-    if not observed then return false end
-    if not gone then
+    local o = observe(entry)
+    if o == nil then return false end
+    -- Never cancel a pending StaticEntitySystem token. Its successful callback
+    -- inserts the actor without checking token membership. Even all-false maps
+    -- cannot release a never-completed creation; keep its owner for late recovery.
+    if not entry.completed then return false end
+    if not isGone(o) then
         if not entry.removing then
-            local ok, removed = pcall(function() return s:DespawnEntity(entry.id) end)
-            if not ok or not removed then return false end
+            if not (o.entity ~= nil and o.attached and o.managed and o.spawned and not o.spawning) then return false end
+            local ok, removed = pcall(function() return o.system:DespawnEntity(entry.id) end)
+            if not ok or removed ~= true then return false end
             entry.removing = true
         end
         -- A queued despawn is not observed disappearance. Retain ownership for retry.
-        observed, gone = pcall(isGone)
+        o = observe(entry)
     end
-    if not observed or not gone then return false end
+    if not isGone(o) then return false end
     byLocalEntity[key(entry.id)] = nil
     if bySessionEntity[entry.session] == entry then bySessionEntity[entry.session] = nil end
     return true
@@ -132,7 +159,7 @@ function M.unbind(sessionEntity)
         local resolvedKey = key(resolved)
         if resolvedKey == key(sessionEntity) then
             local ok, unbound = pcall(function() return Game.CP2077Session_Unbind(sessionEntity) end)
-            if not ok or not unbound then return false end
+            if not ok or unbound ~= true then return false end
         elseif not resolvedKey:match("^0[uUlL]*$") then
             return false
         end
