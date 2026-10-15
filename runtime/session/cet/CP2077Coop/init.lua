@@ -32,6 +32,13 @@ local proxies = {} -- PlayerId -> { tag, SessionEntityId (opaque Uint64), nextSp
 local generation, localEntity, joined = nil, nil, false
 local active, failed, time = false, false, 0
 local commonTag = "CP2077Session.Projection"
+local function readNpcPauseContext()
+    local requestsOk, requests = pcall(function() return Game.GetSystemRequestsHandler() end)
+    if not requestsOk then return nil, nil, false, requests end
+    local pauseOk, paused = pcall(function() return requests:IsGamePaused() end)
+    if not pauseOk then paused = nil end
+    return requests, paused, true
+end
 local retiring, recoveryPending = {}, true
 local function own(entry, id)
     entry.life = PlayerLifetime.new(id, function(status)
@@ -153,14 +160,14 @@ local function update(delta)
     -- Continue observing asynchronous retirement even while no save is loaded.
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
-    local requests = Game.GetSystemRequestsHandler()
     ensureNpcProjection()
-    local pauseOk, npcPaused = pcall(function() return requests:IsGamePaused() end)
-    if not pauseOk then npcPaused = nil end
+    local requests, npcPaused, requestsOk, requestsError = readNpcPauseContext()
     npcProjection:pump(time, npcPaused)
     -- Unknown pause state cannot qualify player retirement either.
     local paused = npcPaused ~= false
     pumpRetirement(paused)
+    -- Preserve fatal handler errors after both owners observe the missing state.
+    if not requestsOk then error(requestsError) end
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
@@ -361,15 +368,9 @@ registerForEvent("onUpdate", function(delta)
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
         time = time + delta
+        local _, npcPaused = readNpcPauseContext()
+        pcall(function() pumpRetirement(npcPaused ~= false) end)
         pcall(function()
-            local requests = Game.GetSystemRequestsHandler()
-            local ok, paused = pcall(function() return requests:IsGamePaused() end)
-            pumpRetirement(not ok or paused ~= false)
-        end)
-        pcall(function()
-            local requests = Game.GetSystemRequestsHandler()
-            local pauseOk, npcPaused = pcall(function() return requests:IsGamePaused() end)
-            if not pauseOk then npcPaused = nil end
             if npcProjection then npcProjection:pump(time, npcPaused) end
         end)
         return
@@ -378,6 +379,8 @@ registerForEvent("onUpdate", function(delta)
     if not ok then
         failed = true
         local stopped, cleanupReason = pcall(stop)
+        -- A prior engine call may have failed before cleanup received this tick.
+        if npcProjection then pcall(function() npcProjection:pump(time, nil) end) end
         print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
             .. (stopped and "" or "; cleanup: " .. tostring(cleanupReason)))
     end

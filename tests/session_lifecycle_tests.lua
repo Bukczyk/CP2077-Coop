@@ -127,8 +127,12 @@ local function fixture(role, experimental, motor, passive)
         return state.add(actor,tag,state.pendingSpawn)
     end
     local native = {
-        GetPlayer=function() if state.hasPlayer then return player end end,
+        GetPlayer=function()
+            if state.playerUnavailable then error("player lookup unavailable") end
+            if state.hasPlayer then return player end
+        end,
         GetSystemRequestsHandler=function()
+            if state.requestsUnavailable then error("requests handler unavailable") end
             return {IsPreGame=function() return state.pregame end,
                 IsGamePaused=function()
                     if state.pauseUnavailable then error("pause observation unavailable") end
@@ -490,6 +494,77 @@ do
     assert(s.npcClocks[#s.npcClocks].now>failed.now,"latched failure still pumps NPC retirement")
 end
 
+-- A throwing handler getter must still invalidate the real dynamic adapter's
+-- pending observations, on both the first failed update and latched-error ticks.
+for _,phase in ipairs({"attachment","absence","early-engine-error"}) do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local population=package.loaded.npc_population
+    local system=Game.GetDynamicEntitySystem()
+    local localId={hash="123ULL"}
+    local gone,deletes=false,0
+    local actor={GetEntityID=function() return localId end,IsAttached=function() return not gone end}
+    function system:CreateEntity() return localId end
+    function system:GetEntity() if not gone then return actor end end
+    function system:IsManaged() return not gone end
+    function system:IsSpawning() return false end
+    function system:IsSpawned() return not gone end
+    function system:DeleteEntity() deletes=deletes+1; return true end
+    Game.FindEntityByID=function() if not gone then return actor end end
+    TweakDB={GetRecord=function() return {} end}
+    DynamicEntitySpec={new=function() return {} end}
+    Vector4={new=function() return {} end}
+    Quaternion={new=function() return {} end}
+    local id=assert(population.spawn({entity="456ULL",record=123,x=0,y=0,z=0,yaw=0}))
+    assert(not population.remove(id) and deletes==0,"one attachment sample must not delete")
+    if phase=="absence" then
+        s.rawTick(0.01)
+        assert(not population.remove(id) and deletes==1)
+        gone=true; s.rawTick(0.1)
+        assert(not population.remove(id),"one absence sample must not release ownership")
+    end
+    local deletesBefore,pushesBefore=deletes,s.pushes
+    if phase=="early-engine-error" then
+        s.playerUnavailable=true
+        local count=#s.npcClocks
+        local before=s.npcClocks[count].now
+        s.rawTick(5)
+        assert(#s.npcClocks==count+1,"error before pause lookup must invalidate NPC observations")
+        local sample=s.npcClocks[#s.npcClocks]
+        assert(sample.paused==nil and math.abs(sample.now-before-5)<1e-9)
+        assert(not population.remove(id) and deletes==0,"early engine error cannot qualify deletion")
+        s.playerUnavailable=false
+    end
+    s.requestsUnavailable=true
+    for _,delta in ipairs({5,7}) do
+        local count=#s.npcClocks
+        local before=s.npcClocks[count].now
+        s.rawTick(delta)
+        assert(#s.npcClocks>count,"getter failure must still pump NPC retirement")
+        local sample=s.npcClocks[#s.npcClocks]
+        assert(sample.paused==nil,"throwing handler getter supplies unknown pause")
+        assert(math.abs(sample.now-before-delta)<1e-9,"failed tick advances clock by exactly one delta")
+        for index=count+1,#s.npcClocks do
+            assert(s.npcClocks[index].now==sample.now,"error invalidation reuses the current timestamp")
+        end
+        assert(not population.remove(id) and deletes==deletesBefore,"unknown interval cannot retire NPC")
+        assert(s.pushes==pushesBefore,"handler failure must not continue normal session work")
+    end
+    s.requestsUnavailable=false
+    local before=s.npcClocks[#s.npcClocks].now
+    s.rawTick(0.01)
+    local recovered=s.npcClocks[#s.npcClocks]
+    assert(recovered.paused==false and math.abs(recovered.now-before-0.01)<1e-9)
+    assert(not population.remove(id) and deletes==deletesBefore,"recovery requires fresh qualification")
+    if phase~="absence" then
+        s.rawTick(0.01)
+        assert(not population.remove(id) and deletes==1,"second recovered observation may submit deletion")
+    else
+        s.rawTick(0.2)
+        assert(not population.remove(id),"unknown interval cannot satisfy absence quiet time")
+        s.rawTick(0.06)
+        assert(population.remove(id),"fresh unpaused quiet interval can complete retirement")
+    end
+end
 
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
