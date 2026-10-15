@@ -56,6 +56,10 @@ local function fixture()
     end
     Game = {
         GetStaticEntitySystem=function() return s end,
+        FindEntityByID=function(token)
+            local e=f.entries[text(token.hash)]
+            return e and (e.globalVisible==true or (e.globalVisible==nil and e.visible)) and e.actor or nil
+        end,
         CP2077Session_Bind=function(session, token)
             if f.denyBind then return false end
             local sid, hash=text(session),text(token.hash)
@@ -84,7 +88,7 @@ local function fixture()
         SetOrientationEuler=function(world,a) world.angles=a end}
     function f:gone(hash)
         local e=assert(self.entries[hash])
-        e.managed,e.spawning,e.spawned,e.visible=false,false,false,false
+        e.managed,e.spawning,e.spawned,e.visible,e.attached=false,false,false,false,false
     end
     function f:goneAll() for hash in pairs(self.entries) do self:gone(hash) end end
     f.system=s
@@ -124,9 +128,12 @@ do
     local old=f.controller.owned[2].id
     f.mapped={} -- native generation reset runs before Lua cleanup
     check(not f.controller:step("scope-b",{p},0.1),"new scope waits for old token")
-    check(f.despawns==1 and f.binds==0 and f.spawnCalls==1,"pending creation never bound or respawned")
+    check(f.despawns==0 and f.binds==0 and f.spawnCalls==1,"pending creation never deleted, bound or respawned")
     f.entries[text(old.hash)].spawning=false
     check(not f.controller:step("scope-b",{p},0.2),"managed-only transition is still owned")
+    local pending=f.entries[text(old.hash)]
+    pending.visible,pending.spawned=true,true
+    check(not f.controller:step("scope-b",{p},0.21) and f.despawns==1,"actual attached completion permits exact disposal")
     f:gone(text(old.hash)); f.mode="immediate"
     check(f.controller:step("scope-b",{p},0.3),"new scope proceeds only after disappearance")
     check(f.spawnCalls==2 and f.controller.scope=="scope-b","fresh token and scope")
@@ -149,7 +156,7 @@ do
     check(not f.controller:pump() and f.despawns==2,"accepted deletion still pending")
     e.managed,e.spawning,e.spawned=false,false,false
     check(not f.controller:pump() and f.despawns==2,"visible stale handle prevents completion")
-    e.visible=false; f.observationError=true
+    e.visible,e.attached=false,false; f.observationError=true
     check(not f.controller:pump(),"observation failure cannot certify disappearance")
     f.observationError=false
     check(f.controller:pump() and next(f.controller.owned)==nil,"complete observed retirement")
@@ -165,8 +172,8 @@ do
 end
 
 -- Asset failures and failed binding must not flood SpawnEntity every frame.
-for _,mode in ipairs({"abort","binding"}) do
-    local f=fixture(); f.mode=mode=="abort" and "abort" or "immediate"; f.denyBind=mode=="binding"
+for _,mode in ipairs({"binding"}) do
+    local f=fixture(); f.denyBind=true
     for frame=0,59 do
         f.controller:step("scope",{pose(2)},frame/60)
         if mode=="binding" then f:goneAll() end
@@ -176,11 +183,109 @@ for _,mode in ipairs({"abort","binding"}) do
     check(f.spawnCalls==2,mode.." may retry after one second")
 end
 
+-- Static DespawnEntity erases a pending token, but the native successful spawn
+-- callback does not check that membership. Never-attached absence is unknown.
+do
+    local f=fixture(); f.mode="abort"
+    for frame=0,180 do f.controller:step("scope",{pose(2)},frame/60) end
+    check(f.spawnCalls==1 and f.despawns==0 and f.controller.owned[2]~=nil,
+        "never-attached false observations retain token instead of retrying creation")
+    check(not f.controller:reset(),"pending absence cannot certify cancellation")
+    local e=f.entries[text(f.controller.owned[2].id.hash)]
+    e.managed,e.spawned,e.spawning,e.visible=true,true,false,true
+    check(not f.controller:pump() and f.despawns==1,"late exact attachment can be safely retired")
+    f:goneAll(); check(f.controller:pump(),"valid late-callback cleanup can finish")
+end
+
+-- Global registration alone is not a completed creator-owned spawn. Codeware
+-- registers before inserting into m_entities; keep that unsettled token.
+do
+    local f=fixture(); f.mode="pending"
+    f.controller:step("scope",{pose(2)},0)
+    local owned=f.controller.owned[2]; local e=f.entries[text(owned.id.hash)]
+    e.managed,e.spawning,e.spawned,e.visible=false,false,false,false
+    e.globalVisible=true
+    check(not f.controller:step("scope",{pose(2)},0.1) and f.binds==0,
+        "global-only attachment cannot prove completed static creation")
+    e.globalVisible,e.attached=false,false
+    check(not f.controller:reset() and f.controller.owned[2]==owned and f.despawns==0,
+        "global-only disappearance cannot release an unsettled token")
+    e.managed,e.spawned,e.visible,e.attached=true,true,true,true
+    check(not f.controller:pump() and f.despawns==1,"creator completion recovers unsettled cleanup")
+    f:goneAll(); check(f.controller:pump(),"creator-qualified removal releases token")
+end
+
 do
     local f=fixture(); f.mode="pending"; f.controller:step("scope",{pose(2)},0)
     local e=f.entries[text(f.controller.owned[2].id.hash)]
     e.visible,e.spawned,e.spawning=true,true,false; e.wrongId="9007199254740999"
-    check(not f.controller:step("scope",{pose(2)},0.1) and f.binds==0 and f.despawns==1,"wrong handle identity retires exact original token")
+    check(not f.controller:step("scope",{pose(2)},0.1) and f.binds==0 and f.despawns==0,
+        "wrong handle identity cannot authorize deletion")
+    e.wrongId=nil
+    check(f.controller:step("scope",{pose(2)},0.2) and f.spawnCalls==1,"exact actor can recover without replacement")
+end
+
+for _,field in ipairs({"managed","spawning","spawned"}) do
+    for _,bad in ipairs({{name="nil"},{name="string",value="false"},{name="number",value=0}}) do
+        local f=fixture(); f.controller:step("scope",{pose(2)},0)
+        local token=f.controller.owned[2].id; local e=f.entries[text(token.hash)]
+        local moves=f.moves
+        e[field]=bad.value
+        check(not f.controller:step("scope",{pose(2)},0.1) and f.moves==moves,
+            "unknown "..field.." blocks placement: "..bad.name)
+        e.visible,e.managed,e.spawning,e.spawned=false,false,false,false
+        e[field]=bad.value
+        check(not f.controller:reset() and f.controller.owned[2]~=nil and f.despawns==0,
+            "unknown "..field.." cannot release or despawn: "..bad.name)
+        e.managed,e.spawning,e.spawned,e.visible=true,false,true,true
+        check(not f.controller:pump() and f.despawns==1,"valid recovery resumes exact disposal")
+        f:goneAll(); check(f.controller:pump() and next(f.controller.owned)==nil,"observed removal completes recovery")
+    end
+end
+
+do
+    local f=fixture(); f.controller:step("scope",{pose(2)},0)
+    local owned=f.controller.owned[2]; local e=f.entries[text(owned.id.hash)]
+    check(not f.controller:reset() and f.despawns==1,"dispose submitted for attached actor")
+    check(owned.actor==e.actor,"native unbind preserves exact actor handle")
+    e.managed,e.spawning,e.spawned,e.visible=false,false,false,false
+    check(not f.controller:pump() and f.controller.owned[2]==owned,
+        "retained attached actor blocks false registry absence")
+    e.attached=nil
+    check(not f.controller:pump(),"unknown retained attachment cannot certify removal")
+    e.attached=false; e.globalVisible=true
+    check(not f.controller:pump(),"global actor lookup blocks removal even after detach")
+    e.globalVisible=false
+    check(f.controller:pump() and next(f.controller.owned)==nil,"all exact evidence absent permits release")
+end
+
+do
+    local f=fixture(); f.controller:step("scope",{pose(2)},0)
+    local replacementCalls=0
+    Game.GetStaticEntitySystem=function()
+        replacementCalls=replacementCalls+1
+        error("different system must not be used during old cleanup")
+    end
+    check(not f.controller:reset() and f.despawns==1 and replacementCalls==0,
+        "cleanup uses original creator rather than fresh global system")
+    f:goneAll()
+    check(f.controller:pump() and replacementCalls==0,"creator still owns final absence observation")
+end
+
+for _,bad in ipairs({{name="nil"},{name="string",value="true"},{name="number",value=1}}) do
+    local f=fixture(); f.ready=bad.value
+    check(not f.controller:step("scope",{pose(2)},0) and f.spawnCalls==0,
+        "strict native readiness: "..bad.name)
+end
+
+do
+    local f=fixture(); f.controller:step("scope",{pose(2)},0)
+    local find=Game.FindEntityByID
+    Game.FindEntityByID=function() error("global lookup unavailable") end
+    check(not f.controller:reset() and f.despawns==0,"lookup exception retains exact ownership")
+    Game.FindEntityByID=find
+    check(not f.controller:pump() and f.despawns==1,"known global lookup recovers")
+    f:goneAll(); check(f.controller:pump(),"lookup recovery can complete cleanup")
 end
 
 do
@@ -232,7 +337,9 @@ do
     f.generation=1; f.loaded=true; f.remotes={pose(2),pose(3,"9007199254740994ULL")}
     local selected
     Game.GetPlayer=function() return f.loaded and player or nil end
-    Game.GetSystemRequestsHandler=function() return nil end
+    Game.GetSystemRequestsHandler=function()
+        return {IsGamePaused=function() return false end,IsPreGame=function() return false end}
+    end
     Game.GetDynamicEntitySystem=function() return dyn end
     Game.FindEntityByID=function(token) return dyn:GetEntity(token) end
     Game.CP2077Session_ExperimentalStaticNpcProjection=function() return false end
@@ -262,7 +369,20 @@ do
     for _=1,30 do events.onUpdate(0.01) end
     check(f.spawnCalls==2 and #f.system:GetTagged(Passive.tag)==2,"entrypoint selects only static players")
     local old={}; for hash in pairs(f.entries) do old[#old+1]=hash end
+    -- Proven baseline regression: unknown native lifecycle fields on a real
+    -- generation reset previously dropped both tokens and spawned replacements.
+    for _,hash in ipairs(old) do
+        local e=f.entries[hash]
+        e.managed,e.spawning,e.spawned,e.visible=nil,nil,nil,false
+    end
     f.generation=2; f.mapped={}; events.onUpdate(0.01)
+    check(f.spawnCalls==2 and f.despawns==0,"unknown static lifecycle blocks real-entrypoint generation replacement")
+    for _,hash in ipairs(old) do
+        local e=f.entries[hash]
+        check(e.actor:IsAttached(),"old physical actor still exists while registry state is unknown")
+        e.managed,e.spawning,e.spawned,e.visible=true,false,true,true
+    end
+    events.onUpdate(0.01)
     check(f.spawnCalls==2 and f.despawns==2,"generation reset defers replacements")
     for _,hash in ipairs(old) do f:gone(hash) end
     events.onUpdate(0.01); check(f.spawnCalls==4,"new generation starts after actual retirement")

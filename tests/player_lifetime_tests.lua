@@ -44,7 +44,30 @@ local function fixture()
     return f
 end
 
-local f=fixture()
+-- Recovery of an active exact actor updates its diagnostic status. Neither an
+-- empty observation nor a different actor can clear the lookup uncertainty.
+local f=fixture(); f:attach(); f.lookupError=true
+check(f.owner:actor()==nil and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "failed active lookup reports uncertainty")
+f.lookupError=false; f.visible=false
+check(f.owner:actor()==nil and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "empty active lookup is not observation recovery")
+f.visible=true; f.actorId={hash="9007199254740994ULL"}
+check(f.owner:actor()==nil and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "a foreign adjacent actor cannot recover the owned lifetime")
+f.actorId=nil
+check(f.owner:actor()==f.actor and f.owner.status=="owned" and not f.owner.blocked,
+    "exact active actor recovery clears obsolete observation error")
+check(f.deletes==0 and f.releases==0 and not f.owner.retiring,
+    "observation recovery cannot release, delete or retire the actor")
+f.owner:retire(); f.lookupError=true; f.owner:actor(); f.lookupError=false
+check(f.owner:actor()==f.actor and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "exact actor lookup alone cannot clear retirement uncertainty")
+check(not f:pump(0) and f.deletes==0,"retiring recovery still needs first stable observation")
+check(not f:pump(0.1) and f.deletes==1 and f.releases==1,
+    "normal retirement policy can recover after its second stable observation")
+
+f=fixture()
 check(f.owner:actor()==nil,"pending actor is not fabricated")
 check(not f:pump(-1) and f.deletes==0,"an owned active lifetime does not retire itself")
 check(not f.owner:retire() and not f:pump(0),"departure retains pending ID")
@@ -163,6 +186,30 @@ for _,remaining in ipairs({"spawned","populated","spawning","managed"}) do
     f=fixture(); f:attach(); f.owner:retire(); f:pump(0); f:pump(0.1); f:gone(); f[remaining]=true
     check(not f:pump(1) and not f:pump(2),"remaining evidence blocks cleanup: "..remaining)
     f[remaining]=false; f:pump(3); check(f:pump(3.3),"last evidence must disappear: "..remaining)
+end
+
+-- Lookup registries may clear before the previously observed exact actor
+-- detaches. Retain that handle as independent evidence of continued existence.
+f=fixture(); f:attach(); f.owner:actor(); f.owner:retire(); f:pump(0); f:pump(0.1)
+f:gone(); f.attached=true
+check(not f:pump(1) and not f:pump(2) and not f.owner.done,
+    "an attached retained actor blocks release despite empty lookup registries")
+check(f.deletes==1,"waiting on the retained actor never resubmits accepted deletion")
+f.attached=false
+check(not f:pump(3) and not f:pump(3.2),"observed retained detachment starts a fresh quiet interval")
+check(f:pump(3.3),"exact retained detachment and empty registries permit cleanup")
+
+for _,bad in ipairs({"identity","nil-attachment","invalid-attachment","throwing-attachment"}) do
+    f=fixture(); f:attach(); f.owner:retire(); f:pump(0); f:pump(0.1); f:gone(); f:pump(0.2)
+    local original=f.actor.IsAttached
+    if bad=="identity" then f.actorId={hash="9007199254740994ULL"}
+    elseif bad=="nil-attachment" then f.actor.IsAttached=function() return nil end
+    elseif bad=="invalid-attachment" then f.actor.IsAttached=function() return 0 end
+    else f.actor.IsAttached=function() error("retained handle unavailable") end end
+    check(not f:pump(1) and not f.owner.done,"retained handle uncertainty blocks release: "..bad)
+    f.actorId=nil; f.actor.IsAttached=original
+    check(not f:pump(2) and not f:pump(2.2),"retained handle recovery requires fresh quiet time: "..bad)
+    check(f:pump(2.3),"confirmed exact detachment resolves uncertainty: "..bad)
 end
 
 print("player_lifetime: PASS ("..checks.." checks; exact IDs, pending cancellation, observed retirement, bounded retries)")

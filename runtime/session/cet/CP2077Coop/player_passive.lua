@@ -17,14 +17,39 @@ local function system()
     local ok, value = pcall(function() return Game.GetStaticEntitySystem() end)
     if not ok or value == nil then return nil end
     local ready, result = pcall(function() return value:IsReady() end)
-    return ready and result and value or nil
+    return ready and result == true and value or nil
 end
 local function finite(value)
     return type(value) == "number" and value == value and math.abs(value) ~= math.huge
 end
-local function gone(s, entry)
-    return not s:IsManaged(entry.id) and not s:IsSpawning(entry.id)
-        and not s:IsSpawned(entry.id) and s:GetEntity(entry.id) == nil
+local function observe(entry)
+    -- Keep the creator system and exact observed actor through unbind and
+    -- world transitions. A fresh global system must not inherit an old token.
+    local s = entry.system
+    if s == nil or s:IsReady() ~= true then return nil end
+    local managed, spawning, spawned = s:IsManaged(entry.id), s:IsSpawning(entry.id), s:IsSpawned(entry.id)
+    if type(managed) ~= "boolean" or type(spawning) ~= "boolean" or type(spawned) ~= "boolean" then
+        error("invalid_static_lifecycle")
+    end
+    local actor, globalActor = s:GetEntity(entry.id), Game.FindEntityByID(entry.id)
+    local function attachment(candidate)
+        if candidate == nil then return false end
+        if key(candidate:GetEntityID()) ~= key(entry.id) then error("static_actor_identity_changed") end
+        local attached = candidate:IsAttached()
+        if type(attached) ~= "boolean" then error("invalid_static_attachment") end
+        return attached
+    end
+    local attached, globalAttached = attachment(actor), attachment(globalActor)
+    -- Never replace a retained exact handle just because a lookup disappeared.
+    if entry.actor == nil then entry.actor = actor or globalActor end
+    local retainedAttached = attachment(entry.actor)
+    -- A global handle may appear before the creator has finished registration.
+    -- Only a completed exact creator-owned spawn can qualify later absence.
+    if attached and managed and spawned and not spawning then entry.seenReady = true end
+    return {system=s, actor=actor, globalActor=globalActor, attached=attached,
+        managed=managed, spawning=spawning, spawned=spawned,
+        absent=not managed and not spawning and not spawned
+            and actor == nil and globalActor == nil and not retainedAttached}
 end
 local Controller = {}
 Controller.__index = Controller
@@ -46,22 +71,25 @@ function Controller:retire(player, entry)
         if not ok or resolved == nil then return false end
         if key(resolved) == entry.session then
             local unbound, accepted = pcall(function() return Game.CP2077Session_Unbind(entry.entity) end)
-            if not unbound or not accepted then return false end
+            if not unbound or accepted ~= true then return false end
         elseif key(resolved) ~= "0" then return false end
-        entry.bound, entry.actor = false, nil
+        entry.bound = false
     end
     if entry.id ~= nil then
-        local s = system()
-        if s == nil then return false end
-        local observed, absent = pcall(gone, s, entry)
-        if not observed then return false end
-        if not absent and not entry.removing then
-            local ok, accepted = pcall(function() return s:DespawnEntity(entry.id) end)
-            if not ok or not accepted then return false end
+        local observed, state = pcall(observe, entry)
+        if not observed or state == nil then return false end
+        if not state.absent and not entry.removing then
+            -- Codeware's successful static spawn callback inserts the actor
+            -- without checking whether DespawnEntity erased its pending token.
+            -- Do not infer cancellation from a never-attached token's absence.
+            if not state.actor or not state.attached or not state.managed
+                or state.spawning or not state.spawned then return false end
+            local ok, accepted = pcall(function() return state.system:DespawnEntity(entry.id) end)
+            if not ok or accepted ~= true then return false end
             entry.removing = true
         end
-        observed, absent = pcall(gone, s, entry)
-        if not observed or not absent then return false end
+        observed, state = pcall(observe, entry)
+        if not observed or state == nil or not state.absent or not entry.seenReady then return false end
     end
     self.owned[player] = nil
     return true
@@ -84,9 +112,10 @@ function Controller:reset()
 end
 function Controller:spawn(s, entry, pose, now)
     if now < (self.retryAfter[pose.player] or 0) then return false end
-    -- A failed asynchronous token may retire immediately. Keep the retry gate
-    -- independently until this player leaves, or the entire scope is retired.
+    -- Keep the retry gate independently until this player leaves or the entire
+    -- scope is retired. Unconfirmed asynchronous creation retains its token.
     self.retryAfter[pose.player] = now + 1
+    entry.system = s
     local ok, id = pcall(function()
         local spec = StaticEntitySpec.new()
         spec.templatePath = ResRef.FromName(M.template)
@@ -100,31 +129,25 @@ function Controller:spawn(s, entry, pose, now)
     entry.id = id -- retain the exact token even while creation is pending
     return true
 end
-function Controller:place(s, entry, pose)
-    local ok, actor, pending = pcall(function()
-        return s:GetEntity(entry.id), s:IsManaged(entry.id) or s:IsSpawning(entry.id) or s:IsSpawned(entry.id)
-    end)
-    if not ok then return false, "observation_unavailable" end
+function Controller:place(entry, pose)
+    local ok, state = pcall(observe, entry)
+    if not ok or state == nil then return false, "observation_unavailable" end
+    local actor = state.actor
     if actor == nil then
-        if pending then return false, "spawn_pending" end
-        return false, "spawn_disappeared", true
+        if state.absent and entry.seenReady then return false, "actor_disappeared", true end
+        return false, "spawn_unconfirmed"
     end
-    local read, exact, attached = pcall(function()
-        return key(actor:GetEntityID()) == key(entry.id), actor:IsAttached()
-    end)
-    if not read then return false, "observation_unavailable" end
-    if not exact then return false, "actor_identity_changed", true end
-    if not attached then return false, "attachment_pending" end
+    if not state.managed or state.spawning or not state.spawned then return false, "spawn_pending" end
+    if not state.attached then return false, "attachment_pending" end
     if not entry.bound then
         local accepted, bound = pcall(function() return Game.CP2077Session_Bind(entry.entity, actor:GetEntityID()) end)
-        if not accepted or not bound then return false, "binding_rejected", true end
+        if not accepted or bound ~= true then return false, "binding_rejected", true end
         entry.bound = true
     end
     local resolved, current = pcall(function() return Game.CP2077Session_Resolve(entry.id) end)
     if not resolved or current == nil or key(current) ~= entry.session then
         return false, "binding_changed", true
     end
-    entry.actor = actor
     local moved = pcall(function()
         local world = WorldTransform.new()
         WorldTransform.SetPosition(world, Vector4.new(pose.x, pose.y, pose.z, 1.0))
@@ -178,7 +201,7 @@ function Controller:step(scope, players, now)
         else
             if entry.id == nil and not self:spawn(s, entry, pose, now) then complete, reason = false, "spawn_retry" end
             if entry.id ~= nil then
-                local placed, why, retire = self:place(s, entry, pose)
+                local placed, why, retire = self:place(entry, pose)
                 if not placed then complete, reason = false, why end
                 if retire then self:retire(player, entry) end
             end

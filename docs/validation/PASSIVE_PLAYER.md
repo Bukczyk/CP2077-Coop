@@ -38,7 +38,12 @@ actual position is checked separately by the live fixture.
 
 ## Automated evidence
 
-`tests/passive_player_tests.lua` has 108 checks for identity, pending creation,
+The [2026-10-15 cleanup correction](PASSIVE_PLAYER_CLEANUP_2026-10-15.md) adds
+strict unavailable-observation handling, pinned creator/actor ownership and
+pending-creation safeguards. Its current offline results are recorded separately
+from the original trial below; it does not add live qualification.
+
+At the original trial, `tests/passive_player_tests.lua` had 108 checks for identity, pending creation,
 retirement, failure paths, scope changes and the actual entrypoint selecting only
 the opted-in representation. Tests verify the shipped flag is false. These tests
 use opaque-ID mocks and modeled engine calls, not native engine objects.
