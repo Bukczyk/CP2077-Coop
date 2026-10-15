@@ -155,6 +155,12 @@ function M.new(config)
             return fault(e,"readback_unavailable")
         end
         e.stance,e.weapon=stance==true and "observed" or "queued",weapon==true and "observed" or "queued"
+        -- A late matching observation may permit command retirement, but must
+        -- not erase the deadline missed by this admitted action.
+        if e.admitted and e.active-e.submittedAt>=timeout then
+            if not release(e) then return "failed",e.reason end
+            return fault(e,"readback_timeout")
+        end
         if stance==true and weapon==true then
             if not release(e) then return "failed",e.reason end
             if e.admitted then e.admitted=nil; return "queued","checking_latest" end
@@ -166,10 +172,6 @@ function M.new(config)
             e.status,e.reason="observed",nil; return "observed"
         end
         if e.admitted then
-            if e.active-e.submittedAt>=timeout then
-                if not release(e) then return "failed",e.reason end
-                return fault(e,"readback_timeout")
-            end
             return "queued","awaiting_readback"
         end
         e.admitted=clone(target); e.submittedAt=e.active

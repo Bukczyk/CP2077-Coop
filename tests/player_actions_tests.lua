@@ -108,6 +108,35 @@ check(p:step(scope,"a",22.2)=="failed" and p:inspect("a").reason=="readback_time
 check(#a.commands==1 and a.stops==1,"timeout retires command without retries")
 check(not p:stage(scope,"a",3,state(),22.3),"failed lifetime cannot silently restart")
 
+-- A matching first readback at/after the admitted deadline is still late.
+-- Fresh/coalesced desired state cannot turn that missed deadline into success.
+for _,mode in ipairs({"draw","switch","holster","stance"}) do
+    for _,lateAt in ipairs({2,2.1}) do
+        for _,coalesce in ipairs({false,true}) do
+            p,map=fixture(); a=actor("late-"..mode.."ULL"); map.a=a
+            if mode=="switch" or mode=="holster" then a.weapon,a.drawn="Items.Pistol",true end
+            local desired=mode=="draw" and state("Items.Pistol")
+                or mode=="switch" and state("Items.Rifle")
+                or mode=="stance" and state(nil,true) or state()
+            p:stage(scope,"a",1,desired,0); p:bind(scope,"a",a,0)
+            check(p:step(scope,"a",0)=="queued","admit action before delayed readback: "..mode)
+            if coalesce then p:stage(scope,"a",2,state("Items.Rifle",true),1.5) end
+            local commands=#a.commands
+            a:complete()
+            local status,reason=p:step(scope,"a",lateAt)
+            check(status=="failed" and reason=="readback_timeout","late readback cannot claim success: "..mode)
+            check(not p:inspect("a").commandOwned and #a.commands==commands,
+                "late completion retires owned command without submitting coalesced work")
+            check(p:step(scope,"a",lateAt)=="failed","same-frame retry cannot clear missed deadline")
+            check(not p:stage(scope,"a",3,state(),lateAt),"new desired state cannot clear missed deadline")
+        end
+    end
+end
+-- An already matching actor with no admitted command has no command deadline.
+p,map=fixture(); a=actor("already-matchingULL"); map.a=a
+p:stage(scope,"a",1,state(),0); p:bind(scope,"a",a,0)
+check(p:step(scope,"a",2.1)=="observed" and #a.commands==0,"timeout belongs to admitted work only")
+
 -- Cleanup must retire exact command; failure blocks replacement and scope reset.
 p,map=fixture(); a=actor("101ULL"); map.a=a
 p:stage(scope,"a",1,state("Items.Pistol"),0); p:bind(scope,"a",a,0); p:step(scope,"a",0); a.cancel=false

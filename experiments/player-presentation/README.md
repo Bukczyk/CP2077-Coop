@@ -146,3 +146,8 @@ visible matching weapon/crouch. The next
 engine gate needs owned temporary projections and real readback/video for each
 supported firearm and stance, without inventing a network action schema first.
 No installed runtime, saves, controls, settings, release or package changed.
+
+2026-10-15 follow-up: [late action readback validation](../../docs/validation/PLAYER_ACTION_DEADLINE_2026-10-15.md)
+fixes matching weapon/stance readback incorrectly hiding an admitted deadline
+miss. All 279 focused action/probe checks and 29 branch CTests pass. This changes
+only local Lua preparation; the visual and connected-state gates above stay open.
