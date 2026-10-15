@@ -52,6 +52,10 @@ local function update(delta)
     if passivePlayers then passivePlayers:pump() end
     local player = Game.GetPlayer()
     local requests = Game.GetSystemRequestsHandler()
+    ensureNpcProjection()
+    local pauseOk, npcPaused = pcall(function() return requests:IsGamePaused() end)
+    if not pauseOk then npcPaused = nil end
+    npcProjection:pump(time, npcPaused)
     local loaded = player ~= nil and player:IsAttached() and
         (requests == nil or not requests:IsPreGame())
     if not loaded then
@@ -229,6 +233,13 @@ registerForEvent("onUpdate", function(delta)
     if failed then
         -- A latched bridge failure must not discard still-owned static tokens.
         if passivePlayers then pcall(function() passivePlayers:reset() end) end
+        pcall(function()
+            time = time + delta
+            local requests = Game.GetSystemRequestsHandler()
+            local pauseOk, npcPaused = pcall(function() return requests:IsGamePaused() end)
+            if not pauseOk then npcPaused = nil end
+            if npcProjection then npcProjection:pump(time, npcPaused) end
+        end)
         return
     end
     local ok, reason = pcall(update, delta)

@@ -34,6 +34,13 @@ function M.new(adapter)
         if complete then self.identity, self.resetting = nil, false end
         return complete
     end
+    function self:pump(now, paused)
+        -- Dynamic cleanup uses one update clock even when reset/step both run
+        -- in that frame. Keep retirement progressing after the save unloads.
+        if adapter.observe then adapter.observe(now, paused) end
+        if self.resetting then return self:reset() end
+        return true
+    end
     function self:step(identity, bubble, npcs)
         -- An explicit reset can outlive the current frame without an epoch
         -- change. Never bind/move retained IDs while that reset is pending.

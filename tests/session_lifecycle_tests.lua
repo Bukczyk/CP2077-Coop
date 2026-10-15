@@ -17,7 +17,7 @@ local function fixture(role, experimental)
     local state = {
         attached=true, pregame=false, hasPlayer=true, hash=uint64(1),
         activations={}, bindings={}, logs={}, observations=0, cleared=0,
-        npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false,
+        npcReads=0, npcOffers=0, npcSpawns=0, pushes=0, ready=false, paused=false, npcClocks={},
     }
     local events, hotkeys = {}, {}
     Game, Observe, CName = nil, nil, nil
@@ -31,6 +31,12 @@ local function fixture(role, experimental)
     end
     registerHotkey = function(name, _, callback) hotkeys[name] = callback end
     assert(loadfile(root .. "/runtime/session/cet/CP2077Coop/init.lua"))()
+    local population=package.loaded.npc_population
+    local observe=population.observe
+    population.observe=function(now,paused)
+        state.npcClocks[#state.npcClocks+1]={now=now,paused=paused}
+        return observe(now,paused)
+    end
     assert(events.onInit, "entrypoint must register onInit")
     assert(state.observations == 0, "no engine observation during module load")
     -- These callbacks must also be harmless before the engine API is ready.
@@ -55,14 +61,21 @@ local function fixture(role, experimental)
     local native = {
         GetPlayer=function() if state.hasPlayer then return player end end,
         GetSystemRequestsHandler=function()
-            return {IsPreGame=function() return state.pregame end}
+            return {IsPreGame=function() return state.pregame end,
+                IsGamePaused=function()
+                    if state.pauseUnavailable then error("pause observation unavailable") end
+                    return state.paused
+                end}
         end,
         GetDynamicEntitySystem=function() return system end,
         CP2077Session_SetActive=function(value)
             state.activations[#state.activations+1]=value
         end,
         CP2077Session_PushLocal=function() state.pushes=state.pushes+1 end,
-        CP2077Session_BeginFrame=function() return 0 end,
+        CP2077Session_BeginFrame=function()
+            if state.bridgeFailure then error("test bridge failure") end
+            return 0
+        end,
         CP2077Session_Generation=function() return 1 end,
         CP2077Session_Session=function() return uint64(1) end,
         CP2077Session_Epoch=function() return 1 end,
@@ -96,6 +109,7 @@ local function fixture(role, experimental)
         end
     end
     state.reconnect=hotkeys.cp2077_session_reconnect
+    state.rawTick=events.onUpdate
     state.shutdown=events.onShutdown
     return state
 end
@@ -154,6 +168,26 @@ for _, role in ipairs({"HOST","JOINER"}) do
     s.tick()
     assert(s.npcReads == 0 and s.npcOffers == 0 and s.npcSpawns == 0)
 end
+-- The actual entrypoint supplies one timestamp and explicit pause state to NPC
+-- retirement even after unload or a latched bridge failure. Unknown is not false.
+do
+    local s=fixture("JOINER",false); s.init(); s.tick()
+    local first=s.npcClocks[#s.npcClocks]
+    assert(first.paused==false and first.now>0,"normal NPC pump is explicitly unpaused")
+    s.paused=true; s.tick()
+    local paused=s.npcClocks[#s.npcClocks]
+    assert(paused.paused==true and paused.now>first.now)
+    s.pauseUnavailable=true; s.tick()
+    assert(s.npcClocks[#s.npcClocks].paused==nil,"unknown pause must reach fail-closed adapter")
+    s.pauseUnavailable=false; s.paused=false; s.hasPlayer=false; s.tick(3)
+    local unloaded=s.npcClocks[#s.npcClocks]
+    assert(unloaded.now>paused.now and unloaded.paused==false,"unloaded game still pumps retained NPCs")
+    s.hasPlayer=true; s.bridgeFailure=true; s.rawTick(1/60)
+    local failed=s.npcClocks[#s.npcClocks]
+    s.rawTick(1/60)
+    assert(s.npcClocks[#s.npcClocks].now>failed.now,"latched failure still pumps NPC retirement")
+end
+
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")
