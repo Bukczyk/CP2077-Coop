@@ -35,7 +35,7 @@ function Motor:stop()
         -- Do not drop the only handle and admit a second engine command.
         error(self.fault)
     end
-    self.command, self.kind, self.sent = nil, nil, nil
+    self.command, self.kind, self.sent, self.commandState = nil, nil, nil, nil
 end
 
 function Motor:release()
@@ -76,6 +76,9 @@ function Motor:submit(kind, desired, gait)
     end
     if command == nil then return self:fail(kind, kind.."_submission_rejected") end
     self.command, self.kind, self.sent = command, kind, copy(desired)
+    -- The cached state belongs to the previous handle. Admission is not an
+    -- observation of this command; leave it unknown until MotorState reads it.
+    self.commandState = nil
     self.issued, self.nextCommand = self.clock, self.clock+0.08
     return "pending"
 end

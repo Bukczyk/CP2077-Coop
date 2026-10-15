@@ -165,6 +165,22 @@ check(a.turns == 0, "yaw wrap must not issue a nearly full-circle turn")
 run(a,m,120,target(10,nil,nil,math.rad(-160)))
 check(a.turns == 1 and math.abs(angle(a.yaw,-160)) <= 5, "wrapped turn observed once")
 
+-- Cached engine state belongs to one exact command, never its successor.
+a=actor(); m=Motor.new(a)
+run(a,m,180,target(11))
+check(m.command == nil and m.commandState == nil, "retired move clears its cached command state")
+check(m:step(target(11,nil,nil,math.pi/2),1/60) == "pending" and m.command.state == 1,
+    "a new turn is admitted after the completed move")
+check(m.commandState == nil, "new turn has no observed state before its own first readback")
+m:step(target(11,nil,nil,math.pi/2),1/60)
+check(m.commandState == 1, "first readback reports the new turn's enqueued state")
+local turnCommand=m.command
+a.stopDenied=true
+check(not m:release() and m.command == turnCommand and m.commandState == 1,
+    "failed cancellation retains the exact handle and its observed state")
+a.stopDenied=false; m:stop()
+check(m.command == nil and m.commandState == nil, "confirmed cancellation clears cached state")
+
 -- Invalid data neither poisons timers nor reaches the engine.
 for _, delta in ipairs({0, -1, math.huge, -math.huge, 0/0, "bad"}) do
     a = actor(); m = Motor.new(a)

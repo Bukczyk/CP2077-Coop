@@ -44,7 +44,30 @@ local function fixture()
     return f
 end
 
-local f=fixture()
+-- Recovery of an active exact actor updates its diagnostic status. Neither an
+-- empty observation nor a different actor can clear the lookup uncertainty.
+local f=fixture(); f:attach(); f.lookupError=true
+check(f.owner:actor()==nil and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "failed active lookup reports uncertainty")
+f.lookupError=false; f.visible=false
+check(f.owner:actor()==nil and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "empty active lookup is not observation recovery")
+f.visible=true; f.actorId={hash="9007199254740994ULL"}
+check(f.owner:actor()==nil and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "a foreign adjacent actor cannot recover the owned lifetime")
+f.actorId=nil
+check(f.owner:actor()==f.actor and f.owner.status=="owned" and not f.owner.blocked,
+    "exact active actor recovery clears obsolete observation error")
+check(f.deletes==0 and f.releases==0 and not f.owner.retiring,
+    "observation recovery cannot release, delete or retire the actor")
+f.owner:retire(); f.lookupError=true; f.owner:actor(); f.lookupError=false
+check(f.owner:actor()==f.actor and f.owner.status=="actor_observation_error" and f.owner.blocked,
+    "exact actor lookup alone cannot clear retirement uncertainty")
+check(not f:pump(0) and f.deletes==0,"retiring recovery still needs first stable observation")
+check(not f:pump(0.1) and f.deletes==1 and f.releases==1,
+    "normal retirement policy can recover after its second stable observation")
+
+f=fixture()
 check(f.owner:actor()==nil,"pending actor is not fabricated")
 check(not f:pump(-1) and f.deletes==0,"an owned active lifetime does not retire itself")
 check(not f.owner:retire() and not f:pump(0),"departure retains pending ID")

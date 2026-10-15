@@ -383,6 +383,23 @@ end
 assert(missingReports==1,"missing-actor diagnostics do not flood every frame")
 s.shutdown()
 
+-- A transient exact lookup failure must not label a recovered player as broken
+-- forever in the movement-test log. Keep the same actor, binding and motor.
+s=fixture("HOST",false,true)
+s.remotes={{id=2,entity=uint64(1),x=10}}
+s.init(); s.tick(3)
+local originalActor=s.bridge.playerDiagnostics()["2"].actor
+local findEntity=Game.FindEntityByID
+Game.FindEntityByID=function() error("transient exact lookup failure") end
+s.tick()
+assert(s.bridge.playerDiagnostics()["2"].lifecycle=="actor_observation_error",
+    "active lookup failure reaches value-only diagnostics")
+Game.FindEntityByID=findEntity; s.tick()
+local recovered=s.bridge.playerDiagnostics()["2"]
+assert(recovered.lifecycle=="actor_present" and recovered.actor==originalActor and s.playerSpawns==1,
+    "recovered diagnostics describe the same present actor without respawning it")
+s.shutdown()
+
 -- Stop failures must first retain dynamic IDs, leave the bridge inactive, and
 -- allow failed-mode retirement pumping without silently reconnecting.
 for _,failure in ipairs({"deactivateThrows","npcResetThrows"}) do

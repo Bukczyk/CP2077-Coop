@@ -55,6 +55,11 @@ function Lifetime:actor()
         self:_status("actor_observation_error", true)
         return nil
     end
+    -- An exact actor can recover after a transient lookup failure. Absence is
+    -- not recovery, and an actor lookup alone cannot qualify retirement.
+    if actor ~= nil and not self.retiring and self.status == "actor_observation_error" then
+        self:_status("owned")
+    end
     return actor
 end
 
