@@ -66,6 +66,9 @@ No new archive build or package version is claimed.
 - CTest `npc_projection_asset_contract`, `passive_hittable_asset` and
   `passive_asset_contract`: 3/3 pass in a fresh Windows configure. The two Python
   suites retain the existing Python-available CMake condition.
+- Debian CI explicitly installs Python 3 so these conditional suites also run
+  in its minimal container. A green build with Python unavailable would omit
+  their coverage; final CI logs must show `passive_asset_contract` executed.
 - All three historical WolvenKit roundtrips pass the stricter gates.
 - Independent review reproduced the matching-copy draw-mask/transform hole in
   the first patch. Pinning the reviewed values and adding paired-copy mutations
@@ -86,6 +89,7 @@ engine and two-PC gates. This contribution does not qualify full NPC replication
 - `scripts/build-passive-hittable-archive.py`: hittable gate use.
 - `tests/passive_asset_contract_tests.py`: source-only mutation regressions.
 - `tests/CMakeLists.txt`: register the new Python test.
+- `.github/workflows/build.yml`: install the interpreter in Debian CI.
 - This validation note.
 
 No protocol, networking, session bridge or authoritative backend changes.
