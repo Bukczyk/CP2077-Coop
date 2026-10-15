@@ -7,8 +7,9 @@ resumes it. This fixture does not synchronize cars over the network.
 
 KyleBuildsAI owns this folder and `tests/vehicle_*_tests.lua`. Bukczyk retains
 network/session/authority ownership. Starting revision: upstream main
-`e19ffb3286efec750b8729487220becf6569ab7b`. Branch:
-`feat/vehicle-seat-observation`. No existing PR/package is folded into this branch.
+`e19ffb3286efec750b8729487220becf6569ab7b`. The vehicle observation fixture is
+`15045bc77567719458110e12c74e5e88d0bd0e7e`; this independent follow-up branch is
+`feat/vehicle-pose-application`. No published gameplay package is changed.
 
 ## What the fixture prepares
 
@@ -46,6 +47,10 @@ network/session/authority ownership. Starting revision: upstream main
 - Successful deletion requires both lookup paths absent, management/spawn flags
   clear, and the retained exact handle detached, continuously for 0.25 unpaused
   seconds. An accepted delete or empty tags do not establish disappearance.
+- A separately enabled, bounded unoccupied-car pose probe, using the vanilla
+  whole-vehicle teleport route with the complete quaternion converted to three-axis
+  Euler orientation. Submission is separate from actual pose/low-speed readback.
+  It is a hook experiment, not continuous movement or physics synchronization.
 
 The fixture can own one car per activation; this is a test boundary, not a
 multiplayer capacity limit. State is local and no SessionEntityId is fabricated.
@@ -55,7 +60,7 @@ nothing unless this fixture explicitly enabled its owned car.
 ## Future local test setup, only after live testing is authorized
 
 Stage `engine_hooks.reds` with the matched session REDscript and Codeware 1.18.0.
-Stage `init.lua`, `fixture.lua` and `engine.lua` together in a separate CET mod
+Stage `init.lua`, `fixture.lua`, `movement.lua` and `engine.lua` together in a separate CET mod
 folder named `zz_VehicleSeatFixture`. Do not add these files to the default runtime
 or the currently published movement ZIPs. No automatic installer is included.
 
@@ -94,6 +99,53 @@ The log uses a 10 Hz observation cadence, up to 9000 records or approximately
 8 MiB, plus one limit notice. After the cap, observation and safe cleanup continue.
 This is not an unattended long-running session recorder.
 
+## Optional unoccupied movement probe
+
+Do this only after the parked-car observation gate passes, in a clear local test
+area. Keep seat request injection disabled. Ordinary manual entry must also stay
+off during a pending move. Any occupant or uncertain observation quarantines the
+request and holds cleanup. Never use it on a player/NPC/traffic car.
+
+```lua
+local probe = GetMod("zz_VehicleSeatFixture")
+local generation = probe.status().generation
+probe.enableMovement(true)
+-- moved = a full normalized pose, derived from the actual parked-car readback.
+-- Choose a clear translation of 0.1-0.5 m or rotation of 2-10 degrees.
+probe.move(moved, generation)
+probe.status() -- queued/pending is NOT proof the car moved
+probe.enableMovement(false)
+probe.stop() -- pending/unknown outcome holds the exact car until reconciled
+```
+
+The exact car ID, creating player's ID and activation generation must match.
+The car must be fully spawned, attached, still managed, empty, and below 0.2 m/s;
+the creator must be on foot. Actual model/appearance/color must match the supported
+descriptor. These checks occur in Lua and immediately before the native call.
+The adapter independently rechecks pause at submission, including pause-query
+failure. No keys or automatic movement loop are registered.
+
+Each activation allows at most 16 explicit commands, one pending at a time, within
+2 m, 0.25 m vertically and 30 degrees of its origin. Each command is at most
+0.5 m/10 degrees. Requests below both 0.1 m and 2 degrees are rejected so an
+unchanged pose cannot be mistaken for a result. Origin bounds are checked against
+the requested spawn pose in Lua and the actual first-application pose natively.
+
+The probe observes position error <=0.025 m, full quaternion error <=0.5 degrees
+and the same safe empty/low-speed conditions continuously for 0.25 unpaused
+seconds. The two-second deadline and stable interval pause with the game. Unknown
+readback or deadline expiry latches a fault, retains the pending command, stops new
+movement and blocks deletion. There is no retry. A later valid observed target can
+release cleanup, recorded as `observed_after_fault`; it does not clear the fault
+or re-enable movement. Successful observations still report
+`movementQualified=false` and `cameraVerified=false`.
+
+`stop` disables both experiments immediately but defers car retirement until any
+submitted movement has an observed result. Invalid clocks are handled the same
+way as unknown readback. After observed movement, future placement qualification
+uses the actual observed pose. Accepted application, timeout, mode disable and
+shutdown never stand in for completion.
+
 ## Known limits and remaining gates
 
 Not implemented: network vehicle adoption/binding, driving authority/seat grants,
@@ -107,18 +159,18 @@ need a live test. A strict unsupported result is preferable to a visually wrong 
 Next live gates: confirm initial model/appearance/rotation and persistence while
 parked; ten driver cycles and ten supported passenger cycles; occupied-seat and
 interrupted/late transitions; exact cleanup including retained-handle absence;
-video of first-person/third-person entry and exit. Only then prepare movement
-application and moving-passenger tests. Two-PC shared rides require a separate
+video of first-person/third-person entry and exit. Then run bounded unoccupied
+translation, pitch/roll/yaw, stop, pause and failure readback tests, checking
+collisions and physics settling visually. Moving-passenger tests remain a later
+implementation step. Two-PC shared rides require a separate
 agreed backend route and matched game/server acceptance test.
 
-Next source task, still KyleBuildsAI-owned: add a separately enabled, bounded
-unoccupied-car pose-application probe to `engine_hooks.reds`, `engine.lua` and
-`fixture.lua`, with focused tests. Research the correct chassis operation before
-choosing it; compare actual translation and full rotation over time, retain request
-ownership through timeout/pause, reject occupied cars and never substitute
-accepted native calls for observed movement. Its physics interaction and visual
-stability require later live qualification. This current source slice prepares
-spawn and pose observation only; it does not complete the goal's movement hooks.
+Next source task, still KyleBuildsAI-owned: use evidence from the bounded probe to
+decide whether continuous exact-car application needs a different native route
+in `engine_hooks.reds`/`engine.lua`. Do not turn repeated teleports into a presumed
+vehicle motor. Occupied-car/passenger/camera work requires separate verified hooks
+and tests. This slice prepares an application/readback candidate; its physics and
+visual behavior remain unqualified and no connected vehicle feature is complete.
 
 ## Existing engine declarations used
 
@@ -133,6 +185,17 @@ The local reconstructed 2.31 corpus at revision
 - `orphans.swift`: `IMountingFacility`, `MountingInfo`, `MountingRequest`,
   `UnmountingRequest`, finished event and camera perspective declarations.
 - `core/gameplay/psmImports.swift`: `MountEventData`.
+- `orphans.swift:31933`: `TeleportationFacility.Teleport(GameObject, Vector4,
+  EulerAngles)`, returning Void; quaternion conversion and normalization are also
+  declared in this corpus.
+- `cyberpunk/player/psm/vehicleTransition.swift:994`: vanilla whole-vehicle teleport
+  during an exit escape path uses the vehicle and full world quaternion converted
+  to Euler angles. This verifies an existing whole-vehicle operation, not suitability
+  for continuous multiplayer movement.
+
+`PhysicalBodyInterface.SetTransform`/`ToggleKinematic` were inspected but not used:
+their application to the full vehicle chassis and passenger behavior is unverified.
+No raw per-body writes, velocity forcing or persistent kinematic changes are made.
 
 Codeware 1.18.0's packaged `Codeware.Global.reds` supplies `DynamicEntitySpec` and
 exact dynamic entity creation/status/deletion. Declarations were checked by
