@@ -23,8 +23,11 @@ network/session/authority ownership. Starting revision: upstream main
   attachment plus <=0.5 m and <=5 degrees initial placement error.
 - Exact EntityID retained from `CreateEntity`, kept as an opaque decimal string
   outside the engine. The creating player's exact ID is pinned before creation,
-  including before first attachment. No nearest-car lookup, model-index identity
-  or tag-wide delete.
+  including before first attachment. The original creating DynamicEntitySystem
+  and first confirmed attached actor are retained too. Unavailable creator or
+  malformed attachment observations hold ownership; a replacement system or
+  later wrapper cannot certify that the original car disappeared. No nearest-car
+  lookup, model-index identity or tag-wide delete.
 - Actual car-origin velocity, record, appearance, color variant, seat existence,
   vehicle occupant relationships, local player mount parent/child/slot, and vehicle
   camera manager perspectives. Camera values are observations, not proof of a

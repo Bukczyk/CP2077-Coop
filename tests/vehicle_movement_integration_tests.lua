@@ -112,7 +112,7 @@ Game={GetPlayer=function()return player end,GetDynamicEntitySystem=function()ret
     GetSystemRequestsHandler=function()if data.pauseFailure then error("pause unavailable")end return{IsGamePaused=function()return data.paused end}end}
 Vector4={new=function(x,y,z,w)return{x=x,y=y,z=z,w=w}end}
 Quaternion={new=function(i,j,k,r)return{i=i,j=j,k=k,r=r}end}
-local engine=Engine.new(9);engine.id=carId;engine.key=ID;engine.creator=PLAYER
+local engine=Engine.new(9);engine.id=carId;engine.key=ID;engine.creator=PLAYER;engine.system=system
 local target=copy(origin);target.x=10.3;target.qx=math.sin(math.rad(6)/2);target.qw=math.cos(math.rad(6)/2)
 data.paused=true;check(not engine:applyPose(ID,PLAYER,9,1,target) and data.calls==0)
 data.paused=nil;check(not engine:applyPose(ID,PLAYER,9,1,target) and data.calls==0)
