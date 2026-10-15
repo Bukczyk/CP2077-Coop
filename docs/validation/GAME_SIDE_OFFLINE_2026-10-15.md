@@ -9,7 +9,7 @@ This branch combines the following reviewable source slices on upstream main
 | PR | Branch | Validated source |
 | --- | --- | --- |
 | 15 | feat/teammate-map-markers | d0da56a884aa7c16e0076ad41ceb464592f3c0f2 |
-| 16 | feat/player-action-preparation | 75a7a211da8775158a5c6d8f43bb137554dce0dc |
+| 16 | feat/player-action-preparation | 1e32756846ea35e76f43df02769ca81a43af7567 |
 | 19 | tooling/movement-log-analysis | 4bb510e2396a98691f0870fecc450e718b63493a |
 | 20 | fix/player-diagnostic-recovery | 4d12c1c270eff26f152afda2a57ed39fb745bc15 |
 | 21 | fix/dynamic-npc-lifecycle | bd6d941e785b418f5e32370f0258a67241a759eb |
@@ -20,7 +20,7 @@ This branch combines the following reviewable source slices on upstream main
 | 26 | feat/passive-model-fixture | 97fd12f12a15257b76b92ecff102203743c601d9 |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `447a3ae2983676889e8b7aa159e41409c88bc74c`.
+Combined source tested: `4b29a040ff1c8b4a2f98492ad0067f43887cb56f`.
 PR12's connected controller is not integrated here. Only its existing pure
 presentation-state `restore` method is reused by the local fixture. Its connected
 evidence remains separate, and the life-baseline bridge request awaits coordination.
@@ -46,6 +46,16 @@ cleanup changes. Its failed-mode player lookup is protected so a persistent
 engine error cannot prevent cleanup. All marker/UI and actor regressions remain.
 PR16's experiments stay opt-in and separate from ordinary movement; native action
 and aim sources must remain matched because the lease pins an exact weapon ID.
+
+PR16 now includes a usable local CET entrypoint for those existing controllers.
+Explicit start creates one disposable Judy per fixture activation, fresh capture
+follows weapon/stance changes and an explicitly injected Aim test exercises the
+existing lease/Normal path. These local intents are not network input or observed
+physical aiming. Exact native actor/creator ownership survives uncertain outcomes;
+cleanup requires observed disappearance. Shutdown alone cannot promise cleanup.
+The only new merge conflict was adjacent test registrations; all previous tests
+and the new player fixture registration are retained. See
+`PLAYER_PRESENTATION_FIXTURE.md` for staging and the remaining visual gates.
 
 Test registrations merged without dropping any existing suite. No networking,
 protocol, server or shared bridge behavior was changed to resolve integration.
@@ -141,9 +151,10 @@ six files merged without conflicts; seat policy and the controller are unchanged
 ## Passed offline
 
 - Fresh configure and incremental Windows x64 Release plugin, session server
-  and core build passed. Native inputs and all 48 test registrations are unchanged.
-- 48/48 CTests, including existing real-socket/core tests and the new suites.
-- 27 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
+  and core build passed. Native inputs are unchanged; all previous 48 tests remain
+  registered alongside the new player action fixture.
+- 49/49 CTests, including existing real-socket/core tests and the new suites.
+- 28 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
@@ -196,13 +207,31 @@ six files merged without conflicts; seat policy and the controller are unchanged
   plus 14 independent probes per interpreter. The new actual-entrypoint suite is
   also included in the combined CTest/LuaJIT runs. Its separate branch passed a
   fresh Windows Release build and 26 CTests; native execution remains untested.
+- Player action fixture: 432 Lua 5.4 / 442 LuaJIT actual-entrypoint checks pass;
+  the unchanged action/probe suite still passes 328 checks per runtime. Independent
+  review passes 14 scenarios with 39 additional assertions per runtime. Native
+  boundaries are mocked; this does not demonstrate visible ADS, weapon grip or
+  competing NPC AI behavior. Branch Release core/session checks pass 30 CTests
+  with plugin OFF; the combined build above includes the plugin.
 - Isolated current session, vehicle, player action/aim, map capture and the new
   passive-model current-appearance and exact NPC observation helpers' REDscript
   compilation together against copied installed 2.31 cache/Codeware inputs.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current vehicle movement-preflight logs:
+Current player action fixture logs:
+`D:/Downloads/syncfix/bench-artifacts/20261015-player-action-fixture`,
+`combined-validation.json` and configure/build/CTest/LuaJIT logs: 49 CTests and
+28 LuaJIT suites pass at `4b29a04`, retaining all prior registrations. Windows
+Release includes the plugin; measured source/test hashes stayed unchanged.
+`combined-compile-20261015T124520549916Z.json` records matched session scripts plus
+vehicle, player/map (including the new fixture helper), passive-model and NPC
+observation scripts compiling in isolation against copied game inputs. All
+compiler/source/reference hashes stayed unchanged. Hosted results are recorded
+against final published heads in GitHub and the vault. No live validation,
+installation or package release occurred.
+
+Previous vehicle movement-preflight logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-vehicle-movement-preflight`,
 `combined-validation.json` and configure/build/CTest/LuaJIT logs: 48 CTests and
 27 LuaJIT suites pass at `447a3ae`. Windows Release includes the plugin. All 117
