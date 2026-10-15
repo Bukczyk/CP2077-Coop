@@ -1,6 +1,6 @@
 # Combined game-side source validation
 
-Owner: KyleBuildsAI. UTC checkpoint: 2026-10-15 08:15. Verification branch:
+Owner: KyleBuildsAI. UTC checkpoint: 2026-10-15. Verification branch:
 `work/game-side-offline-20261015`. No main merge, installation or gameplay release.
 
 This branch combines the following reviewable source slices on upstream main
@@ -16,8 +16,9 @@ This branch combines the following reviewable source slices on upstream main
 | 22 | feat/vehicle-seat-observation | 15045bc77567719458110e12c74e5e88d0bd0e7e |
 | 23 | feat/vehicle-pose-application | e8070dd74192bf772415790d4e08852638df9b08 |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
+| 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
 
-Combined source tested: `af5a24ae6b6324bda24a4846df26424973fff216`.
+Combined source tested: `c2f8a4a90af4d281f429b3ea77ea7fb86959a413`.
 PR12 restoration is not merged into this verification branch. Its earlier
 evidence remains separate, and the life-baseline bridge request awaits coordination.
 
@@ -49,22 +50,30 @@ protocol, server or shared bridge behavior was changed to resolve integration.
 ## Passed offline
 
 - Windows x64 Release plugin, session server and core build.
-- 42/42 CTests, including existing real-socket/core tests and the new suites.
+- 43/43 CTests, including existing real-socket/core tests and the new suites.
 - 20 focused suites under LuaJIT 2.1, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
   are included. These validate the fixed reviewed Judy/default assets, not arbitrary
   HOST appearance matching; authored assets and archives remain unchanged.
+- 22 profile tests cover the separate Mitch/default authored entity and explicit
+  Judy/Mitch builder, including exact dependency tables and LF/CRLF source pins.
+  Private WolvenKit builds of both profiles passed serialization roundtrip,
+  single-resource archive listing and extracted-byte parity. The existing Judy
+  entity, authored idle graph and production builders remain unchanged.
 - Isolated current session, vehicle, player action/aim and map capture REDscript
   compilation together against copied installed 2.31 cache/Codeware inputs.
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
 Private logs: `D:/Downloads/syncfix/bench-artifacts/20261015-game-side-goal`,
-`combined-map-build.log`, `combined-readiness-ctest.log`,
+`combined-model-configure.log`, `combined-model-build.log`, `combined-model-ctest.log`,
 `combined-readiness-luajit.log` and `redscript/compile-20261015T081404930677Z.*`.
-Hosted branch checks are recorded separately after completion.
+The 20 LuaJIT suites and full REDscript compilation were run at `af5a24a`; the
+subsequent model merge adds only asset JSON, Python, CMake test registration and
+documentation. All tested Lua/REDscript bytes remain identical. Hosted branch
+checks are recorded separately after completion.
 
 ## Open gates
 
@@ -76,6 +85,8 @@ render timing, clipping or arrow facing. Weapon attachment/readback and logical
 Aim do not prove visible ADS/grip. Neither source experiment is default-installed.
 The full goal and all relevant live/two-PC gates remain open. Continue independent
 source work while live testing is deferred and bridge requirements await agreement.
+The next NPC task is a separate explicit local profile selection fixture. PR25
+does not activate a production selector or establish visible model/animation parity.
 
 Published `v0.1.0-movement-experiment.1` remains at source `691dc397...`.
 Its HOST/JOINER ZIP hashes were reverified unchanged. No games, settings, bindings,
