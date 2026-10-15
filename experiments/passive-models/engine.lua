@@ -30,6 +30,29 @@ local function key(id)
     return opaque(id.hash)
 end
 local function finite(value) return type(value)=="number" and value==value and math.abs(value)~=math.huge end
+local function nativeHash(value)
+    return type(value)=="string" and value:match("^%d+$")~=nil
+        and (#value==1 or value:sub(1,1)~="0") and #value<=20
+        and (#value<20 or value<="18446744073709551615")
+end
+local function visualState(actor,entry)
+    local player=assert(Game.GetPlayer(),"visual_context_unavailable")
+    local raw=actor:CP2077PassiveModelFixture_CurrentVisualState(player,entry.originalPlayer,entry.retained,entry.id)
+    assert(raw and raw.valid==true,"visual_state_incoherent_or_unavailable")
+    assert(raw.entityDecimal==entry.idKey and raw.contextDecimal==entry.playerId,"visual_identity_mismatch")
+    assert(nativeHash(raw.appearanceHash) and nativeHash(raw.colorHash),"visual_hash_unavailable")
+    assert(type(raw.appearance)=="string" and #raw.appearance<=256
+        and type(raw.color)=="string" and #raw.color<=256,"visual_name_unavailable")
+    return {appearance=raw.appearance,appearanceHash=raw.appearanceHash,
+        color=raw.color,colorHash=raw.colorHash}
+end
+local function ownedIdentity(actor,entry)
+    local ok,value=pcall(function()
+        return actor:CP2077PassiveModelFixture_OwnedIdentity(Game.GetPlayer(),entry.retained,entry.id)
+    end)
+    if ok and value==-1 then entry.identityFault=true end
+    return ok and value==1 and not entry.identityFault
+end
 local function boolean(value) assert(type(value)=="boolean", "unknown_lifecycle"); return value end
 local function paused()
     local requests = assert(Game.GetSystemRequestsHandler(), "pause_unavailable")
@@ -95,6 +118,7 @@ function Engine:create(entry)
     -- Reserve provenance BEFORE the native call. Exceptions/invalid IDs after
     -- this point have unknown outcomes and cannot authorize an automatic retry.
     entry.creator,entry.playerId,entry.expectedTemplate=creator,playerId,p.template
+    entry.originalPlayer=player -- Retain native context identity; Lua wrappers may differ later.
     entry.templateHash=assert(opaque(ResRef.GetHash(spec.templatePath)), "template_hash_unavailable")
     entry.spawnAttempted=true
     entry.id=creator:SpawnEntity(spec)
@@ -117,13 +141,18 @@ function Engine:observe(entry)
     local attached,globalAttached=attachment(actor),attachment(globalActor)
     if not entry.retained then entry.retained=actor or globalActor end
     local retainedAttached=attachment(entry.retained)
+    local identityVerified=false
+    if actor or globalActor then identityVerified=ownedIdentity(actor or globalActor,entry) end
     local ready=actor~=nil and attached and managed and spawned and not spawning
     if ready then entry.completed=true end
     local o={ready=ready,managed=managed,spawning=spawning,spawned=spawned,
         attached=attached,globalAttached=globalAttached,retainedAttached=retainedAttached,
         absent=not managed and not spawning and not spawned and actor==nil
             and globalActor==nil and not retainedAttached,
-        templateVerified=false,rootVerified=false,appearanceVerified=false,visualQualified=false}
+        templateVerified=false,rootVerified=false,appearanceVerified=false,visualStateObserved=false,
+        colorObserved=false,colorMatchVerified=false,visualQualified=false}
+    o.identityVerified,o.identityFault=identityVerified,entry.identityFault==true
+    if o.identityFault then o.visualFault="owned_native_identity_mismatch" end
     -- Visual/readback failures must block movement, not exact owned retirement.
     if actor then
         local ok,visual=pcall(function()
@@ -140,11 +169,18 @@ function Engine:observe(entry)
             if not o.templateVerified then o.visualFault="template_mismatch"
             elseif not o.rootVerified then o.visualFault="not_passive_entity" end
         else o.visualFault="visual_readback_unavailable" end
-        local appearanceOk,current=pcall(function() return actor:CP2077PassiveModelFixture_CurrentAppearance() end)
-        if appearanceOk and type(current)=="string" then o.observedAppearance=current end
-        o.appearanceVerified=appearanceOk and current=="default"
+        local appearanceOk,current=pcall(visualState,actor,entry)
+        if appearanceOk then
+            o.visualStateObserved,o.colorObserved=true,true
+            o.observedAppearance,o.observedAppearanceHash=current.appearance,current.appearanceHash
+            o.observedColor,o.observedColorHash=current.color,current.colorHash
+            o.appearanceNameAvailable,o.colorNameAvailable=#current.appearance>0,#current.color>0
+        end
+        o.appearanceVerified=identityVerified and appearanceOk and current.appearance=="default"
         if not o.appearanceVerified and not o.visualFault then
-            if not appearanceOk or type(current)~="string" or current=="" or current=="None" then
+            if not appearanceOk then
+                o.visualFault="visual_state_readback_unavailable"
+            elseif current.appearance=="" or current.appearance=="None" then
                 o.visualFault="appearance_readback_unavailable"
             else o.visualFault="appearance_mismatch" end
         end
@@ -156,7 +192,7 @@ function Engine:move(entry,target)
     local _,playerId=localPlayer()
     assert(playerId==entry.playerId,"player_changed")
     local o=self:observe(entry)
-    assert(o.ready and o.templateVerified and o.rootVerified and o.appearanceVerified and o.pose,"actor_not_qualified")
+    assert(o.ready and o.identityVerified and o.templateVerified and o.rootVerified and o.appearanceVerified and o.pose,"actor_not_qualified")
     assert(distance(target,o.pose)<=5,"move_exceeds_five_meters")
     local player=Game.GetPlayer()
     assert(distance(target,player:GetWorldPosition())<=20,"move_outside_local_bounds")
@@ -165,9 +201,13 @@ function Engine:move(entry,target)
     WorldTransform.SetOrientationEuler(world,EulerAngles.new(0,0,math.deg(target.yaw)))
     local actor=assert(entry.creator:GetEntity(entry.id),"actor_disappeared_before_move")
     assert(key(actor:GetEntityID())==entry.idKey and actor:IsAttached()==true,"actor_changed_before_move")
+    assert(ownedIdentity(actor,entry),"owned_native_identity_changed_before_move")
     assert(opaque(ResRef.GetHash(actor:GetTemplatePath()))==entry.templateHash
         and actor:IsExactlyA(CName.new("entEntity"))==true,"visual_changed_before_move")
-    assert(actor:CP2077PassiveModelFixture_CurrentAppearance()=="default","appearance_changed_before_move")
+    local current=visualState(actor,entry)
+    assert(current.appearance=="default" and current.appearance==o.observedAppearance
+        and current.appearanceHash==o.observedAppearanceHash and current.color==o.observedColor
+        and current.colorHash==o.observedColorHash,"visual_state_changed_before_move")
     entry.moveAttempted=true
     actor:SetWorldTransform(world)
     return true -- submission only; controller compares a later actual readback.
@@ -175,11 +215,15 @@ end
 function Engine:retire(entry)
     if not entry.spawnAttempted then return true end
     local o=self:observe(entry)
+    if entry.identityFault then return false end -- Never touch or release a positively foreign actor.
     if entry.completed and o.absent then
         self.owned[entry.idKey]=nil
         return true
     end
-    if not entry.removing and o.ready and not paused() then
+    if not entry.removalAttempted and o.ready and o.identityVerified and not paused() then
+        local actor=entry.creator:GetEntity(entry.id)
+        if not actor or not ownedIdentity(actor,entry) then return false end
+        entry.removalAttempted=true -- A thrown/unknown native outcome must not be reissued.
         local accepted=entry.creator:DespawnEntity(entry.id)
         assert(accepted==true,"despawn_not_confirmed")
         entry.removing=true

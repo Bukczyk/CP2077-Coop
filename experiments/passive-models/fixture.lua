@@ -72,7 +72,16 @@ function Controller:status(slot)
         return copy({slot=e.slot,profile=e.profile,generation=e.generation,state=e.state,
             reason=e.reason,entity=e.idKey,requestedAppearance="default",visualQualified=false,
             observedAppearance=observed.observedAppearance,
-            appearanceVerified=observed.appearanceVerified==true and observed.observedAppearance=="default",
+            observedAppearanceHash=observed.observedAppearanceHash,
+            observedColor=observed.observedColor,observedColorHash=observed.observedColorHash,
+            visualStateObserved=observed.visualStateObserved==true,
+            colorObserved=observed.colorObserved==true,colorMatchVerified=false,
+            identityVerified=observed.identityVerified==true,
+            identityFault=e.identityFault==true or observed.identityFault==true,
+            appearanceNameAvailable=observed.appearanceNameAvailable==true,
+            colorNameAvailable=observed.colorNameAvailable==true,
+            appearanceVerified=observed.identityVerified==true and observed.visualStateObserved==true
+                and observed.appearanceVerified==true and observed.observedAppearance=="default",
             requestedTarget=e.target,queuedTarget=e.queuedMove,submittedTarget=e.submittedTarget,observed=e.observed,
             placementVerified=e.placementVerified==true,moveSubmission=e.moveSubmission,
             retiring=e.retiring==true,spawnAttempted=e.spawnAttempted==true})
@@ -86,7 +95,8 @@ function Controller:_step(e)
         e.placementVerified,e.observed=false,nil
         local ok,done=pcall(self.engine.retire,self.engine,e)
         if ok and done==true then e.state,e.reason="closed",nil
-        else e.state,e.reason="retirement_pending",ok and "awaiting_disappearance" or tostring(done) end
+        else e.state,e.reason="retirement_pending",e.identityFault and "owned_native_identity_mismatch"
+            or (ok and "awaiting_disappearance" or tostring(done)) end
         return
     end
     if e.state=="start_queued" then
@@ -108,7 +118,8 @@ function Controller:_step(e)
         return
     end
     e.observed=copy(o)
-    local appearanceVerified=o.appearanceVerified==true and o.observedAppearance=="default"
+    local appearanceVerified=o.identityVerified==true and o.visualStateObserved==true
+        and o.appearanceVerified==true and o.observedAppearance=="default"
     e.placementVerified=matched(o.pose,e.target) and o.ready==true and o.templateVerified==true
         and o.rootVerified==true and appearanceVerified
     if o.visualFault then e.state,e.reason="visual_mismatch",o.visualFault;return end
@@ -153,7 +164,9 @@ function Controller:pump()
         -- Unchanged frames stay silent and the instance limit still applies.
         local observed=e.observed or {}
         local message=e.state..":"..tostring(e.reason)..":"..tostring(observed.observedAppearance)
-            ..":"..tostring(observed.appearanceVerified)
+            ..":"..tostring(observed.appearanceVerified)..":"..tostring(observed.observedAppearanceHash)
+            ..":"..tostring(observed.observedColor)..":"..tostring(observed.observedColorHash)
+            ..":"..tostring(observed.visualStateObserved)
         if self.log and self.logCount<64 and e.lastLog~=message then
             e.lastLog=message
             self.logCount=self.logCount+1
