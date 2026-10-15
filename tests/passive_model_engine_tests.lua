@@ -15,11 +15,15 @@ local function make()
     local function native() f.native=f.native+1 end
     local function actor(value,spec)
         local a={attached=true,id=value,template=spec.templatePath,root=true,
-            position={x=spec.position.x,y=spec.position.y,z=spec.position.z},orientation=spec.orientation}
+            position={x=spec.position.x,y=spec.position.y,z=spec.position.z},orientation=spec.orientation,
+            appearance=spec.appearanceName}
         function a:GetEntityID() native();return id(self.id) end
         function a:IsAttached() native();return self.attached end
         function a:GetTemplatePath() native();return self.template end
         function a:IsExactlyA(name) native();assert(name=="entEntity");return self.root end
+        function a:CP2077PassiveModelFixture_CurrentAppearance()
+            native();if self.appearanceError then error("appearance_read_failed") end;return self.appearance
+        end
         function a:GetWorldPosition() native();if self.readError then error("pose_read_failed") end;return self.position end
         function a:GetWorldOrientation() native();return self.orientation end
         function a:SetWorldTransform(world)
@@ -198,6 +202,45 @@ do
     check(f.moves==1 and o.pose.x==2,"accepted move is not observed pose")
     f.playerId="9007199254740998ULL"
     check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0}) and f.moves==1,"player change")
+end
+-- Appearance is an actual readback, separate from lifecycle and visual quality.
+for _,fault in ipairs({"missing","throwing","nil","None","empty","number","boolean","table","wrong"}) do
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
+    local getter=a.CP2077PassiveModelFixture_CurrentAppearance
+    if fault=="missing" then a.CP2077PassiveModelFixture_CurrentAppearance=nil
+    elseif fault=="throwing" then a.appearanceError=true
+    elseif fault=="nil" then a.appearance=nil
+    elseif fault=="None" then a.appearance="None"
+    elseif fault=="empty" then a.appearance=""
+    elseif fault=="number" then a.appearance=1
+    elseif fault=="boolean" then a.appearance=true
+    elseif fault=="table" then a.appearance={name="default"}
+    else a.appearance="other" end
+    local o=f.engine:observe(e)
+    check(o.ready and o.templateVerified and o.rootVerified and not o.appearanceVerified and o.visualFault,
+        "appearance fault does not hide ready owned lifetime: "..fault)
+    check(not o.visualQualified,"appearance never proves visible quality")
+    check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0}) and f.moves==0 and not e.moveAttempted,
+        "bad appearance cannot submit movement: "..fault)
+    a.CP2077PassiveModelFixture_CurrentAppearance=getter;a.appearanceError=false;a.appearance="default"
+    o=f.engine:observe(e)
+    check(o.observedAppearance=="default" and o.appearanceVerified and not o.visualFault,"appearance recovery")
+    check(f.engine:move(e,{x=3,y=0,z=0,yaw=0}) and f.moves==1,"recovered exact appearance can submit")
+    a.appearance="other"
+    check(not f.engine:retire(e) and f.deletes==1,"mismatched appearance never blocks exact retirement")
+    f.finish(e.id.hash);check(f.engine:retire(e),"appearance mismatch cleanup completes")
+end
+
+do
+    local f=make();local e=f.entry();f.engine:create(e);local a=f.complete(e.id.hash)
+    local lookups=0
+    local changed=setmetatable({appearance="other"},{__index=a})
+    f.lookupHook=function()
+        lookups=lookups+1
+        return lookups==1 and a or changed
+    end
+    check(not pcall(f.engine.move,f.engine,e,{x=3,y=0,z=0,yaw=0})
+        and f.moves==0 and not e.moveAttempted,"final exact-ID actor appearance revalidated before mutation")
 end
 -- Readable source drift guard for the reviewed Python builder's exact catalogs.
 do

@@ -89,14 +89,20 @@ No automatic activation, game-file write or installation command is provided.
 
 ## Opt-in local fixture
 
-`init.lua`, `engine.lua` and `fixture.lua` form a separate CET experiment. They
-are not loaded by the production mod. Loading this entrypoint only registers
+`init.lua`, `engine.lua` and `fixture.lua` form a separate CET experiment, with
+the read-only appearance helper in `engine_hooks.reds`. They are not loaded by
+the production mod. Loading this entrypoint only registers
 callbacks. There are no hotkeys, default spawns, network calls or automatic
 movement. All engine reads and mutations run inside `onUpdate`; the public
 methods only validate/copy commands or return copied cached status.
 
 A future manual test requires Codeware, CET, both reviewed authored entities,
 the authored idle graph and the installed vanilla dependencies listed above.
+Stage this experiment's `engine_hooks.reds` separately under `r6/scripts` and
+confirm successful REDscript compilation before using the CET fixture. Its
+uniquely named `CP2077PassiveModelFixture_CurrentAppearance` helper on `Entity`
+returns the engine's current appearance name as a String and changes nothing.
+Without that helper, appearance readback stays unverified and movement is blocked.
 The runtime presence check is not an archive hash or visual-quality check. Use
 the builder's verified outputs and manifest; do not install unreviewed assets.
 No installation or package changes are made by this source change.
@@ -143,17 +149,25 @@ actor is not automatically adopted or deleted by a replacement fixture.
 
 `submittedTarget` records the native command target. `observed.pose` comes from
 the actual actor. `placementVerified` requires fresh matching readback within
-5 cm and 0.02 radians, the exact template and the expected `entEntity` root.
+5 cm and 0.02 radians, the exact template, the expected `entEntity` root and an
+observed current appearance name exactly equal to the requested `default`.
 A call returning does not prove placement. Observation failure clears current
-readback and qualification. Wrong template/root blocks movement but still
-permits safe retirement of the exact owned actor. `requestedAppearance` is
-`default`; there is no verified appearance getter here. `visualQualified`
-always remains false. No network descriptor or HOST appearance is inferred.
+readback and qualification. Wrong template/root or missing/wrong appearance
+blocks movement but still permits safe retirement of the exact owned actor.
+`requestedAppearance` is `default`; `observedAppearance` records the name actually
+read and `appearanceVerified` requires exact equality. Empty, `None`, non-string,
+missing or throwing readback cannot qualify. The final actor returned immediately
+before movement is checked again; a contradicted preflight clears cached
+qualification. A requested name does not guarantee that the native getter will
+return it, and no appearance mutation or fallback is used to force a match.
+`visualQualified` always remains false. The name alone proves neither mesh
+quality nor animation. No network descriptor or HOST appearance is inferred.
 
 State transitions emit structured diagnostic lines with slot, profile,
-generation, exact ID, submitted/requested/actual pose, template evidence and
-qualification. Logging is limited to 64 lines per fixture instance, not every
-frame. Status remains available after that limit. See
+generation, exact ID, submitted/requested/actual pose, template and actual
+appearance evidence. A changed observed name is logged even if the mismatch
+state remains the same. Logging is limited to 64 lines per fixture instance;
+unchanged frames stay silent. Status remains available after that limit. See
 [FIXTURE_VALIDATION.md](FIXTURE_VALIDATION.md) for offline evidence and limits.
 
 ## Remaining live gates

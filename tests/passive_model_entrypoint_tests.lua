@@ -84,4 +84,69 @@ do
     check(f.creates==1 and newApi.status("newname").state=="closed","historical tag blocks reload replacement even with new slot name")
     check(newApi.status("newname").reason:find("historical_fixture_present",1,true),"clear reload blocker")
 end
+for _,fault in ipairs({"missing","throwing","nil","None","empty","number","boolean","table","wrong"}) do
+    local f=make();local api,tick=load(f)
+    local _,generation=api.start("judy","judy_default",p(2))
+    api.start("mitch","mitch_default",p(4));tick()
+    local first=api.status("judy").entity.."ULL";local second=api.status("mitch").entity.."ULL"
+    local a,b=f.complete(first),f.complete(second)
+    local getter=a.CP2077PassiveModelFixture_CurrentAppearance
+    local function breakAppearance()
+        if fault=="missing" then a.CP2077PassiveModelFixture_CurrentAppearance=nil
+        elseif fault=="throwing" then a.appearanceError=true
+        elseif fault=="nil" then a.appearance=nil
+        elseif fault=="None" then a.appearance="None"
+        elseif fault=="empty" then a.appearance=""
+        elseif fault=="number" then a.appearance=1
+        elseif fault=="boolean" then a.appearance=true
+        elseif fault=="table" then a.appearance={name="default"}
+        else a.appearance="wrong" end
+    end
+    breakAppearance();tick()
+    local s=api.status("judy")
+    check(s.state=="visual_mismatch" and not s.appearanceVerified and not s.placementVerified
+        and not s.visualQualified,"real entrypoint fails closed on appearance: "..fault)
+    check(api.status("mitch").state=="ready" and api.status("mitch").appearanceVerified,
+        "other profile independently qualifies")
+    local before=f.native
+    check(not api.move("judy",generation,p(3)) and f.native==before and f.moves==0,"bad appearance cannot queue native move")
+    a.CP2077PassiveModelFixture_CurrentAppearance=getter;a.appearanceError=false;a.appearance="default";tick()
+    s=api.status("judy")
+    check(s.state=="ready" and s.observedAppearance=="default" and s.appearanceVerified
+        and s.placementVerified and not s.visualQualified,"actual later appearance recovers without visual claim")
+    breakAppearance();tick();api.stop("judy");tick()
+    check(f.deletes==1 and not b.disposed,"missing or wrong appearance never blocks exact isolated cleanup")
+    f.finish(first);tick();check(api.status("judy").state=="closed","appearance-independent removal observed")
+end
+
+do
+    local f=make();local api,tick=load(f)
+    local _,generation=api.start("final","judy_default",p(2));tick()
+    local value=next(f.tokens);local a=f.complete(value);tick()
+    check(api.move("final",generation,p(3)),"valid current appearance admits queued move")
+    local lookups=0;local changed=setmetatable({appearance="wrong"},{__index=a})
+    f.lookupHook=function()
+        lookups=lookups+1
+        return lookups<3 and a or changed -- controller sample, adapter preflight, final mutation actor
+    end
+    tick();local s=api.status("final")
+    check(f.moves==0 and s.state=="move_rejected" and s.moveSubmission=="rejected",
+        "changed final exact-ID appearance cannot receive transform")
+    check(not s.placementVerified and not s.appearanceVerified and not s.observed,
+        "contradicted preflight clears cached qualification")
+    f.lookupHook=nil;tick()
+    check(api.status("final").state=="ready" and api.status("final").appearanceVerified,"fresh appearance evidence recovers")
+end
+
+do
+    local f=make();local api,tick=load(f);api.start("names","judy_default",p(2));tick()
+    local value=next(f.tokens);local a=f.complete(value);a.appearance="wrong_one";tick()
+    local count=#f.logs;a.appearance="wrong_two";tick()
+    check(#f.logs==count+1 and f.logs[#f.logs]:find('observedAppearance="wrong_two"',1,true)
+        and f.logs[#f.logs]:find('appearanceVerified="false"',1,true),"same-state name changes are logged")
+    tick();check(#f.logs==count+1,"unchanged name remains silent")
+    for i=1,100 do a.appearance="wrong_"..i;tick() end
+    check(#f.logs==64 and api.status("names").observedAppearance=="wrong_100",
+        "appearance log changes remain bounded without stopping observations")
+end
 print("Passive model real entrypoint checks: "..checks)

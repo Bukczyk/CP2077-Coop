@@ -123,7 +123,7 @@ function Engine:observe(entry)
         attached=attached,globalAttached=globalAttached,retainedAttached=retainedAttached,
         absent=not managed and not spawning and not spawned and actor==nil
             and globalActor==nil and not retainedAttached,
-        templateVerified=false,rootVerified=false,visualQualified=false}
+        templateVerified=false,rootVerified=false,appearanceVerified=false,visualQualified=false}
     -- Visual/readback failures must block movement, not exact owned retirement.
     if actor then
         local ok,visual=pcall(function()
@@ -140,6 +140,14 @@ function Engine:observe(entry)
             if not o.templateVerified then o.visualFault="template_mismatch"
             elseif not o.rootVerified then o.visualFault="not_passive_entity" end
         else o.visualFault="visual_readback_unavailable" end
+        local appearanceOk,current=pcall(function() return actor:CP2077PassiveModelFixture_CurrentAppearance() end)
+        if appearanceOk and type(current)=="string" then o.observedAppearance=current end
+        o.appearanceVerified=appearanceOk and current=="default"
+        if not o.appearanceVerified and not o.visualFault then
+            if not appearanceOk or type(current)~="string" or current=="" or current=="None" then
+                o.visualFault="appearance_readback_unavailable"
+            else o.visualFault="appearance_mismatch" end
+        end
     end
     return o
 end
@@ -148,7 +156,7 @@ function Engine:move(entry,target)
     local _,playerId=localPlayer()
     assert(playerId==entry.playerId,"player_changed")
     local o=self:observe(entry)
-    assert(o.ready and o.templateVerified and o.rootVerified and o.pose,"actor_not_qualified")
+    assert(o.ready and o.templateVerified and o.rootVerified and o.appearanceVerified and o.pose,"actor_not_qualified")
     assert(distance(target,o.pose)<=5,"move_exceeds_five_meters")
     local player=Game.GetPlayer()
     assert(distance(target,player:GetWorldPosition())<=20,"move_outside_local_bounds")
@@ -159,6 +167,7 @@ function Engine:move(entry,target)
     assert(key(actor:GetEntityID())==entry.idKey and actor:IsAttached()==true,"actor_changed_before_move")
     assert(opaque(ResRef.GetHash(actor:GetTemplatePath()))==entry.templateHash
         and actor:IsExactlyA(CName.new("entEntity"))==true,"visual_changed_before_move")
+    assert(actor:CP2077PassiveModelFixture_CurrentAppearance()=="default","appearance_changed_before_move")
     entry.moveAttempted=true
     actor:SetWorldTransform(world)
     return true -- submission only; controller compares a later actual readback.
