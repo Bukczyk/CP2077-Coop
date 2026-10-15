@@ -1,6 +1,8 @@
 // Opt-in LOCAL logical upper-body experiment. No aim direction, combat target,
 // shooting or proven ADS animation. See docs/validation/PLAYER_AIM_PROBE.md.
 public class CP2077AimProbeLease extends IScriptable {
+    public let weaponEntity: EntityID;
+    public let weaponRecord: TweakDBID;
     public let requested: Bool;
     public let observedAim: Bool;
     public let restoreRequested: Bool;
@@ -10,17 +12,21 @@ public class CP2077AimProbeLease extends IScriptable {
 private let CP2077Session_AimProbeOwner: ref<CP2077AimProbeLease>;
 
 @addMethod(NPCPuppet)
-public func CP2077Session_AcquireAimProbe(record: TweakDBID) -> ref<CP2077AimProbeLease> {
+public func CP2077Session_AcquireAimProbe(record: TweakDBID, weaponEntity: EntityID) -> ref<CP2077AimProbeLease> {
     if IsDefined(this.CP2077Session_AimProbeOwner) || !this.IsAttached() || this.IsDead()
         || this.CP2077Session_PresentationProbeLocked || this.CP2077Session_PresentationStancePending
         || IsDefined(this.CP2077Session_PresentationCommand)
         || !IsDefined(this.GetAIControllerComponent()) || !IsDefined(this.GetSignalTable())
         || !IsDefined(this.GetStatesComponent()) || !CP2077PlayerPresentation.SupportedWeapon(record)
-        || !this.CP2077Session_HeldPresentationMatches(record, true)
         || NotEquals(this.GetUpperBodyStateFromBlackboard(), gamedataNPCUpperBodyState.Normal) {
         return null;
     }
+    let weapon = this.CP2077Session_ReadPresentationWeapon(record, true);
+    if !IsDefined(weapon) || !weapon.matches || !EntityID.IsDefined(weaponEntity)
+        || NotEquals(weapon.entityID, weaponEntity) { return null; }
     let lease = new CP2077AimProbeLease();
+    lease.weaponEntity = weaponEntity;
+    lease.weaponRecord = record;
     this.CP2077Session_AimProbeOwner = lease;
     this.CP2077Session_PresentationProbeLocked = true;
     return lease;
@@ -30,6 +36,8 @@ public func CP2077Session_AcquireAimProbe(record: TweakDBID) -> ref<CP2077AimPro
 public func CP2077Session_ReadAimProbe(lease: ref<CP2077AimProbeLease>) -> Int32 {
     if !IsDefined(lease) || this.CP2077Session_AimProbeOwner != lease
         || !this.IsAttached() || this.IsDead() { return -1; }
+    let weapon = this.CP2077Session_ReadPresentationWeapon(lease.weaponRecord, true);
+    if !IsDefined(weapon) || !weapon.matches || NotEquals(weapon.entityID, lease.weaponEntity) { return -1; }
     let state = this.GetUpperBodyStateFromBlackboard();
     if Equals(state, gamedataNPCUpperBodyState.Normal) { return 0; }
     if Equals(state, gamedataNPCUpperBodyState.Aim) {

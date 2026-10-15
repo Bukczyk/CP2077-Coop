@@ -58,8 +58,9 @@ stage a newer serial before using the normal adapter again.
 
 `step` reports `queued`, `observed`, `partial` or `failed`, plus a reason. A queued
 command and a changed blackboard are not proof of animation. Equipment reaches
-`observed` only when `TransactionSystem.GetItemInSlot(WeaponRight)` contains the
-requested exact record, or is empty for holster. Stance readback uses
+`observed` only when a stable, non-spawning WeaponRight slot contains the attached
+item with the requested exact record, or has no item and explicitly reports empty
+for holster. An absent object during spawning is pending. Stance readback uses
 `GetStanceStateFromBlackboard`, requiring exact Stand/Crouch. Those are engine
 state observations only; both still need visual checks. An owned AICommand is
 retired through its controller before a replacement is submitted.
@@ -146,6 +147,14 @@ visible matching weapon/crouch. The next
 engine gate needs owned temporary projections and real readback/video for each
 supported firearm and stance, without inventing a network action schema first.
 No installed runtime, saves, controls, settings, release or package changed.
+
+The [weapon-readiness follow-up](../../docs/validation/PLAYER_WEAPON_READINESS_2026-10-15.md)
+adds exact held-item identity, attachment/slot readiness and timestamped appearance
+and muzzle samples to `inspect().weaponEvidence`. These local diagnostic values
+are not a network descriptor or proof of rendered weapon grip/ADS. Aim leases now
+pin the exact weapon EntityID as well as its record; a same-model replacement
+cannot inherit an existing lease. The fixture must keep both updated REDscript
+files and both Lua modules matched. No normal package includes them.
 
 2026-10-15 follow-up: [late action readback validation](../../docs/validation/PLAYER_ACTION_DEADLINE_2026-10-15.md)
 fixes matching weapon/stance readback incorrectly hiding an admitted deadline

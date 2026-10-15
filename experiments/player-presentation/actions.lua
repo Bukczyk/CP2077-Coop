@@ -7,15 +7,49 @@ local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.
 local function key(v) return type(v)=="string" and #v>0 and #v<=256 end
 local function integer(v, max) return finite(v) and v>=1 and v<=max and v==math.floor(v) end
 local function clone(t) local c={}; for k,v in pairs(t or {}) do c[k]=v end; return c end
-local function identity(a)
-    local hash=a:GetEntityID().hash
+local function entityKey(entity)
+    local hash=entity.hash
     -- Native Uint64 remains opaque. A Lua number may already have lost bits.
     if hash==nil or type(hash)=="number" then return nil end
     local id=tostring(hash)
     if id=="0" or id=="0ULL" then return nil end
     return id
 end
+local function identity(a) return entityKey(a:GetEntityID()) end
 local function supported(record) return CP2077PlayerPresentation.SupportedWeapon(record) end
+
+local function readWeapon(actor,target,owner)
+    local sample=actor:CP2077Session_ReadPresentationWeapon(target.weapon,target.drawn)
+    if sample==nil or entityKey(sample.ownerID)~=owner then error("weapon owner unavailable") end
+    for _,field in ipairs({"spawning","slotEmpty","hasItem","attached","matches","muzzleAvailable"}) do
+        if type(sample[field])~="boolean" then error("invalid weapon observation") end
+    end
+    local itemKey=sample.hasItem and entityKey(sample.entityID) or nil
+    if sample.hasItem and not key(itemKey) then error("weapon identity unavailable") end
+    local status
+    if sample.spawning then status="spawning"
+    elseif sample.hasItem and not sample.attached then status="attaching"
+    elseif sample.hasItem and not sample.slotEmpty then status="drawn"
+    elseif not sample.hasItem and sample.slotEmpty then status="holstered"
+    else status="slot_pending" end
+    local ready=status=="drawn" or status=="holstered"
+    if not sample.hasItem and sample.attached then error("missing weapon cannot be attached") end
+    if sample.matches and (not ready or (target.drawn and status~="drawn")
+        or (not target.drawn and status~="holstered")) then error("inconsistent weapon match") end
+    local evidence={ownerKey=owner,itemKey=itemKey,status=status,record=tostring(sample.record),
+        appearance=tostring(sample.appearance),muzzle="unavailable"}
+    if sample.muzzleAvailable then
+        local p,q=sample.muzzlePosition,sample.muzzleRotation
+        if p and q and finite(p.x) and finite(p.y) and finite(p.z)
+            and finite(q.i) and finite(q.j) and finite(q.k) and finite(q.r)
+            and finite(q.i*q.i+q.j*q.j+q.k*q.k+q.r*q.r) and q.i*q.i+q.j*q.j+q.k*q.k+q.r*q.r>0 then
+            evidence.muzzle="sampled"
+            evidence.x,evidence.y,evidence.z=p.x,p.y,p.z
+            evidence.qi,evidence.qj,evidence.qk,evidence.qr=q.i,q.j,q.k,q.r
+        else evidence.muzzle="invalid" end
+    end
+    return {ready=ready,matches=sample.matches,evidence=evidence,entity=sample.entityID}
+end
 
 -- This captures held aim intent, not sight alignment, target, pitch or animation.
 function M.capture(player, validate)
@@ -117,6 +151,7 @@ function M.new(config)
         if not release(e) then return false,e.reason end
         owners[e.localKey]=nil
         e.actor,e.localKey,e.latest,e.admitted=nil,nil,nil,nil
+        e.weaponEvidence,e.weaponEntity=nil,nil
         e.status,e.reason="queued","awaiting_fresh_state"
         -- Keep serial tombstone/capacity until scope reset; delayed old state
         -- cannot reappear on a replacement. No arbitrary eviction of ownership.
@@ -146,20 +181,28 @@ function M.new(config)
         local ready,value=invoke(function() return e.actor:IsAttached() and e.actor:CP2077Session_PoseReady() end)
         if not ready or value~=true then return "queued","awaiting_attachment" end
         local target=e.admitted or e.latest
-        local read,stance,weapon=invoke(function()
-            return e.actor:CP2077Session_StanceMatches(target.crouched),
-                e.actor:CP2077Session_HeldPresentationMatches(target.weapon,target.drawn)
+        local read,observation=invoke(function()
+            return {stance=e.actor:CP2077Session_StanceMatches(target.crouched),
+                weapon=readWeapon(e.actor,target,e.localKey)}
         end)
         if not read then
+            e.weaponEvidence,e.weaponEntity=nil,nil
             if not release(e) then return "failed",e.reason end
             return fault(e,"readback_unavailable")
         end
+        local stance,weapon=observation.stance,observation.weapon.matches
+        observation.weapon.evidence.observedAt=now
+        e.weaponEvidence,e.weaponEntity=observation.weapon.evidence,observation.weapon.entity
         e.stance,e.weapon=stance==true and "observed" or "queued",weapon==true and "observed" or "queued"
         -- A late matching observation may permit command retirement, but must
         -- not erase the deadline missed by this admitted action.
         if e.admitted and e.active-e.submittedAt>=timeout then
             if not release(e) then return "failed",e.reason end
             return fault(e,"readback_timeout")
+        end
+        if not observation.weapon.ready then
+            e.status,e.reason="queued","weapon_"..e.weaponEvidence.status
+            return e.status,e.reason
         end
         if stance==true and weapon==true then
             if not release(e) then return "failed",e.reason end
@@ -200,21 +243,32 @@ function M.new(config)
         local e=entries[entity]; if not e then return nil end
         return {serial=e.serial,localKey=e.localKey,status=e.status,reason=e.reason,
             stance=e.stance,weapon=e.weapon,aim=e.aim,commandOwned=e.command~=nil,
-            activeAge=e.freshAt and e.active-e.freshAt or nil,uncertain=e.uncertain==true}
+            activeAge=e.freshAt and e.active-e.freshAt or nil,uncertain=e.uncertain==true,
+            weaponEvidence=e.weaponEvidence and clone(e.weaponEvidence) or nil}
     end
     -- Opt-in local probe reservation. No engine aim is enabled by this API.
     function self:reserveAimProbe(s,entity,now)
         local valid,reason=context(s,now); if not valid then return nil,reason end
         local e=entries[entity]
         if not e or e.probe or not e.actor or e.command or e.admitted or e.status~="partial"
-            or e.reason~="ads_unavailable" or not e.latest.drawn or not e.latest.aiming then
+            or e.reason~="ads_unavailable" or not e.latest.drawn or not e.latest.aiming
+            or not e.weaponEvidence or e.weaponEvidence.status~="drawn" or not e.weaponEvidence.itemKey then
             return nil,"presentation_not_ready"
         end
         if not e.paused then e.active=e.active+now-e.last end
         e.last=now
         if e.active-e.freshAt>=maxAge then return nil,"state_expired" end
         e.probe={}
-        return {token=e.probe,localKey=e.localKey,weapon=e.latest.weapon},"reserved"
+        return {token=e.probe,localKey=e.localKey,weapon=e.latest.weapon,
+            itemKey=e.weaponEvidence.itemKey,itemEntity=e.weaponEntity},"reserved"
+    end
+    function self:observeAimWeapon(s,entity,token)
+        if busy or scope~=s then return nil,"wrong_scope_or_busy" end
+        local e=entries[entity]
+        if not e or token==nil or e.probe~=token then return nil,"wrong_probe" end
+        local ok,sample=invoke(readWeapon,e.actor,e.latest,e.localKey)
+        if not ok then return nil,"weapon_readback_unavailable" end
+        return sample
     end
     function self:releaseAimProbe(s,entity,token)
         if busy or scope~=s then return false,"wrong_scope_or_busy" end
@@ -223,6 +277,7 @@ function M.new(config)
         e.probe=nil
         -- Probe evidence remains separate; ADS is still unqualified.
         e.latest=nil
+        e.weaponEvidence,e.weaponEntity=nil,nil
         e.status,e.reason="queued","awaiting_fresh_state"
         return true,"released"
     end

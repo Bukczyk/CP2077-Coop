@@ -13,7 +13,7 @@ function M.new(config)
     local actions,resolve=config.actions,config.resolve
     local timeout,hold,settle=config.timeout or 1,config.hold or 1,config.settle or 0.25
     if type(actions)~="table" or type(actions.reserveAimProbe)~="function"
-        or type(actions.releaseAimProbe)~="function" or type(resolve)~="function"
+        or type(actions.releaseAimProbe)~="function" or type(actions.observeAimWeapon)~="function" or type(resolve)~="function"
         or not finite(timeout) or timeout<0.1 or timeout>2 or not finite(hold) or hold<0 or hold>2
         or not finite(settle) or settle<0.1 or settle>0.5 or settle>=timeout then return nil,"invalid_config" end
     local p={phase="idle",active=0,logicalAimObserved=false,cleanupConfirmed=false,visual="unverified"}
@@ -52,13 +52,14 @@ function M.new(config)
         local ok,binding=call(function() return actions:reserveAimProbe(scope,entity,now) end)
         if not ok or not binding then return false,"presentation_not_ready" end
         self.scope,self.entity,self.key,self.token,self.weapon=scope,entity,binding.localKey,binding.token,binding.weapon
+        self.itemKey=binding.itemKey
         self.reservationHeld=true
         self.last,self.at=now,0
         local found,actor=call(resolve,entity); self.actor=actor
         if not found or not exact() then
             return rejectBeforeLease("mapping_changed")
         end
-        local acquired,lease=call(function() return actor:CP2077Session_AcquireAimProbe(self.weapon) end)
+        local acquired,lease=call(function() return actor:CP2077Session_AcquireAimProbe(self.weapon,binding.itemEntity) end)
         if not acquired then self.leaseUncertain=true; return false,select(2,fail("lease_uncertain")) end
         if lease==nil or lease==false then
             return rejectBeforeLease("lease_rejected")
@@ -85,10 +86,14 @@ function M.new(config)
         self.last,self.paused=now,paused==true
         if paused then return "queued","paused" end
         if not exact() then return fail("mapping_changed") end
+        local held,sample=call(function() return actions:observeAimWeapon(self.scope,self.entity,self.token) end)
+        if not held or not sample then self.weaponEvidence=nil; return fail("weapon_readback_unavailable") end
+        self.weaponEvidence=sample.evidence
+        self.weaponEvidence.observedAt=now
+        if not sample.ready then return fail("weapon_"..sample.evidence.status) end
+        if sample.matches~=true or sample.evidence.itemKey~=self.itemKey then return fail("held_weapon_changed") end
         local ok,state=call(function() return self.actor:CP2077Session_ReadAimProbe(self.lease) end)
         if not ok or (state~=0 and state~=1) then return fail("state_conflict_or_unavailable") end
-        local held,matches=call(function() return self.actor:CP2077Session_HeldPresentationMatches(self.weapon,true) end)
-        if not held or matches~=true then return fail("held_weapon_changed") end
         if self.phase=="awaiting_aim" then
             if state==1 then
                 self.logicalAimObserved=true
@@ -123,10 +128,13 @@ function M.new(config)
         end
     end
     function p:inspect()
+        local evidence
+        if self.weaponEvidence then evidence={}; for k,v in pairs(self.weaponEvidence) do evidence[k]=v end end
         return {phase=self.phase,reason=self.reason,localKey=self.key,activeSeconds=self.active,
             logicalAimObserved=self.logicalAimObserved,cleanupConfirmed=self.cleanupConfirmed,
             visual="unverified",reservationHeld=self.reservationHeld==true,
-            retirementRequired=self.phase=="failed" and (self.leaseOwned==true or self.leaseUncertain==true)}
+            retirementRequired=self.phase=="failed" and (self.leaseOwned==true or self.leaseUncertain==true),
+            weaponEvidence=evidence}
     end
     return p
 end
