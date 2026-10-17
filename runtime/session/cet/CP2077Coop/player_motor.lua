@@ -104,12 +104,22 @@ function Motor:step(target, delta)
         return "waiting_placement"
     end
     local jump = false
+    local velocity = self.velocity or {x=0, y=0, z=0}
     if self.previous and delta < 0.25 then
         local displacement = distance(target, self.previous)
         jump = displacement > 6
         local raw = jump and 0 or math.min(30, displacement/delta)
-        self.speed = self.speed+(raw-self.speed)*(1-math.exp(-delta/0.12))
-    else self.speed = 0 end
+        local blend = 1-math.exp(-delta/0.12)
+        self.speed = self.speed+(raw-self.speed)*blend
+        for _, axis in ipairs({"x", "y", "z"}) do
+            local rawAxis = (jump or displacement == 0) and 0 or (target[axis]-self.previous[axis])*raw/displacement
+            velocity[axis] = velocity[axis]+(rawAxis-velocity[axis])*blend
+        end
+    else
+        self.speed = 0
+        velocity = {x=0, y=0, z=0}
+    end
+    self.velocity = velocity
     self.previous = copy(target)
     local travel = self.observed and distance(current, self.observed) or 0
     if self.kind == "move" and delta < 0.25 and error >= 0.2 and travel < 0.15*delta then
@@ -163,7 +173,9 @@ function Motor:step(target, delta)
         end
         return "idle"
     end
-    if error > 6 or math.abs(current.z-target.z) > 1.5 or self.stalled > 1.5 or jump then
+    -- A stopped player is placed exactly rather than walked to from far behind.
+    local stoppedFarBehind = self.speed < 0.25 and error > 3
+    if error > 6 or math.abs(current.z-target.z) > 1.5 or self.stalled > 1.5 or jump or stoppedFarBehind then
         if self.clock < self.nextSnap or self.clock < self.nextCommand then return "cooldown" end
         if not self:release() then return "fault" end
         if self.correctionAttempts >= 3 then self.fault = "correction_limit"; return "fault" end
@@ -171,14 +183,22 @@ function Motor:step(target, delta)
         return self:submit("correction", desired)
     end
     if self.clock < self.nextCommand then return "cooldown" end
-    local pace = self.speed+math.min(2, error*0.6)
+    -- Aim ahead along the player's velocity. A destination only a few metres
+    -- ahead makes the AI brake for arrival on every update, so the actor kept
+    -- accelerating and stopping far below the player's speed.
+    local lookahead = math.min(0.4, 2/math.max(self.speed, 0.001))
+    local aim = {x=target.x+self.velocity.x*lookahead, y=target.y+self.velocity.y*lookahead,
+        z=target.z, yaw=desired.yaw}
+    -- Gait follows the distance still to close, not only the player's speed,
+    -- so a lagging actor runs to catch up instead of walking.
+    local pace = self.speed+math.min(4, error)
     local gait = pace > 4.5 and "Sprint" or (pace > 1.8 and "Run" or "Walk")
     if self.gait == "Sprint" and pace > 4 then gait = "Sprint"
     elseif self.gait == "Run" and pace > 1.4 and pace < 4.8 then gait = "Run" end
     local gaitValue = ({Walk=0, Run=1, Sprint=2})[gait]
     if self.command ~= nil then
         if self.commandState == 0 or self.commandState == 1 then return "pending" end
-        local state = self.actor:CP2077Session_RetargetMove(self.command, target.x, target.y, target.z, gaitValue)
+        local state = self.actor:CP2077Session_RetargetMove(self.command, aim.x, aim.y, aim.z, gaitValue)
         if state ~= 2 then return self:fail("retarget", "move_retarget_failed") end
         -- Brief motion from each new command cannot erase persistent policy
         -- refresh rejection. Only an accepted retarget resets this budget.
@@ -187,6 +207,6 @@ function Motor:step(target, delta)
         return "tracking"
     end
     self.gait = gait
-    return self:submit("move", desired, gaitValue)
+    return self:submit("move", aim, gaitValue)
 end
 return Motor
