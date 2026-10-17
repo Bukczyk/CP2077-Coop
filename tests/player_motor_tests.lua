@@ -305,4 +305,19 @@ check(a.snaps == 1 and m.observedSnaps == 1 and not m.fault, "origin recovery ad
 -- Actual pause gating is covered by session_lifecycle_tests' real entrypoint.
 a=actor(); m=Motor.new(a); m:step(target(11),1/60); m:step(target(12),2)
 check(m.speed == 0 and finite(m.clock), "long render interval must not invent velocity")
+-- Movement aims ahead of a moving player so the AI does not brake for arrival.
+a=actor(); m=Motor.new(a)
+run(a,m,60,function(frame) return target(10+frame/60*4) end)
+local aimed=a.current and a.current.target
+check(aimed ~= nil and aimed.x > 10+60/60*4+0.5 and aimed.x < 10+60/60*4+2.1,
+    "moving target is led by a bounded distance along its velocity")
+-- A stopped player is placed exactly instead of being walked to from far behind.
+a=actor(); m=Motor.new(a)
+run(a,m,120,target(14))
+check(a.snaps == 1 and m.observedSnaps == 1 and distance(a.pos,target(14)) < 0.2 and not m.fault,
+    "stopped target more than 3m away is corrected at once")
+-- A lagging actor runs to close the gap instead of walking.
+a=actor(); m=Motor.new(a)
+m:step(target(12.5),1/60)
+check(m.gait == "Run", "gait follows remaining distance, not only player speed")
 print("player_motor: PASS ("..checks.." checks; commanded trajectories, stops/reversals, wrap, rejection/readback, bounded recovery, ownership)")
