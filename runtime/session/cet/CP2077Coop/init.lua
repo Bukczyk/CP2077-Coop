@@ -1,4 +1,9 @@
 -- Matched typed-session bridge. No combat/world side effects or legacy native calls.
+-- print() reaches only the CET console; spdlog writes this mod's own .log file.
+local function log(message)
+    print(message)
+    if spdlog then spdlog.info(tostring(message)) end
+end
 local NpcRuntime = require("npc_runtime")
 local PlayerPose = assert(require("player_pose"), "player_pose module missing")
 local PlayerLifetime = assert(require("player_lifetime"), "player_lifetime module missing")
@@ -10,7 +15,7 @@ local passivePlayers = nil
 if config.experimentalPassivePlayers == true then
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
     passivePlayers = PassivePlayers.new(function(status)
-        print("[CP2077Session] PASSIVE_PLAYER " .. status)
+        log("[CP2077Session] PASSIVE_PLAYER " .. status)
     end)
 end
 local staticPopulation = require("npc_static_population")
@@ -23,7 +28,7 @@ local function ensureNpcProjection()
     staticProjectionEnabled = ok and enabled == true
     activePopulation = staticProjectionEnabled and staticPopulation or population
     npcProjection = NpcRuntime.new(activePopulation)
-    if staticProjectionEnabled then print("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION enabled; requires imported asset base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent") end
+    if staticProjectionEnabled then log("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION enabled; requires imported asset base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent") end
 end
 local pendingNpcs, hostNpcs = {}, {}
 local npcLimit, npcWarning = 128, false
@@ -35,7 +40,7 @@ local commonTag = "CP2077Session.Projection"
 local retiring, recoveryPending = {}, true
 local function own(entry, id)
     entry.life = PlayerLifetime.new(id, function(status)
-        print("[CP2077Session] PLAYER_LIFETIME " .. status)
+        log("[CP2077Session] PLAYER_LIFETIME " .. status)
     end, function()
         -- Never unbind a different exact mapping after a session transition.
         if entry.bound then
@@ -62,7 +67,7 @@ local function actorStatus(entry, status)
     entry.actorReports = entry.actorReports or {}
     if not entry.actorReports[status] then
         entry.actorReports[status] = true
-        print("[CP2077Session] PLAYER_ACTOR entity=" .. tostring(entry.entity)
+        log("[CP2077Session] PLAYER_ACTOR entity=" .. tostring(entry.entity)
             .. " actor=" .. (entry.life and entry.life.key or "pending") .. " status=" .. status)
     end
 end
@@ -210,7 +215,7 @@ local function update(delta)
                 Game.CP2077Session_PushLocal(x + 1.75, y, z, yaw)
                 joined = true
                 bubble.centers[1] = {x=x+1.75,y=y,z=z}
-                print("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
+                log("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
             end
             if passivePlayers then
                 passiveFrame[#passiveFrame + 1] = {player=id, entity=entity, x=x, y=y, z=z, yaw=yaw}
@@ -223,7 +228,7 @@ local function update(delta)
             if entry == nil then
                 entry = { tag = CName.new(commonTag .. "." .. tostring(id)), entity = entity, nextSpawn = 0 }
                 entry.pose = PlayerPose.new(function(status)
-                    print("[CP2077Session] PLAYER_POSE player=" .. tostring(id) .. " " .. status)
+                    log("[CP2077Session] PLAYER_POSE player=" .. tostring(id) .. " " .. status)
                 end)
                 proxies[id] = entry
             end
@@ -320,16 +325,16 @@ local function update(delta)
                 local ready, reason = activePopulation.available()
                 if ready then
                     if staticProjectionEnabled then
-                        print("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION_ACTIVE: render-only prototype; not a gameplay NPC")
+                        log("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION_ACTIVE: render-only prototype; not a gameplay NPC")
                     else
-                        print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
+                        log("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
                     end
                 else
-                    print("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
+                    log("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
                 end
             end
             if not npcProjection:step(generation, bubble, npcs) and #npcs > 0 then
-                print("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
+                log("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
             end
         end
     end -- experimentalNpcReplication; player cleanup always runs
@@ -347,7 +352,7 @@ registerForEvent("onInit", function()
         end
     end)
     initialized = true
-    print("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication)
+    log("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication)
         .. " passive_players=" .. tostring(passivePlayers ~= nil))
 end)
 registerForEvent("onUpdate", function(delta)
@@ -366,7 +371,7 @@ registerForEvent("onUpdate", function(delta)
     if not ok then
         failed = true
         local stopped, cleanupReason = pcall(stop)
-        print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
+        log("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
             .. (stopped and "" or "; cleanup: " .. tostring(cleanupReason)))
     end
 end)
@@ -375,16 +380,16 @@ registerForEvent("onShutdown", function()
     local ok, reason = pcall(stop)
     if not ok then
         failed = true
-        print("[CP2077Session] BRIDGE_ERROR shutdown: " .. tostring(reason))
+        log("[CP2077Session] BRIDGE_ERROR shutdown: " .. tostring(reason))
     end
     for key, entry in pairs(retiring) do
         local released, reason = pcall(shutdownCommands, entry)
         if not released then
             failed = true
-            print("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key
+            log("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key
                 .. " status=unconfirmed reason=" .. tostring(reason))
         else
-            print("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key .. " status=requested")
+            log("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key .. " status=requested")
         end
     end
 end)
@@ -392,7 +397,7 @@ registerHotkey("cp2077_session_reconnect", "Reconnect coop session", function()
     if not initialized then return end
     local ok, reason = pcall(stop)
     failed = not ok
-    if not ok then print("[CP2077Session] BRIDGE_ERROR reconnect: " .. tostring(reason)) end
+    if not ok then log("[CP2077Session] BRIDGE_ERROR reconnect: " .. tostring(reason)) end
 end)
 
 -- Value-only diagnostics for local test tooling. No engine handles or setters.
