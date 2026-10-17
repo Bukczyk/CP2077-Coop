@@ -72,7 +72,10 @@ diagnostics folder. Retain current controls/configuration and saves.
 rows at up to 5 Hz, capped at 9,000 frames or 8 MiB of diagnostic message text,
 plus the final STOP marker. CET timestamps add overhead. Restart the game for a
 new recording if the cap is reached. The collector also includes the session,
-main mod, CET and REDscript logs when available.
+main mod, CET, CET scripting (console) and REDscript logs when available.
+Diagnostic and session mod rows are written through CET `spdlog`, so they reach
+their mod `.log` files as well as the console. `session.log` lines start with a
+UTC millisecond timestamp for matching against diagnostics and server logs.
 
 Frame rows identify session, generation, local PlayerId, HOST, pause state,
 remote count and retiring actor count. Player rows identify the remote network
