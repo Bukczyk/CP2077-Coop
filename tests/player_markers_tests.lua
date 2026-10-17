@@ -22,7 +22,7 @@ assert(m:step("a",owner,{sample(2),sample(3,"9007199254740994ULL",4)},0))
 assert(visible[2].x==1 and visible[3].x==4)
 assert(m:diagnostics()["2"].entity=="9007199254740993")
 -- Refresh coherent target, suppress high-frequency UI updates.
-m:step("a",owner,{sample(2,nil,8),sample(3)},0.05); assert(visible[2].x==1)
+m:step("a",owner,{sample(2,nil,8),sample(3)},0.02); assert(visible[2].x==1)
 m:step("a",owner,{sample(2,nil,8),sample(3)},0.2); assert(visible[2].x==8)
 -- Departure removes only that marker; the unrelated player's remains.
 m:step("a",owner,{sample(3)},0.4); assert(not visible[2] and visible[3])

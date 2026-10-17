@@ -90,7 +90,7 @@ function M:step(scope, owner, samples, now)
                 return owner:CP2077Session_SetPlayerMarker(id,s.x,s.y,s.z,s.yaw)
             end)
             if ok and updated==true then
-                e.attempts=0; e.nextTry=now+0.1 -- cap UI work at 10 Hz
+                e.attempts=0; e.nextTry=now+1/30 -- cap UI work at 30 Hz; 10 Hz looked choppy on the minimap
                 self:status(e,"position_requested") -- Void engine setter has no visual readback
             else
                 e.attempts=(e.attempts or 0)+1; e.nextTry=now+1
