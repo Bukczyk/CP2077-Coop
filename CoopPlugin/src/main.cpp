@@ -3,7 +3,9 @@
 #include <RED4ext/Scripting/Natives/entEntityID.hpp>
 #include "coop/game_bridge.hpp"
 #include <charconv>
+#include <chrono>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <memory>
 #include <unordered_set>
@@ -18,7 +20,11 @@ float bubbleRadius=100;
 bool experimentalStaticNpcProjection=false;
 std::unordered_set<coop::EntityId> projections;
 std::ofstream logfile;
-void Log(const std::string& s) { logfile<<s<<std::endl; }
+// UTC millisecond stamps let session events be matched against CET diagnostics and server logs.
+void Log(const std::string& s) {
+    const auto now=std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
+    logfile<<std::format("{:%Y-%m-%dT%H:%M:%S}Z ",now)<<s<<std::endl;
+}
 std::string Trim(std::string s) {
     auto a=s.find_first_not_of(" \t\r\n");
     return a==std::string::npos?"":s.substr(a,s.find_last_not_of(" \t\r\n")-a+1);

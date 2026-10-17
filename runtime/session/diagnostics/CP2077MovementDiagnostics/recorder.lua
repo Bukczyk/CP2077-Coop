@@ -13,7 +13,7 @@ end
 local fields = {"entity", "actor", "mode", "lifecycle", "fault", "motorLastFailure",
     "x", "y", "z", "yaw", "actualX", "actualY", "actualZ", "actualYawDegrees",
     "readback", "error", "speed", "gait", "commands", "snaps", "observedSnaps",
-    "turns", "commandKind", "commandState", "commandAge"}
+    "turns", "commandKind", "commandState", "commandAge", "motorRecoveries"}
 function Recorder.new(emit, maxBytes)
     return setmetatable({emit=emit, maxBytes=maxBytes or 8*1024*1024,
         bytes=0, clock=0, due=0, frames=0}, Recorder)

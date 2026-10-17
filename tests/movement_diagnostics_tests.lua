@@ -47,9 +47,15 @@ Game={CP2077Session_Session=function() return "5ULL" end,
     CP2077Session_Phase=function() return 4 end,GetSystemRequestsHandler=function() return nil end}
 local report=print
 print=function(s) lines[#lines+1]=s end
+-- CET writes only spdlog output to the mod's .log file; print() is console-only.
+local fileLines={}
+spdlog={info=function(s) fileLines[#fileLines+1]=s end}
 assert(loadfile(root.."/runtime/session/diagnostics/CP2077MovementDiagnostics/init.lua"))()
 events.onUpdate(1); assert(reads==0)
 events.onInit(); events.onUpdate(1); assert(reads==1)
 assert(lines[#lines]:find("session=5ULL",1,true))
+assert(#fileLines==3 and fileLines[1]:find("BUILD",1,true) and fileLines[2]:find("START",1,true))
+assert(fileLines[3]==lines[#lines])
+spdlog=nil
 print=report
 print("movement diagnostics: bounded rate/size, capture failure, exact IDs and CET lifecycle passed")

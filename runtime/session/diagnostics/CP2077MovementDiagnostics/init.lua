@@ -1,12 +1,17 @@
 -- Included only in the movement test package. Reads on CET's game-thread update.
 local Recorder = require("recorder")
-local recorder = Recorder.new(print)
+-- print() reaches only the CET console; spdlog writes this mod's own .log file.
+local function emit(line)
+    print(line)
+    if spdlog then spdlog.info(line) end
+end
+local recorder = Recorder.new(emit)
 local initialized = false
 registerForEvent("onInit", function()
     initialized = true
     local ok, info = pcall(require, "build_info")
-    print("[CP2077Movement] BUILD "..(ok and info or "unpackaged_source"))
-    print("[CP2077Movement] START schema=1 rate_hz=5 max_bytes=8388608 max_frames=9000 target_yaw=radians actual_yaw=degrees")
+    emit("[CP2077Movement] BUILD "..(ok and info or "unpackaged_source"))
+    emit("[CP2077Movement] START schema=1 rate_hz=5 max_bytes=8388608 max_frames=9000 target_yaw=radians actual_yaw=degrees")
 end)
 registerForEvent("onUpdate", function(delta)
     if not initialized then return end
