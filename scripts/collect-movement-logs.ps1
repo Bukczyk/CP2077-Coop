@@ -14,6 +14,7 @@ $paths = @(
     'bin/x64/plugins/cyber_engine_tweaks/mods/CP2077Coop/CP2077Coop.log',
     'bin/x64/plugins/cyber_engine_tweaks/mods/CP2077MovementDiagnostics/CP2077MovementDiagnostics.log',
     'bin/x64/plugins/cyber_engine_tweaks/cyber_engine_tweaks.log',
+    'bin/x64/plugins/cyber_engine_tweaks/scripting.log',
     'r6/logs/redscript_rCURRENT.log'
 )
 $missing = @()
