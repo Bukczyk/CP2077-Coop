@@ -270,6 +270,42 @@ assert(stopped[3]==second,"reconnect cancels remaining motor")
 assert(#made==4 and made[4]==second,"new generation creates a fresh motor")
 s.shutdown()
 package.loaded.player_motor=nil
+-- A latched motor fault falls back to the pose actuator, then retries one fresh
+-- motor after a cooldown instead of freezing the actor until it is recreated.
+local motors, poseSteps, poseResets={},0,0
+package.loaded.player_motor={new=function(actor)
+    local m={steps=0,stop=function() end}
+    function m:step() self.steps=self.steps+1 end
+    motors[#motors+1]=m
+    return m
+end}
+package.loaded.player_pose={new=function()
+    return {reset=function() poseResets=poseResets+1 end, release=function() return true end,
+        step=function() poseSteps=poseSteps+1 end, diagnostics=function() return {} end}
+end}
+local function onlyDiagnostics(state) local _, d=next(state.bridge.playerDiagnostics()); return assert(d) end
+s=fixture("HOST",false,true)
+s.remotes={{id=2,entity=uint64(1),x=10}}
+s.bodies["CP2077Session.Projection.2"]=body("9007199254741996ULL")
+s.init(); s.tick(10)
+assert(#motors==1 and motors[1].steps>0 and poseSteps==0,"healthy motor owns presentation")
+motors[1].fault="move_start_timeout"
+local frozenSteps=motors[1].steps
+s.tick(60)
+assert(#motors==1 and motors[1].steps==frozenSteps,"faulted motor is not stepped")
+assert(poseSteps>0,"pose actuator presents the actor while the motor is faulted")
+assert(onlyDiagnostics(s).mode=="pose_fallback")
+local resetsBefore=poseResets
+s.tick(5*60)
+assert(#motors==2 and motors[2].steps>0,"a fresh motor is retried after the cooldown")
+assert(poseResets>resetsBefore,"the pose command is released before the motor resumes")
+assert(onlyDiagnostics(s).motorRecoveries==1)
+motors[2].fault="cancellation_unconfirmed"
+local held=poseSteps
+s.tick(10*60)
+assert(#motors==2 and poseSteps==held,"an unconfirmed cancellation never stacks a second command")
+s.shutdown()
+package.loaded.player_motor, package.loaded.player_pose=nil, nil
 -- The actual entrypoint keeps session snapshots/bindings alive while paused,
 -- but informs the pose owner that world AI cannot execute its commands.
 local pauseFlags={}
@@ -349,6 +385,7 @@ assert(next(s.bridge.playerRetirementDiagnostics())~=nil,
 
 -- A different authoritative binding on the old exact body must not be removed.
 -- Retaining that uncertain lifetime also prevents replacement actors.
+local function onlyDiagnostics(state) local _, d=next(state.bridge.playerDiagnostics()); return assert(d) end
 s=fixture("HOST",false,true)
 s.remotes={{id=2,entity=uint64(1),x=10}}
 s.init(); s.tick(3)

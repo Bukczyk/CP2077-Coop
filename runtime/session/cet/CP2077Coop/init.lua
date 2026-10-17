@@ -255,7 +255,7 @@ local function update(delta)
                 if entry.localKey ~= localKey then
                     entry.pose:reset()
                     if entry.motor then entry.motor:stop() end
-                    entry.localKey = localKey
+                    entry.localKey, entry.motorRetryAt = localKey, nil
                     if usePlayerMotor then entry.motor = PlayerMotor.new(proxy) end
                 end
                 if not Game.CP2077Session_Bind(entry.entity, proxy:GetEntityID()) then
@@ -265,9 +265,25 @@ local function update(delta)
                 bubble.exclusions[#bubble.exclusions+1] = proxy:GetEntityID()
                 -- Keep sampling interpolation while one owned engine command is
                 -- pending. Only actual transform readback confirms placement.
-                if entry.motor then
+                local motor = entry.motor
+                -- A latched motor fault used to freeze this actor until it was
+                -- recreated. Present it through the pose actuator meanwhile and
+                -- retry a fresh motor after a cooldown. An unconfirmed
+                -- cancellation still owns an engine command, so it never retries.
+                if motor and motor.fault and motor.fault ~= "cancellation_unconfirmed" then
+                    entry.motorRetryAt = entry.motorRetryAt or time + 5
+                    if time >= entry.motorRetryAt and entry.pose:release() then
+                        entry.pose:reset()
+                        entry.motorRetryAt = nil
+                        entry.motorRecoveries = (entry.motorRecoveries or 0) + 1
+                        entry.motor = PlayerMotor.new(proxy)
+                    else
+                        entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time, paused)
+                    end
+                end
+                if entry.motor and not (entry.motor == motor and motor.fault) then
                     if not paused then entry.motor:step({x=x,y=y,z=z,yaw=yaw}, delta) end
-                else
+                elseif not entry.motor then
                     entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time, paused)
                 end
             end
@@ -415,7 +431,8 @@ end, playerDiagnostics = function()
         local p = {
             entity=tostring(entry.entity), actor=entry.localKey,
             x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
-            mode=m and "motor" or "pose", fault=m and m.fault or entry.pose and entry.pose.fault,
+            mode=m and (m.fault and m.fault ~= "cancellation_unconfirmed" and "pose_fallback" or "motor") or "pose",
+            fault=m and m.fault or entry.pose and entry.pose.fault, motorRecoveries=entry.motorRecoveries or 0,
             motorLastFailure=m and m.lastFailure, observedSnaps=m and m.observedSnaps,
             pose=entry.pose and entry.pose:diagnostics(),
             lifecycle=entry.life and (entry.life.status == "owned" and entry.actorState or entry.life.status),
