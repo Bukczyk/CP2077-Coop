@@ -1,5 +1,55 @@
 # Local animation synchronization, 2026-10-18
 
+## Current local acceptance, 2026-10-18 20:48 UTC
+
+The revision-4 render-only path passed the recorded flat-ground local checks
+for walking, sprint/reversals, jump/landing, neutral arms-down idle, four-way
+turning and repeated participant joins/removal. Both real game installations
+loaded `20261018-locomotion-4` with the same Lua, REDscript, DLL and authored
+archive. This resolves the old multi-second body catch-up in these tests.
+It does not qualify crouch, weapons/ADS, arbitrary terrain, WAN or a release.
+The older observations and failed candidates below are retained as history.
+
+| Evidence directory | Actual test | Result |
+| --- | --- | --- |
+| `revision4-one-shot-qualification` | Production SessionClient replay, two real games, 50-second route with 15-second sprint/reversals, two jumps and extended idle | Six cosmetic phases observed; max root readback error 0.000004 m and wrapped yaw error 0.000013 degrees. Reviewed frames show locomotion and neutral idle, without the old seconds-long delay. |
+| `revision4-turns-rejoin` | Next admitted participant, stationary 0/90/180/270-degree turns | All headings visibly rotate; departed body/marker removed. Max root error 0.000002 m. |
+| `revision4-scanner-qualification` | Same route with JOINER scanner visibly active | Focus dilation true and global scale 0.03; all six phases still observed, max root error 0.000004 m. No delayed return to idle in reviewed frames. |
+| `revision4-real-host-jumps` | Two actual HOST Space-key jumps, real HOST capture/transport and JOINER rendering | Height rose from 24.393097 to 25.478424 m. Takeoff/air/landing/idle observed, max root error 0.000004 m. Reviewed 4-Hz frames show bent-knee airborne pose and arms-down idle through the later recording. |
+
+The replay is an extra synthetic participant using ordinary production routing;
+it is not an additional game client or a capacity/WAN benchmark. The final jump
+test uses the real HOST's engine physics and ordinary local player submission.
+A single initial HOST staging teleport precedes that test; no trajectory fixture
+drives those jumps. The bounded Shift+W input did not establish a sustained
+human sprint, so the sustained sprint evidence remains the replay route.
+
+These are game-root readbacks and visual observations, not measured skeletal
+latency or zero network delay. The neutral graph has no ambient arms-crossed
+selection, AI/navigation, root motion, collision or gameplay ownership. Airborne
+clips deliberately extend arms and bend knees; this is distinct from a bind T-pose.
+Gait/jump selection is cosmetic inference from XYZ, not replicated action state.
+
+Videos, per-frame UTC/PTS, exact installed hashes, diagnostics and reviewed
+contact sheets remain private in `bench-artifacts/20261018-local-sync`.
+NVENC VFR recording requested 60 FPS and measured about 24-27 fresh callbacks/s
+in the final revision-4 runs; no synthetic catch-up frames were generated.
+Capture admission and native transform error alone were never visual acceptance.
+
+Windows Release passed 55/55 local CTests. CI at `9735e38` passed Windows,
+Debian and sanitizers. Follow-up `50d2a28` enables the optional replay target
+and its input/evidence tests in all three jobs; Windows, Debian and sanitizers
+all passed [run 39165002686](https://github.com/Bukczyk/CP2077-Coop/actions/runs/39165002686).
+Protocol/backend source unchanged.
+
+Source is published on `fix/local-sync-presentation-20261018` in both remotes,
+with [draft PR29](https://github.com/Bukczyk/CP2077-Coop/pull/29) targeting
+`work/game-side-offline-20261015`. No main merge or new distributable version
+was made. The stable v0.0.37 package is preserved. Both local games remain open,
+scanner restored off, with existing controls/private settings/current saves kept.
+Next qualification: uneven ground/stairs, true action-state/weapon integration,
+then a separately versioned matched experimental package and two-PC testing.
+
 ## Render-only locomotion investigation, 2026-10-18 20:28 UTC
 
 The NPC motor path failed the original local acceptance test. The opt-in

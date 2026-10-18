@@ -24,7 +24,7 @@ python experiments/player-locomotion/build_assets.py --wolvenkit '<path-to-Wolve
 A controlled local install additionally requires `player_locomotion.lua`, the
 matching session entrypoint/passive controller, and the generated
 `CP2077Coop_PlayerLocomotion.archive`. Set `experimentalPlayerLocomotion=true`
-only in the private observing install. Keep `experimentalNpcReplication=false`.
+in the matched private test installs. Keep `experimentalNpcReplication=false`.
 Record exact installed hashes and the live `loadedPresentationVersion`; hashes
 of files changed after game launch do not prove those scripts were loaded.
 
@@ -57,3 +57,9 @@ teleports to freeze a camera: that invalidated actor-removal timing. The helper
 is private local test control and must never enter a distributable game-root.
 Use a route about six metres ahead and verify the camera/scene in the recording.
 NVENC recording requests 60 FPS and reports actual callback cadence separately.
+
+Revision 4 passed recorded local flat-ground walk/sprint/reversal, two replay
+jumps, real HOST jumps, extended neutral idle, four-way turning and repeated
+participant cleanup. Scanner dilation at 0.03 did not reproduce the old delay.
+See `docs/validation/LOCAL_ANIMATION_SYNC_2026-10-18.md` for exact evidence and
+limits. This is still an optional experiment, with no new distributable version.
