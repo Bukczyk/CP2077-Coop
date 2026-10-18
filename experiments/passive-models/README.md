@@ -3,7 +3,7 @@
 This source-only experiment adds one authored male `Mitch/default` entity beside
 the existing `Judy/default` entity, a strict local profile builder and a separate
 opt-in CET fixture. The fixture can queue local creation, movement, cleanup and
-explicit encounter reaction/death presentation;
+explicit encounter reaction/death presentation and supplied life baselines;
 it has not been installed or tested in Cyberpunk. The existing runtime, Judy
 asset, production builders and published packages stay unchanged.
 An additional private encounter-profile builder prepares a separate Mitch asset
@@ -111,9 +111,11 @@ combat, networking or shared interfaces. See
 The same builder accepts explicit `--presentation defeated_hold`. It builds a
 separate Judy or Mitch entity and a separate authored
 `networkhumanoid_defeated_hold.animgraph`. Omitting that argument retains the
-existing `encounter` build and its one-entity archive. The existing `PROFILES`,
-fixture commands, runtime selectors and shared presentation state are unchanged.
-The new assets are **not selectable by the current Lua fixture**.
+existing `encounter` build and its one-entity archive. The asset checkpoint
+preserved `PROFILES`, fixture commands, runtime selectors and shared state.
+The asset checkpoint did not activate a runtime profile. The separate local
+life-baseline fixture below now uses these assets through explicit same-family
+body replacement; they are not directly selectable by `start`.
 
 ```powershell
 python tests/passive_model_defeated_asset_tests.py
@@ -156,11 +158,10 @@ resources, template/compiled disagreement and inherited payloads fail closed.
 Both actual compiled roundtrips, exact archive lists and extracted-resource
 hashes passed. All existing asset/controller/runtime source bytes are preserved.
 
-This is an asset prerequisite only. A later explicit game-side controller must
-drive the normalized input and represent nonlethal Defeated separately before
-any held-pose or looping test. Entry, transitions, live sampling/loop continuity,
-recovery, terminal restoration, rendering and authoritative integration remain
-unimplemented or unqualified for these new assets. Nothing is installed,
+This builder remains an asset prerequisite only. The local baseline fixture
+below separately drives the normalized input and retains nonlethal Defeated.
+Entry/recovery animations, automatic looping, live continuity/rendering and
+authoritative integration remain unimplemented or unqualified. Nothing is installed,
 activated or added to published game packages by this build.
 
 ## Resource evidence and limits
@@ -424,6 +425,97 @@ resource chains. Encounter profiles are not silently added to that mapping.
 This fixture does not detect hits, change health, create NPC AI, replicate
 combat, apply HOST state or generate ragdoll. Its fixed front-torso clips are
 local presentation probes, not arbitrary replicated NPC reactions.
+
+## Supplied Alive, Defeated and Dead baselines
+
+`baseline(slot, generation, life, progress)` is an explicit local fixture
+command. It supplies a final presentation state, **not health, damage, HOST
+approval or a network message**. Start with `judy_encounter` or
+`mitch_encounter`; idle profiles remain unsupported for this command.
+
+| `life` | Required `progress` | Desired presentation |
+| --- | --- | --- |
+| `"alive"` | Omit | Existing encounter body, final idle; no old hit replay |
+| `"defeated"` | Finite number from 0 to 1 | Same-family defeated body, explicitly held normalized sample |
+| `"dead"` | Omit | Existing encounter body, final death sample; terminal |
+
+```lua
+local f = GetMod("PassiveModelFixture")
+local s = f.status("judy") -- previously started judy_encounter slot
+f.baseline("judy", s.generation, "defeated", 0.35)
+-- Inspect status and wait for the replacement to become ready.
+-- Always obtain its current generation before the next command.
+s = f.status("judy")
+f.baseline("judy", s.generation, "alive") -- supplied baseline, no recovery animation
+```
+
+Build and manually stage the matched encounter and defeated assets for each
+model used, including both authored graphs. The earlier builder commands create
+private partial archives, not complete installation packages. The CET module
+layout and matching read-only helper are unchanged. This source checkpoint does
+not install or start the fixture and does not connect a production descriptor.
+
+Switching to or from Defeated requires replacing the body because the authored
+graphs are separate. The old body's template, exact actor reference, creator and
+EntityID remain pinned throughout cleanup. The fixture submits exact retirement
+at most once and waits for confirmed absence before reserving a new generation.
+It never spawns a replacement beside a still-owned or uncertain old actor. The
+latest supplied baseline wins while cleanup is pending, so an obsolete
+intermediate body is not created. Use the current retiring generation for such
+updates; once replacement begins, the old generation is stale.
+
+Automatic replacement preserves the original native local player and exact
+player ID. Fresh Lua wrappers are accepted; a different native player, changed
+ID or unknown identity blocks creation. Definite pre-call failure, including
+pause, missing context or missing resources, leaves `spawn_deferred` and can
+retry fresh preflight later. Once a native spawn was attempted, an unknown
+outcome is retained and is never automatically retried. Cleanup remains
+available independently of cosmetic or continuation-context failure.
+
+Explicit `stop`, `reset` or shutdown cancels automatic recreation, including a
+deferred unsubmitted spawn. A later baseline cannot rearm a stopped slot.
+Creation checks the current slot and desired body again after its final context
+getter. A synchronous preparation callback that stops/resets the fixture or
+supplies a different life-state body prevents the obsolete native spawn. The
+update retains cancellation or the newer transition instead of closing it by
+mistake. An already attempted native spawn remains owned through cleanup.
+The supplied life/sample remains in the logical slot; an explicit same-family
+`start` after confirmed closure restores it on a new generation. Explicit
+manual restart may establish a new local-player context. Model family cannot
+change for a retained logical slot. Shutdown is queue-only; stop and observe
+closure before unloading because a later update is not guaranteed.
+
+Dead is terminal for that logical slot. Neither Alive nor Defeated can resurrect
+it. The existing `present(..., "death")` command enters the same terminal life
+immediately, even before its transient clip is submitted. A supplied Dead
+baseline supersedes that pending/in-progress clip and selects its final sample.
+Repeating an already supplied Dead baseline is idempotent. Reactions are accepted
+only for a ready Alive encounter body. Defeated is distinct from Dead and
+Unconscious; no engine gameplay predicate or recovery authority is inferred.
+
+A Defeated sample uses only `cp_coop_defeated_progress`, with fresh exact
+actor/player/creator/template/appearance/color and unpaused context checks before
+the native setter. Invalid update deltas and unknown context block submission.
+There is no elapsed-time loop or entry/recovery animation. Failed/uncertain
+setter submission can retry only the newest supplied normalized sample after
+fresh checks. Successful submission is cached per body/serial to avoid per-frame
+spam; it is not a native receipt or observed pose. Alive/Dead continue to reuse
+the existing shared controller and adapter without modifying their semantics.
+
+Copied `status.presentation` distinguishes `life`, held `progress`,
+`logicalProfile`, `desiredProfile`, `transition`, `baselinePending` and
+`finalDeadBaseline` from the current physical `status.profile`, body generation
+and last attempted sample. The shared controller's `desired` snapshot describes
+its encounter state only; Defeated is deliberately retained outside that
+Alive/Dead-only controller. Bounded transition logs report supplied life and
+body transition. `animationObserved`, `visualQualified` and `colorMatchVerified`
+remain false. Appearance comparison remains limited to the earlier idle subset.
+
+This route establishes only source-tested local state/lifetime behavior. Body
+replacement may produce a visible gap, standing/default-frame flash or abrupt
+pose change. Rendering, floor contact, blending, held/loop continuity and actual
+nonlethal gameplay behavior remain unqualified until live testing. No native
+health, damage, AI, physics, backend or protocol state changes occur.
 
 ## Compare historical NPC and fixture observations
 

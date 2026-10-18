@@ -1,6 +1,6 @@
 # Combined game-side source validation
 
-Owner: KyleBuildsAI. UTC checkpoint: 2026-10-15. Verification branch:
+Owner: KyleBuildsAI. UTC checkpoint: 2026-10-18. Verification branch:
 `work/game-side-offline-20261015`. No main merge, installation or gameplay release.
 
 This branch combines the following reviewable source slices on upstream main
@@ -17,10 +17,10 @@ This branch combines the following reviewable source slices on upstream main
 | 23 | feat/vehicle-pose-application | d0f8654e5a2b8742968837b078574593d843355d |
 | 24 | fix/passive-asset-validation | 69f059896fa4049382ca14b06f08ff7d2d9e9bee |
 | 25 | feat/passive-mitch-profile | 2a8bb541d59ba47596e5f66a65ad2fc38e77e197 |
-| 26 | feat/passive-model-fixture | 0d03be9ddba2e3333f01cfda90a62e4b03094f51 |
+| 26 | feat/passive-model-fixture | 45c234b38c8037f4bc48647b9b08c4271680117d |
 | 27 | feat/npc-appearance-observation | ab9d106729ba2485d5449c34b1a0314cde93161a |
 
-Combined source tested: `29e21feb20ebc5b5e6a22a3cc450771ec8d9357e`.
+Combined source tested: `a8c23a6dee1a7dbe04b62a3f33ae49bd741dcbe5`.
 PR12's connected controller is not integrated here. Only its existing pure
 presentation-state `restore` method is reused by the local fixture. Its connected
 evidence remains separate, and the life-baseline bridge request awaits coordination.
@@ -148,13 +148,22 @@ Definite preflight failure creates no pending command; native exceptions retain
 uncertain ownership. Position/rotation/settling readback remains required. The
 six files merged without conflicts; seat policy and the controller are unchanged.
 
+The NPC life follow-up adds explicit local Alive/Defeated/Dead baselines to the
+existing fixture. Same-family render-body replacement waits for exact old actor
+absence. It retains newer state during cleanup, preserves terminal death and
+cancels replacement on stop/reset/shutdown. Original player context stays pinned.
+The final spawn preflight also rejects cancellation or a changed desired body
+raised synchronously during spec preparation. These eight paths merged without
+conflicts; no shared protocol, authority, assets or native helper changed.
+
 ## Passed offline
 
 - Fresh configure and incremental Windows x64 Release plugin, session server
   and core build passed. Native inputs are unchanged; all previous 49 tests remain
   registered alongside the new Defeated asset contract.
 - 50/50 CTests, including existing real-socket/core tests and the new suites.
-- Prior 28 focused suites under LuaJIT 2.1 still apply to unchanged source, including exact Uint64 identity, cleanup,
+- Six related suites were rerun under LuaJIT 2.1 for the life-state extension.
+  The remaining suites retain prior evidence for unchanged source, including exact Uint64 identity, cleanup,
   failure clocks, command state, diagnostics, NPCs, vehicle fixtures, player
   action/readiness, marker/UI/facing and native-shaped map capture.
 - 23 new passive visual-contract mutation tests and the existing 9 hittable tests
@@ -219,7 +228,27 @@ six files merged without conflicts; seat policy and the controller are unchanged
   Source, compiler and installed reference input hashes unchanged.
 - `git diff --check`; no unresolved merge markers.
 
-Current Defeated asset prerequisite logs:
+Current NPC life fixture logs:
+`G:/Projects/CP2077-Coop/bench-artifacts/20261018-npc-life-final`,
+`branch-validation.json`, `combined-validation.json` and their logs record new
+G: build directories after the workspace move. Fresh Windows x64 Release builds
+pass 32 branch CTests (plugin OFF) and 50 combined CTests (plugin ON, including
+`CP2077Coop.dll` and the session server). All previous registrations remain.
+The six affected/related suites also pass under LuaJIT; the three changed suites
+pass 1111 Lua5.4 / 1113 LuaJIT checks. The separate literal-path staged review
+passes 12 cases / 334 assertions per interpreter, with native boundaries mocked.
+
+The saved baseline reproduces three preparation-callback failures in both
+interpreters before the final fix: stop, reset or a changed life baseline could
+still spawn the obsolete actor. Corrected runs preserve cancellation/new intent
+and create only the latest required body. Initial and automatic creation,
+shutdown, pause recovery, player context, terminal state and late callbacks are
+covered. This is local fixture behavior; rendering and connected state remain
+unqualified. Matching source inputs stayed unchanged during each validation.
+REDscript inputs did not change, so their prior isolated compilation still applies.
+The published movement experiment and installed development setup remain separate.
+
+Previous Defeated asset prerequisite logs:
 `D:/Downloads/syncfix/bench-artifacts/20261015-defeated-held-assets`,
 `combined-validation.json` and configure/build/CTest logs: 50 CTests pass at
 `29e21feb`, preserving all previous 49 registrations. The Release build includes

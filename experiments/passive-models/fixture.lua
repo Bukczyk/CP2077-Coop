@@ -34,7 +34,7 @@ function Controller:_logical(slot,profile)
     -- shared modules here; never rely on another mod's bare require cache keys.
     local State=require("cp2077_passive_encounter/presentation_state")
     local Adapter=require("cp2077_passive_encounter/presentation")
-    local logical={profile=profile,clock=0,serial=0,dead=false}
+    local logical={profile=profile,clock=0,serial=0,dead=false,life="alive",progress=nil}
     logical.state=assert(State.new({capacity=1,maxSerial=MAX_SERIAL,
         reactionDuration=Adapter.clipDuration.reaction,deathDuration=Adapter.clipDuration.death,
         resolve=function(key)
@@ -59,11 +59,27 @@ function Controller:_logical(slot,profile)
     self.logical[slot]=logical
     return logical
 end
+local function bodyProfile(logical)
+    if logical.life=="defeated" then
+        return logical.profile=="judy_encounter" and "judy_defeated" or "mitch_defeated"
+    end
+    return logical.profile
+end
+function Controller:_body(slot,profile,pose,logical,prior)
+    if self.serial>=MAX_SERIAL then return nil,"body_counter_exhausted" end
+    self.serial=self.serial+1
+    local e={slot=slot,profile=logical and bodyProfile(logical) or profile,
+        generation=self.instance..":"..self.serial,logical=logical,encounter=logical~=nil,
+        restoreSerial=prior and prior.serial or 0,restoreDead=prior and prior.dead or false,
+        target=poseCopy(pose),state="start_queued",visualQualified=false,placementVerified=false}
+    self.slots[slot]=e
+    return e
+end
 function Controller:start(slot,profile,pose)
     if self.closed then return false,"fixture_shutdown" end
     if type(slot)~="string" or #slot>32 or not slot:match("^[A-Za-z][A-Za-z0-9_-]*$") then return false,"invalid_slot" end
     local spec=type(profile)=="string" and self.engine:profile(profile) or nil
-    if not spec then return false,"unsupported_profile" end
+    if not spec or spec.defeated==true then return false,"unsupported_profile" end
     if not validPose(pose) then return false,"invalid_pose" end
     if self.slots[slot] and self.slots[slot].state~="closed" then return false,"slot_owned" end
     local count=0;for _ in pairs(self.slots) do count=count+1 end
@@ -77,13 +93,39 @@ function Controller:start(slot,profile,pose)
         if not ok then return false,"presentation_dependency_unavailable" end
         logical=value
     end
-    self.serial=self.serial+1
-    local e={slot=slot,profile=profile,generation=self.instance..":"..self.serial,
-        logical=logical,encounter=logical~=nil,
-        restoreSerial=prior and prior.serial or 0,restoreDead=prior and prior.dead or false,
-        target=poseCopy(pose),state="start_queued",visualQualified=false,placementVerified=false}
-    self.slots[slot]=e -- reserve immediately, before a second queued start
+    local e,why=self:_body(slot,profile,pose,logical,prior)
+    if not e then return false,why end
     return true,e.generation
+end
+function Controller:baseline(slot,generation,life,progress)
+    local e=self.slots[slot]
+    if self.closed or not e or e.generation~=generation then return false,"stale_generation" end
+    if not e.encounter then return false,"presentation_profile_unsupported" end
+    if life~="alive" and life~="defeated" and life~="dead" then return false,"invalid_life" end
+    if life=="defeated" then
+        if not finite(progress) or progress<0 or progress>1 then return false,"invalid_progress" end
+    elseif progress~=nil then return false,"unexpected_progress" end
+    if e.state=="closed" or (e.retiring and not e.transition) then return false,"slot_stopped" end
+    local logical=e.logical
+    if logical.dead then
+        if life~="dead" then return false,"terminal_death" end
+        -- A supplied final Dead baseline supersedes a queued/partial death clip.
+        if logical.finalDeadBaseline then return true,"terminal_unchanged",logical.serial end
+    end
+    if logical.serial>=MAX_SERIAL then return false,"presentation_counter_exhausted" end
+    logical.serial=logical.serial+1
+    logical.life,logical.progress,logical.dead=life,progress,life=="dead"
+    logical.finalDeadBaseline=life=="dead"
+    -- Supplied final baseline supersedes transient hits and queued movement.
+    -- It is retained even while the original body is still owned/retiring.
+    e.queuedPresentation,e.queuedMove=nil,nil
+    e.baselinePending={life=life,progress=progress,serial=logical.serial}
+    if e.profile~=bodyProfile(logical) then
+        e.retiring,e.transition=true,true
+        e.state="transition_queued"
+        e.placementVerified,e.observed=false,nil
+    end
+    return true,"baseline_queued",logical.serial
 end
 function Controller:present(slot,generation,kind)
     local e=self.slots[slot]
@@ -92,11 +134,13 @@ function Controller:present(slot,generation,kind)
     if kind~="reaction" and kind~="death" then return false,"unsupported_presentation" end
     local logical=e.logical
     if logical.dead then return false,"terminal_death" end
+    if logical.life~="alive" then return false,"life_not_alive" end
     if e.retiring or e.state~="ready" or e.queuedMove or e.movePending then return false,"slot_not_ready" end
     if e.queuedPresentation and kind~="death" then return false,"presentation_pending" end
     if logical.serial>=MAX_SERIAL then return false,"presentation_counter_exhausted" end
     logical.serial=logical.serial+1
-    if kind=="death" then logical.dead=true end -- retained even before stage/stop
+    if kind=="death" then logical.dead,logical.life=true,"dead" end -- retained even before stage/stop
+    e.baselinePending=nil
     e.queuedPresentation={kind=kind,serial=logical.serial}
     return true,"presentation_queued",logical.serial
 end
@@ -113,8 +157,9 @@ function Controller:stop(slot)
     local e=self.slots[slot]
     if not e then return false,"unknown_slot" end
     if e.state=="closed" then return true,"closed" end
+    e.transition=false -- explicit stop/reset can never trigger a replacement
     e.retiring,e.queuedMove=true,nil
-    e.queuedPresentation,e.presentationSample=nil,nil
+    e.queuedPresentation,e.presentationSample,e.baselinePending=nil,nil,nil
     if e.encounter then e.presentationSubmission="cancelled_by_stop" end
     e.placementVerified,e.observed=false,nil
     e.state="stop_queued"
@@ -135,6 +180,9 @@ function Controller:status(slot)
         local state=logical and logical.state:inspect(self.token,e.slot) or nil
         local presentation=logical and {clock=logical.clock,serial=logical.serial,terminal=logical.dead,
             pending=e.queuedPresentation,desired=state,sample=e.presentationSample,
+            life=logical.life,progress=logical.progress,baselinePending=e.baselinePending,
+            finalDeadBaseline=logical.finalDeadBaseline==true,
+            logicalProfile=logical.profile,desiredProfile=bodyProfile(logical),transition=e.transition==true,
             submission=e.presentationSubmission,reason=e.presentationReason,
             preflightError=e.presentationPreflightError,
             submissionReason=e.presentationSubmissionReason,forwarded=e.presentationForwarded,
@@ -155,7 +203,7 @@ function Controller:status(slot)
                 and observed.appearanceVerified==true and observed.observedAppearance=="default",
             requestedTarget=e.target,queuedTarget=e.queuedMove,submittedTarget=e.submittedTarget,observed=e.observed,
             placementVerified=e.placementVerified==true,moveSubmission=e.moveSubmission,
-            retiring=e.retiring==true,spawnAttempted=e.spawnAttempted==true})
+            retiring=e.retiring==true,spawnAttempted=e.spawnAttempted==true,automaticReplacement=e.automatic==true})
     end
     if slot~=nil then return self.slots[slot] and snapshot(self.slots[slot]) or nil end
     local out={};for name,e in pairs(self.slots) do out[name]=snapshot(e) end;return out
@@ -175,16 +223,40 @@ function Controller:_step(e)
         end
         e.placementVerified,e.observed=false,nil
         local ok,done=pcall(self.engine.retire,self.engine,e)
-        if ok and done==true then e.state,e.reason="closed",nil
+        if ok and done==true then
+            e.state,e.reason="closed",nil
+            if e.transition and not self.closed and self.slots[e.slot]==e then
+                -- No new native creation until the old exact lifetime is gone.
+                -- Choose the newest baseline now, never the first request's body.
+                local replacement,why=self:_body(e.slot,e.logical.profile,e.target,e.logical,e.logical)
+                if not replacement then e.reason=why else
+                    replacement.automatic=true
+                    replacement.automaticPlayer=e.automaticPlayer or e.originalPlayer
+                    replacement.automaticPlayerId=e.automaticPlayerId or e.playerId
+                end
+                e.transition=false
+            end
         else e.state,e.reason="retirement_pending",e.identityFault and "owned_native_identity_mismatch"
             or (ok and "awaiting_disappearance" or tostring(done)) end
         return
     end
-    if e.state=="start_queued" then
-        local ok,result=pcall(self.engine.create,self.engine,e)
+    if e.state=="start_queued" or e.state=="spawn_deferred" then
+        local function current()
+            return self.pumping and not self.closed and self.slots[e.slot]==e and not e.retiring
+                and (e.state=="start_queued" or e.state=="spawn_deferred")
+                and (not e.logical or e.profile==bodyProfile(e.logical))
+        end
+        local ok,result=pcall(self.engine.create,self.engine,e,current)
+        if e.retiring then
+            -- Preserve cancellation or newer life intent raised by a creation
+            -- callback, including an unknown outcome after native entry.
+            e.state=e.transition and "transition_queued" or "stop_queued"
+            e.reason=not ok and tostring(result) or nil
+            return
+        end
         if not ok or result~=true then
             e.reason=tostring(result)
-            e.state=e.spawnAttempted and "spawn_outcome_unknown" or "closed"
+            e.state=e.spawnAttempted and "spawn_outcome_unknown" or (e.automatic and "spawn_deferred" or "closed")
             return
         end
         e.submittedTarget=poseCopy(e.target)
@@ -244,6 +316,25 @@ function Controller:_presentation(e,dt)
         e.presentationPreflightError=tostring(why):sub(1,256)
         return
     end
+    if logical.life=="defeated" then
+        local serial=logical.serial
+        if e.defeatedAppliedSerial==serial then e.presentationReason="unchanged";return end
+        local generation=e.generation
+        local function current()
+            return self.pumping and not self.closed and self.slots[e.slot]==e and not e.retiring
+                and e.generation==generation and logical.serial==serial and logical.life=="defeated"
+                and not e.queuedMove and not e.movePending and e.state=="ready"
+        end
+        local frame={localKey=e.idKey,serial=serial,phase="defeated",progress=logical.progress}
+        e.presentationSample={serial=serial,phase=frame.phase,progress=frame.progress,
+            generation=generation,entity=e.idKey,clock=logical.clock}
+        local accepted=self.engine:present(e,frame,current)
+        e.presentationReason=accepted and "queued" or "engine_rejected"
+        if accepted and current() then
+            e.defeatedAppliedSerial=serial;e.baselinePending=nil
+        end
+        return -- explicit held sample, no automatic elapsed-time progression
+    end
     if not e.presentationBound then
         assert(logical.state:bind(self.token,e.slot,e.idKey,logical.clock))
         -- A logical replacement receives only final state, never an old hit.
@@ -252,6 +343,12 @@ function Controller:_presentation(e,dt)
                 e.restoreDead and "dead" or "alive",logical.clock))
         end
         e.presentationBound=true
+    end
+    local baseline=e.baselinePending
+    if baseline then
+        local ok,reason=logical.state:restore(self.token,e.slot,e.idKey,baseline.serial,baseline.life,logical.clock)
+        if not ok then e.presentationReason=reason;return end
+        if e.baselinePending==baseline then e.baselinePending=nil end
     end
     local command=e.queuedPresentation
     if command then
@@ -276,6 +373,7 @@ function Controller:pump(dt)
             e.state,e.reason="observation_unknown",tostring(why)
             e.placementVerified,e.observed=false,nil
         end
+        if self.slots[e.slot]~=e then e=self.slots[e.slot] end
         if ok then
             local presented,why=pcall(self._presentation,self,e,dt)
             if not presented then
@@ -290,7 +388,8 @@ function Controller:pump(dt)
             ..":"..tostring(observed.appearanceVerified)..":"..tostring(observed.observedAppearanceHash)
             ..":"..tostring(observed.observedColor)..":"..tostring(observed.observedColorHash)
             ..":"..tostring(observed.visualStateObserved)
-            ..":"..tostring(e.logical and e.logical.serial)..":"..tostring(e.presentationSubmission)
+            ..":"..tostring(e.logical and e.logical.serial)..":"..tostring(e.logical and e.logical.life)
+            ..":"..tostring(e.logical and e.logical.progress)..":"..tostring(e.presentationSubmission)
             ..":"..tostring(e.presentationReason)
             ..":"..tostring(e.presentationPreflightError)
         if self.log and self.logCount<64 and e.lastLog~=message then

@@ -31,6 +31,9 @@ local controller=Fixture.new(Engine.new(),function(slot,state,reason,s)
         .." templateHash="..text(o.templateHash).." templateVerified="..text(o.templateVerified)
         .." rootVerified="..text(o.rootVerified).." placementVerified="..text(s.placementVerified)
         .." visualQualified=false moveSubmission="..text(s.moveSubmission)
+        .." suppliedLife="..text(presentation.life).." defeatedProgress="..text(presentation.progress)
+        .." logicalProfile="..text(presentation.logicalProfile).." desiredProfile="..text(presentation.desiredProfile)
+        .." bodyTransition="..text(presentation.transition)
         .." presentationSerial="..text(presentation.serial).." presentationTerminal="..text(presentation.terminal)
         .." presentationSubmission="..text(presentation.submission).." presentationReason="..text(presentation.reason)
         .." presentationPreflightError="..text(presentation.preflightError)
@@ -49,5 +52,6 @@ return {
     stop=function(slot) return controller:stop(slot) end,
     move=function(slot,generation,pose) return controller:move(slot,generation,pose) end,
     present=function(slot,generation,kind) return controller:present(slot,generation,kind) end,
+    baseline=function(slot,generation,life,progress) return controller:baseline(slot,generation,life,progress) end,
     reset=function() return controller:reset() end,
 }

@@ -38,6 +38,20 @@ local profiles = {
         graph=ENCOUNTER_GRAPH,encounter=true,
     },
 }
+-- Internal body variants for explicit local life baselines. No default or
+-- network selector is inferred from an NPC record.
+for _,family in ipairs({"judy","mitch"}) do
+    local source=profiles[family.."_encounter"]
+    profiles[family.."_defeated"]={
+        template="base\\cp2077coop\\entities\\cp2077coop_networkhumanoid"
+            ..(family=="mitch" and "_mitch" or "").."_defeated.ent",
+        mesh=source.mesh,rig=source.rig,
+        animset=family=="judy"
+            and "base\\animations\\npc\\gameplay\\woman_average\\gang\\unarmed\\wa_gang_unarmed_reaction_defeated.anims"
+            or "base\\animations\\npc\\gameplay\\man_average\\gang\\unarmed\\ma_gang_unarmed_reaction_defeated.anims",
+        graph="base\\cp2077coop\\animations\\networkhumanoid_defeated_hold.animgraph",defeated=true,
+    }
+end
 local function opaque(value)
     if value == nil or type(value) == "number" then return nil end
     local text = tostring(value):gsub("[uUlL]+$", "")
@@ -104,12 +118,26 @@ function Engine:profile(name)
     if not source then return nil end
     return {name=name,template=source.template,appearance="default",graph=source.graph or GRAPH,
         mesh=source.mesh,rig=source.rig,animset=source.animset,impact=source.impact,death=source.death,
-        encounter=source.encounter==true}
+        encounter=source.encounter==true,defeated=source.defeated==true}
 end
-function Engine:create(entry)
-    assert(not entry.spawnAttempted, "spawn_already_attempted")
-    local p=assert(profiles[entry.profile], "unsupported_profile")
+local function creationContext(entry,initial,initialId)
     local player,playerId=localPlayer()
+    local original=entry.automaticPlayer or initial
+    local expectedId=entry.automaticPlayerId or initialId
+    if original then
+        local expected=original:GetEntityID()
+        assert(key(expected)==expectedId and playerId==expectedId,"creation_player_identity_changed")
+        -- Entity helper compares actual native references, not CET Lua wrappers.
+        assert(player:CP2077PassiveModelFixture_OwnedIdentity(player,original,expected)==1,
+            "creation_native_player_changed_or_unknown")
+    end
+    return player,playerId
+end
+function Engine:create(entry,current)
+    assert(not entry.spawnAttempted, "spawn_already_attempted")
+    assert(not entry.retiring and (not current or current()), "creation_binding_changed")
+    local p=assert(profiles[entry.profile], "unsupported_profile")
+    local player,playerId=creationContext(entry)
     local where=player:GetWorldPosition()
     assert(finite(where.x) and finite(where.y) and finite(where.z), "player_pose_unavailable")
     assert(distance(entry.target,where)>=1 and distance(entry.target,where)<=15
@@ -140,8 +168,12 @@ function Engine:create(entry)
     -- Reserve provenance BEFORE the native call. Exceptions/invalid IDs after
     -- this point have unknown outcomes and cannot authorize an automatic retry.
     entry.creator,entry.playerId,entry.expectedTemplate=creator,playerId,p.template
-    entry.originalPlayer=player -- Retain native context identity; Lua wrappers may differ later.
+    entry.originalPlayer=entry.automaticPlayer or player -- Preserve native context across automatic replacements.
     entry.templateHash=assert(opaque(ResRef.GetHash(spec.templatePath)), "template_hash_unavailable")
+    creationContext(entry,player,playerId) -- preparation getters/constructors may change context
+    -- A synchronous engine callback can stop this slot or request a different
+    -- life-state body while the spec is prepared. Recheck after the last getter.
+    assert(not entry.retiring and (not current or current()), "creation_binding_changed")
     entry.spawnAttempted=true
     entry.id=creator:SpawnEntity(spec)
     entry.idKey=assert(key(entry.id), "spawn_identity_unknown")
@@ -235,7 +267,7 @@ function Engine:move(entry,target)
     return true -- submission only; controller compares a later actual readback.
 end
 local function presentationActor(engine,entry,current)
-    assert(profiles[entry.profile] and profiles[entry.profile].encounter,"presentation_profile_unsupported")
+    assert(profiles[entry.profile] and (profiles[entry.profile].encounter or profiles[entry.profile].defeated),"presentation_profile_unsupported")
     assert(not entry.retiring and (not current or current()),"presentation_binding_changed")
     local _,playerId=localPlayer()
     assert(playerId==entry.playerId,"presentation_player_changed")
@@ -270,8 +302,22 @@ function Engine:present(entry,frame,current)
         entry.presentationForwarded=entry.presentationForwarded+1
         actor:QueueEvent(event) -- no native delivery/animation receipt exists
     end}
-    local kind=frame.phase=="dead" and "death" or frame.phase
-    local accepted,reason=adapter.apply(forwarding,kind,frame.phase=="dead" and 1 or frame.progress)
+    local accepted,reason
+    if profiles[entry.profile] and profiles[entry.profile].defeated then
+        assert(frame.phase=="defeated" and finite(frame.progress) and frame.progress>=0
+            and frame.progress<=1,"invalid_defeated_sample")
+        local ok,why=pcall(function()
+            local event=assert(NewObject("entAnimInputSetterFloat"),"entAnimInputSetterFloat unavailable")
+            event.key=CName.new("cp_coop_defeated_progress")
+            event.value=frame.progress
+            forwarding:QueueEvent(event)
+        end)
+        accepted,reason=ok,ok and "queued_not_observed" or "queue_failed_or_partial: "..tostring(why)
+    else
+        assert(frame.phase~="defeated","defeated_profile_required")
+        local kind=frame.phase=="dead" and "death" or frame.phase
+        accepted,reason=adapter.apply(forwarding,kind,frame.phase=="dead" and 1 or frame.progress)
+    end
     entry.presentationSubmission=accepted and "queued_not_observed" or "failed_or_partial"
     entry.presentationSubmissionReason=reason
     return accepted
