@@ -10,8 +10,9 @@ local function value(v)
     if type(v) ~= "string" then return "na" end
     return v:sub(1, 96):gsub("[^%w_%.:%-]", "_")
 end
-local fields = {"entity", "actor", "mode", "lifecycle", "fault", "motorLastFailure",
-    "x", "y", "z", "yaw", "actualX", "actualY", "actualZ", "actualYawDegrees",
+local fields = {"entity", "actor", "mode", "loadedPresentationVersion", "lifecycle", "lifecycleObservationError",
+    "retirementSubmitted", "seenReady", "visualYawOffsetDegrees", "fault", "motorLastFailure",
+    "x", "y", "z", "yaw", "actualX", "actualY", "actualZ", "actualYawDegrees", "yawErrorDegrees",
     "readback", "error", "speed", "gait", "commands", "snaps", "observedSnaps",
     "turns", "commandKind", "commandState", "commandAge", "motorRecoveries",
     "gaitChangeRequests", "locomotionAction", "policyIdle", "pathFailed",

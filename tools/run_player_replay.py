@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 
 def utc():
@@ -55,6 +56,11 @@ def main():
     parser.add_argument("--scanner", choices=["off", "on", "unknown"], default="unknown",
                         help="Operator observation, not an automatic scanner check")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--transform-fixture", action="store_true",
+                        help="Explicitly arm an installed private exact-actor transform fixture after admission")
+    parser.add_argument("--place-observer", action="store_true",
+                        help="Explicitly request one placement from the installed private JOINER fixture")
+    parser.add_argument("--fps", type=int, choices=(15,30,60), default=60)
     args = parser.parse_args()
     if args.output.exists():
         parser.error("Output must be a new folder")
@@ -70,14 +76,27 @@ def main():
     session = settings["session"].strip()
     if not session or not key.is_file():
         parser.error("Missing local session or private key file")
+    fixture = args.game_root / "bin/x64/plugins/cyber_engine_tweaks/mods/zz_CP2077TransformPresentationExperiment"
+    if args.transform_fixture and not (fixture / "init.lua").is_file():
+        parser.error("The explicit private transform fixture is not installed")
+    observer = args.game_root / "bin/x64/plugins/cyber_engine_tweaks/mods/zz_CP2077LocomotionObserver"
+    if args.place_observer and not (observer / "init.lua").is_file():
+        parser.error("The explicit private observer fixture is not installed")
     args.output.mkdir(parents=True, exist_ok=False)
     shutil.copy2(args.route, args.output / "route.csv")
     result = {"started_utc": utc(), "topology": "Loopback replay via production SessionClient and real HOST",
               "scanner_observation": args.scanner, "visual_pass": False}
     mods = args.game_root / "bin/x64/plugins/cyber_engine_tweaks/mods"
     provenance = {"replay_executable": args.replay, "route": args.route,
+        "replay_runner": Path(__file__),
+        "capture_tool": Path(__file__).with_name("record_game_window.py"),
         "session_cet": mods / "CP2077Coop/init.lua",
         "player_motor": mods / "CP2077Coop/player_motor.lua",
+        "player_passive": mods / "CP2077Coop/player_passive.lua",
+        "player_locomotion": mods / "CP2077Coop/player_locomotion.lua",
+        "presentation_config": mods / "CP2077Coop/config.lua",
+        "locomotion_archive": args.game_root / "archive/pc/mod/CP2077Coop_PlayerLocomotion.archive",
+        "observer_fixture": observer / "init.lua",
         "diagnostic_entrypoint": mods / "CP2077MovementDiagnostics/init.lua",
         "diagnostic_recorder": mods / "CP2077MovementDiagnostics/recorder.lua",
         "redscript_adapter": args.game_root / "r6/scripts/CP2077Coop/remote.reds"}
@@ -89,13 +108,50 @@ def main():
              (args.output / "replay.log").open("w") as replay_log:
             recorder = subprocess.Popen([sys.executable, str(Path(__file__).with_name("record_game_window.py")),
                 "--window", args.window, "--output", str(args.output / "video"),
-                "--seconds", str(duration + 21)], stdout=capture_log, stderr=subprocess.STDOUT)
+                "--seconds", str(duration + 21), "--fps",str(args.fps)], stdout=capture_log, stderr=subprocess.STDOUT)
             time.sleep(1)
             if recorder.poll() is not None:
                 raise RuntimeError("Recorder failed before replay; see capture-output.log")
             result["replay_started_utc"] = utc()
             replay = subprocess.Popen([str(args.replay), "--route", str(args.route),
                 "--key-file", str(key), "--session", session], stdout=replay_log, stderr=subprocess.STDOUT)
+            if args.transform_fixture or args.place_observer:
+                deadline = time.monotonic() + 12
+                admitted = None
+                while time.monotonic() < deadline and replay.poll() is None:
+                    admitted = re.search(r"REPLAY_ACTIVE session=(\d+) player=(\d+)",
+                                         (args.output / "replay.log").read_text(errors="replace"))
+                    if admitted:
+                        break
+                    time.sleep(0.05)
+                if not admitted:
+                    raise RuntimeError("Cannot arm fixture without verified replay admission")
+                if args.transform_fixture:
+                    request = {"version": 1, "mode": "set-world-transform", "session": admitted[1],
+                               "player": int(admitted[2]), "request": str(uuid.uuid4())}
+                    temporary = fixture / "experiment-request.tmp"
+                    temporary.write_text(json.dumps(request), encoding="ascii")
+                    temporary.replace(fixture / "experiment-request.json")
+                    result["fixture_request"] = request
+                if args.place_observer:
+                    request = {"version": 1, "mode": "place-observer", "session": admitted[1],
+                               "request": str(uuid.uuid4())}
+                    temporary = observer / "observer-request.tmp"
+                    temporary.write_text(json.dumps(request), encoding="ascii")
+                    temporary.replace(observer / "observer-request.json")
+                    result["observer_request"] = request
+                    deadline=time.monotonic()+4
+                    while time.monotonic()<deadline:
+                        try:
+                            receipt=json.loads((observer/"observer-receipt.json").read_text())
+                            if receipt.get("request")==request["request"]:
+                                result["observer_submission"]=receipt
+                                if receipt.get("accepted") is not True:
+                                    raise RuntimeError("Observer placement rejected by game context")
+                                break
+                        except (OSError,ValueError):pass
+                        time.sleep(0.05)
+                    else:raise RuntimeError("No verified receipt for this observer request")
             result["replay_exit"] = replay.wait(timeout=duration + 30)
             result["replay_finished_utc"] = utc()
             result["capture_exit"] = recorder.wait(timeout=25)

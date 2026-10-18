@@ -18,11 +18,11 @@ local markers = require("player_markers").new(function(status)
     log("[CP2077Session] PLAYER_MARKER " .. status)
 end)
 local passivePlayers = nil
-if config.experimentalPassivePlayers == true then
+if config.experimentalPassivePlayers == true or config.experimentalPlayerLocomotion == true then
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
     passivePlayers = PassivePlayers.new(function(status)
         log("[CP2077Session] PASSIVE_PLAYER " .. status)
-    end)
+    end, config.experimentalPlayerLocomotion == true)
 end
 local staticPopulation = require("npc_static_population")
 local npcProjection = nil
@@ -497,6 +497,7 @@ playerRetirementDiagnostics = function()
     end
     return result
 end, playerDiagnostics = function()
+    if passivePlayers then return passivePlayers:diagnostics() end
     local result = {}
     for id, entry in pairs(proxies) do
         local t, m = entry.target, entry.motor

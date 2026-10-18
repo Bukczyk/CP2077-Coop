@@ -1,5 +1,61 @@
 # Local animation synchronization, 2026-10-18
 
+## Render-only locomotion investigation, 2026-10-18 20:28 UTC
+
+The NPC motor path failed the original local acceptance test. The opt-in
+`experimentalPlayerLocomotion` path instead uses our authored pure `entEntity`,
+an animation controller and a mesh. It has no AI/navigation/collision or root
+motion. Existing interpolated SessionBridge XYZ drives the actor, while local
+cosmetic inference selects sampled walk, sprint and jump/landing clips, then
+neutral idle. This is not replicated crouch/aim/weapon state or a release claim.
+Default configuration remains off; protocol v5 and backend source are unchanged.
+
+Compiled entity/graph safety checks, native graph roundtrip, exact two-resource
+archive inventory and unpacked payload hashes passed. Only authored resources
+are packaged; installed game mesh, rig and animation bytes are external refs.
+The same resource bytes were rebuilt twice; archive timestamps differ.
+
+Private evidence folders include:
+
+- `jump-idle-passive-locomotion-1`: rejected. Loaded code preceded the corrected
+  ground estimator. Root followed the dot, but the body floated in idle.
+- `jump-idle-passive-locomotion-2`: visible takeoff/air/landing and arms-down idle;
+  root error <=0.000004 m. Walking and repeated joins were not qualified here.
+- `combined-passive-locomotion-1`: rejected. A retained detached reference blocked
+  old ownership cleanup and prevented the new replay actor from spawning.
+- `combined-passive-locomotion-3` and `rejoin-passive-locomotion-3`: moving/rejoining
+  actor observed, <=0.000004 m root error. Camera motion limited visual comparison.
+- `matched-fixed-combined-1`: rejected recording. CPU catch-up encoding starved
+  capture; this is not visual evidence despite successful transport.
+- `matched-fixed-qualification-2`: 15-second sprint/reversal route, two jumps and
+  >20-second idle. NVENC VFR recording delivered ~35 fresh callbacks/s with no
+  generated duplicate frames. Reviewed frames show running, jump/landing and
+  arms-down idle, without the old seconds-long catch-up. Continuous observer
+  teleportation delayed visible cleanup; that harness was rejected.
+- `matched-one-shot-cleanup-3`: only one initial placement, CET captures mouse
+  input without pausing the game. The departed body/marker disappeared without
+  the teleport-loop delay. Reviewed late frames leave only the real HOST actor.
+
+Cleanup now requires creator removal plus explicit false attachment on all
+exact handles. Unknown, attached, pending or foreign handles still block
+replacement. Holding our own detached native reference can keep FindEntityByID
+non-nil, so waiting for that reference to destroy itself was a deadlock.
+
+Revision 4 removes an incorrect guessed 180-degree yaw correction: installed
+walk/sprint motion metadata travels along rig +Y. Added actual yaw readback and
+wrapped error independently of position. A missing optional yaw helper must not
+erase a valid position observation. These changes passed all 55 Windows CTests;
+new matched in-game calibration/cleanup/time-dilation checks remain pending.
+Native DLL source did not change. No fresh Debian/sanitizer result is claimed.
+
+Observer tooling now performs one explicit, role/session-checked placement with
+a request-specific submission receipt. It never continuously teleports, locks
+controls or claims that a submitted placement is observed success. Keep its
+private mod out of release game-root. The recorder uses NVENC VFR with explicit
+UTC/PTS, requested rate and measured callback cadence. Callback rate alone does
+not prove every image changed or that animation was correct; inspect frames.
+
+
 ## Automated reproduction checkpoint, 2026-10-18T18:09:35.194610+00:00
 
 Owner: KyleBuildsAI / Codex. Task branch `fix/local-sync-presentation-20261018`,
