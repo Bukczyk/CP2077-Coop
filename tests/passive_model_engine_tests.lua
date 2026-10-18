@@ -122,6 +122,13 @@ local function make()
         end,
         GetPlayer=function()
             native();return {nativeRef=f.playerNative,id=f.playerId,
+                CP2077PassiveModelFixture_OwnedIdentity=function(self,context,original,expected)
+                    native()
+                    if f.playerIdentityThrows then error("player_identity_failed") end
+                    if f.playerIdentityUnknown then return 0 end
+                    if self.nativeRef~=original.nativeRef or self.id~=expected.hash or original.id~=expected.hash then return -1 end
+                    return context and context.nativeRef==f.playerNative and self.nativeRef==f.playerNative and 1 or 0
+                end,
                 IsAttached=function() native();return true end,
                 GetEntityID=function(self) native();return id(self.id) end,
                 GetWorldPosition=function() native();return {x=0,y=0,z=0} end}
@@ -446,4 +453,37 @@ do
     check(not f.engine:present(e,{localKey=e.idKey,phase="reaction",progress=0},function() return true end)
         and #f.events==0,"idle graph never receives encounter setters")
 end
+
+for _,name in ipairs({"judy_defeated","mitch_defeated"}) do
+    local f=make();local spec=f.engine:profile(name)
+    check(spec.defeated and not spec.encounter and spec.graph:find("defeated_hold",1,true),"separate held graph catalog")
+    for _,field in ipairs({"template","graph","mesh","rig","animset"}) do
+        f.resources[spec[field]]=false
+        check(not pcall(f.engine.create,f.engine,f.entry(name)) and f.creates==0,"held dependency must exist: "..field)
+        f.resources[spec[field]]=nil
+    end
+    local e=f.entry(name);f.engine:create(e);local a=f.complete(e.id.hash);f.engine:observe(e)
+    for _,value in ipairs({0,.25,1}) do
+        f.events={};check(f.engine:present(e,{localKey=e.idKey,phase="defeated",progress=value},function() return true end),"explicit held sample")
+        check(#f.events==1 and f.events[1].key=="cp_coop_defeated_progress" and f.events[1].value==value
+            and f.events[1].actor==a.nativeRef,"only exact held setter, no phase/death alias")
+    end
+    for _,value in ipairs({-1,1.1,0/0,math.huge,"0"}) do
+        check(not pcall(f.engine.present,f.engine,e,{localKey=e.idKey,phase="defeated",progress=value},function() return true end),"invalid normalized sample rejected")
+    end
+    check(not pcall(f.engine.present,f.engine,e,{localKey=e.idKey,phase="dead",progress=1},function() return true end),"dead cannot use defeated graph")
+    f.events={};local construct=NewObject
+    NewObject=function(kind) local event=construct(kind);f.paused=true;return event end
+    check(not f.engine:present(e,{localKey=e.idKey,phase="defeated",progress=.5},function() return true end) and #f.events==0,"fresh pause check after event constructor")
+    NewObject=construct;f.paused=false;f.queueThrows=true
+    check(not f.engine:present(e,{localKey=e.idKey,phase="defeated",progress=.5},function() return true end)
+        and e.presentationSubmission=="failed_or_partial","throwing held setter never called observed")
+    f.queueThrows=false;check(f.engine:present(e,{localKey=e.idKey,phase="defeated",progress=.8},function() return true end),"fresh latest sample can retry")
+    e.retiring=true;f.engine:retire(e);f.finish(e.id.hash);check(f.engine:retire(e),"held asset exact cleanup unchanged")
+end
+do
+    local f=make();local e=f.entry("judy_encounter");f.engine:create(e);f.complete(e.id.hash);f.engine:observe(e)
+    check(not pcall(f.engine.present,f.engine,e,{localKey=e.idKey,phase="defeated",progress=0},function() return true end),"encounter graph cannot silently alias defeated")
+end
+
 print("Passive model actual engine adapter checks: "..checks)
