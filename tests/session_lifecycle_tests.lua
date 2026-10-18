@@ -295,7 +295,7 @@ end
 local made, stopped={},{}
 package.loaded.player_motor={new=function(actor)
     made[#made+1]=actor
-    return {step=function(self,target) self.target=target end,
+    return {actor=actor, step=function(self,target) self.target=target end,
         stop=function() stopped[#stopped+1]=actor end}
 end}
 local s=fixture("HOST",false,true)
@@ -319,6 +319,36 @@ s.reconnect()
 s.tick(30)
 assert(stopped[3]==second,"reconnect cancels remaining motor")
 assert(#made==4 and made[4]==second,"new generation creates a fresh motor")
+-- Optional engine animation observations cannot break transform readback or
+-- submit/release commands. Execute the actual diagnostic entrypoint.
+second.GetWorldPosition=function() return {x=20,y=30,z=4} end
+second.GetWorldOrientation=function() return {ToEulerAngles=function() return {yaw=45} end} end
+local d=s.bridge.playerDiagnostics()["3"]
+assert(d.readback=="available" and d.actualX==20 and d.gaitChangeRequests==nil,
+    "old/missing animation helper preserves transform diagnostics")
+second.CP2077Session_MotorGaitChanges=function() return 7 end
+second.GetTimeDilationValue=function() return 0.05 end
+second.GetHighLevelStateFromBlackboard=function() return "Relaxed" end
+second.GetUpperBodyStateFromBlackboard=function() return "Normal" end
+second.GetMovePolicesComponent=function() return {
+    GetCurrentLocomotionAction=function() return "Move" end,
+    GetDestination=function() return {x=21,y=31,z=4} end,
+    GetTopPolicies=function() return {GetMovementType=function() return "Run" end} end,
+    IsPausedByDynamicCollision=function() return false end,
+    IsInIdle=function() return false end,IsPathfindingFailed=function() return true end} end
+d=s.bridge.playerDiagnostics()["3"]
+assert(d.gaitChangeRequests==7 and d.locomotionAction=="Move" and d.policyIdle==false and d.pathFailed==true,
+    "actual actor policy observations are forwarded without inventing visual success")
+assert(d.actorTimeScale==0.05 and d.highLevelState=="Relaxed" and d.upperBodyState=="Normal",
+    "time scale and actor animation state observations remain separate")
+assert(d.destinationX==21 and d.destinationY==31 and d.destinationZ==4
+    and d.policyMovementType=="Run" and d.collisionPaused==false,
+    "engine destination and gait distinguish a stale path from a current network marker")
+second.GetMovePolicesComponent=function() error("policy unavailable") end
+d=s.bridge.playerDiagnostics()["3"]
+assert(d.readback=="available" and d.actualX==20 and d.gaitChangeRequests==nil,
+    "optional policy read failure is isolated from transform readback")
+assert(#made==4 and #stopped==3,"read-only diagnostics do not alter command ownership")
 s.shutdown()
 package.loaded.player_motor=nil
 -- A latched motor fault falls back to the pose actuator, then retries one fresh

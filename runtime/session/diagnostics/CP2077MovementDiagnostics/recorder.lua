@@ -13,7 +13,10 @@ end
 local fields = {"entity", "actor", "mode", "lifecycle", "fault", "motorLastFailure",
     "x", "y", "z", "yaw", "actualX", "actualY", "actualZ", "actualYawDegrees",
     "readback", "error", "speed", "gait", "commands", "snaps", "observedSnaps",
-    "turns", "commandKind", "commandState", "commandAge", "motorRecoveries"}
+    "turns", "commandKind", "commandState", "commandAge", "motorRecoveries",
+    "gaitChangeRequests", "locomotionAction", "policyIdle", "pathFailed",
+    "actorTimeScale", "highLevelState", "upperBodyState",
+    "destinationX", "destinationY", "destinationZ", "policyMovementType", "collisionPaused"}
 function Recorder.new(emit, maxBytes)
     return setmetatable({emit=emit, maxBytes=maxBytes or 8*1024*1024,
         bytes=0, clock=0, due=0, frames=0}, Recorder)
@@ -50,7 +53,9 @@ function Recorder:step(delta, capture)
     table.sort(ids)
     self:write(prefix.." session="..value(f.session).." generation="..value(f.generation)
         .." self="..value(f.self).." host="..value(f.host).." ready="..value(f.ready)
-        .." paused="..value(f.paused).." remotes="..count.." retiring="..value(f.retiring))
+        .." paused="..value(f.paused).." remotes="..count.." retiring="..value(f.retiring)
+        .." localLocomotion="..value(f.localLocomotion)
+        .." focusDilation="..value(f.focusDilation).." globalTimeScale="..value(f.globalTimeScale))
     -- Sampling cap only, not a gameplay/player-capacity limit.
     for i=1,math.min(#ids,16) do
         local id, parts = ids[i], {prefix, "player="..value(ids[i])}

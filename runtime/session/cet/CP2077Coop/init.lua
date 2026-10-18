@@ -526,6 +526,39 @@ end, playerDiagnostics = function()
         p.readback = ok and x ~= nil and "available" or "unavailable"
         if p.readback == "available" then
             p.actualX, p.actualY, p.actualZ, p.actualYawDegrees = x, y, z, yaw
+            -- Independent optional observations: a missing animation helper
+            -- must not erase a valid transform or change any actuator state.
+            local sampleOk, changes, action, idle, pathFailed = pcall(function()
+                local changes = actor:CP2077Session_MotorGaitChanges()
+                local component = actor:GetMovePolicesComponent()
+                if not component then return changes end
+                return changes, tostring(component:GetCurrentLocomotionAction()),
+                    component:IsInIdle(), component:IsPathfindingFailed()
+            end)
+            if sampleOk then
+                p.gaitChangeRequests, p.locomotionAction = changes, action
+                p.policyIdle, p.pathFailed = idle, pathFailed
+            end
+            local destinationOk, dx, dy, dz, movement, blocked = pcall(function()
+                local component = actor:GetMovePolicesComponent()
+                if not component then return end
+                local destination = component:GetDestination()
+                local policies = component:GetTopPolicies()
+                return destination.x, destination.y, destination.z,
+                    policies and tostring(policies:GetMovementType()) or nil,
+                    component:IsPausedByDynamicCollision()
+            end)
+            if destinationOk then
+                p.destinationX, p.destinationY, p.destinationZ = dx, dy, dz
+                p.policyMovementType, p.collisionPaused = movement, blocked
+            end
+            local timeOk, scale = pcall(function() return actor:GetTimeDilationValue() end)
+            if timeOk then p.actorTimeScale = scale end
+            local stateOk, high, upper = pcall(function()
+                return tostring(actor:GetHighLevelStateFromBlackboard()),
+                    tostring(actor:GetUpperBodyStateFromBlackboard())
+            end)
+            if stateOk then p.highLevelState, p.upperBodyState = high, upper end
         end
         result[tostring(id)] = p
     end

@@ -107,11 +107,13 @@ function Motor:step(target, delta)
         return "waiting_placement"
     end
     local jump = false
+    local sampleSpeed
     local velocity = self.velocity or {x=0, y=0, z=0}
     if self.previous and delta < 0.25 then
         local displacement = distance(target, self.previous)
         jump = displacement > 6
         local raw = jump and 0 or math.min(30, displacement/delta)
+        sampleSpeed = raw
         local blend = 1-math.exp(-delta/0.12)
         self.speed = self.speed+(raw-self.speed)*blend
         for _, axis in ipairs({"x", "y", "z"}) do
@@ -192,12 +194,18 @@ function Motor:step(target, delta)
     local lookahead = math.min(0.4, 2/math.max(self.speed, 0.001))
     local aim = {x=target.x+self.velocity.x*lookahead, y=target.y+self.velocity.y*lookahead,
         z=target.z, yaw=desired.yaw}
-    -- Gait follows the distance still to close, not only the player's speed,
-    -- so a lagging actor runs to catch up instead of walking.
-    local pace = self.speed+math.min(4, error)
+    -- Positional error is not an animation state. Promoting Walk -> Run ->
+    -- Sprint as error grows can interrupt the native gait while a player is
+    -- walking at constant speed. Admit the initial gait from the current
+    -- sample, then use the filtered motion with hysteresis for transitions.
+    local pace = self.command == nil and sampleSpeed or self.speed
+    pace = pace or self.speed
     local gait = pace > 4.5 and "Sprint" or (pace > 1.8 and "Run" or "Walk")
     if self.gait == "Sprint" and pace > 4 then gait = "Sprint"
     elseif self.gait == "Run" and pace > 1.4 and pace < 4.8 then gait = "Run" end
+    -- While closing the final distance, do not request two slower gait
+    -- transitions solely because the network target has already stopped.
+    if self.kind == "move" and self.speed < 0.25 then gait = self.gait or gait end
     local gaitValue = ({Walk=0, Run=1, Sprint=2})[gait]
     if self.command ~= nil then
         if self.commandState == 0 or self.commandState == 1 then return "pending" end

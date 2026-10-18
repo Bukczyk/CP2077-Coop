@@ -316,8 +316,21 @@ a=actor(); m=Motor.new(a)
 run(a,m,120,target(14))
 check(a.snaps == 1 and m.observedSnaps == 1 and distance(a.pos,target(14)) < 0.2 and not m.fault,
     "stopped target more than 3m away is corrected at once")
--- A lagging actor runs to close the gap instead of walking.
+-- Positional error alone is not evidence that the remote player is running.
 a=actor(); m=Motor.new(a)
 m:step(target(12.5),1/60)
-check(m.gait == "Run", "gait follows remaining distance, not only player speed")
+check(m.gait == "Walk", "stationary target error must not masquerade as running animation")
+-- A constant walk must not promote its gait when the engine falls behind.
+a=actor(); a.inert.move=true; m=Motor.new(a)
+local seen={}
+for frame=1,180 do
+    a:advance(1/60); m:step(target(10+frame/60*1.5),1/60)
+    if m.gait then seen[m.gait]=true end
+end
+check(seen.Walk and not seen.Run and not seen.Sprint,
+    "constant walking remains walking even with growing readback error")
+-- An admitted sprint starts as Sprint rather than climbing through slower gaits.
+a=actor(); m=Motor.new(a);m:step(target(10),1/60)
+m:step(target(10+7/60),1/60);m:step(target(10+14/60),1/60)
+check(m.command ~= nil and m.gait=="Sprint", "first sprint admission uses current sample speed")
 print("player_motor: PASS ("..checks.." checks; commanded trajectories, stops/reversals, wrap, rejection/readback, bounded recovery, ownership)")

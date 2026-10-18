@@ -72,6 +72,17 @@ public func CP2077Session_StopPose(command: ref<AITeleportCommand>) -> Bool {
 @addField(NPCPuppet)
 private let CP2077Session_motorCommand: ref<AICommand>;
 
+@addField(NPCPuppet)
+private let CP2077Session_motorPolicies: ref<MovePolicies>;
+
+@addField(NPCPuppet)
+private let CP2077Session_motorGaitChanges: Int32;
+
+@addMethod(NPCPuppet)
+public func CP2077Session_MotorGaitChanges() -> Int32 {
+    return this.CP2077Session_motorGaitChanges;
+}
+
 @addMethod(NPCPuppet)
 public func CP2077Session_MotorState(command: ref<AICommand>) -> Int32 {
     let controller = this.GetAIControllerComponent();
@@ -108,25 +119,39 @@ public func CP2077Session_StartMove(x: Float, y: Float, z: Float, gait: Int32) -
 public func CP2077Session_RetargetMove(command: ref<AIMoveToCommand>, x: Float, y: Float, z: Float, gait: Int32) -> Int32 {
     let state = this.CP2077Session_MotorState(command);
     if state != EnumInt(AICommandState.Executing) { return state; }
+    if gait < 0 || gait > 2 { return -1; }
+    let movementType = moveMovementType.Walk;
+    if gait == 1 { movementType = moveMovementType.Run; }
+    if gait == 2 { movementType = moveMovementType.Sprint; }
+    let component = this.GetMovePolicesComponent();
+    if !IsDefined(component) { return -1; }
+    let policies = component.GetTopPolicies();
+    if !IsDefined(policies) { return -1; }
+    let policyChanged = NotEquals(policies, this.CP2077Session_motorPolicies);
+    let gaitChanged = NotEquals(command.movementType, movementType);
+    // Destination refresh is frequent; gait changes are transitions. Do not
+    // request a native movement transition again for every network target.
+    // A replacement top policy still needs initial configuration.
+    if gaitChanged {
+        component.ChangeMovementType(movementType);
+        // Attempts only. The native Bool does not certify visible animation.
+        this.CP2077Session_motorGaitChanges += 1;
+    }
+    if policyChanged || gaitChanged { policies.SetMovementType(movementType); }
+    if policyChanged {
+        policies.SetUseStartStop(false, false);
+        policies.SetDistancePolicy(0.05, 0.05);
+    }
     let target: WorldPosition;
     WorldPosition.SetVector4(target, new Vector4(x, y, z, 1.0));
     let position: AIPositionSpec;
     AIPositionSpec.SetWorldPosition(position, target);
     command.movementTarget = position;
-    command.movementType = moveMovementType.Walk;
-    if gait == 1 { command.movementType = moveMovementType.Run; }
-    if gait == 2 { command.movementType = moveMovementType.Sprint; }
+    command.movementType = movementType;
     // Updating the command object alone did not keep the engine path current
     // in the live test. Refresh its active movement policy on this owned actor.
-    let component = this.GetMovePolicesComponent();
-    if !IsDefined(component) { return -1; }
-    let policies = component.GetTopPolicies();
-    if !IsDefined(policies) { return -1; }
     policies.SetDestinationPosition(new Vector4(x, y, z, 1.0));
-    policies.SetMovementType(command.movementType);
-    policies.SetUseStartStop(false, false);
-    policies.SetDistancePolicy(0.05, 0.05);
-    component.ChangeMovementType(command.movementType);
+    this.CP2077Session_motorPolicies = policies;
     return EnumInt(AICommandState.Executing);
 }
 
@@ -143,6 +168,7 @@ public func CP2077Session_StopMove(command: ref<AICommand>) -> Bool {
     }
     if NotEquals(state, AICommandState.Cancelled) && NotEquals(state, AICommandState.Interrupted) && NotEquals(state, AICommandState.Success) && NotEquals(state, AICommandState.Failure) { return false; }
     this.CP2077Session_motorCommand = null;
+    this.CP2077Session_motorPolicies = null;
     return true;
 }
 

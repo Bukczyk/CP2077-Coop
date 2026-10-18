@@ -55,6 +55,14 @@ foreach(suite passive_model_fixture passive_model_engine passive_model_entrypoin
 endforeach()
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+    if(COOP_BUILD_REPLAY)
+        add_test(NAME player_replay_input COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/player_replay_tests.py" "$<TARGET_FILE:coop_player_replay>")
+        set_tests_properties(player_replay_input PROPERTIES TIMEOUT 20)
+        add_test(NAME player_replay_evidence COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/player_replay_evidence_tests.py")
+        set_tests_properties(player_replay_evidence PROPERTIES TIMEOUT 10)
+    endif()
     add_test(NAME passive_hittable_asset COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/passive_hittable_asset_tests.py")
     add_test(NAME passive_asset_contract COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/passive_asset_contract_tests.py")
     add_test(NAME passive_model_profile COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/passive_model_profile_tests.py")
