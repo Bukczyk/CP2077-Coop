@@ -482,4 +482,219 @@ do
     local before=f.native;events.onShutdown();check(f.native==before and not api.present("one",gen,"death"),"shutdown only queues and closes public presentation")
     tick();check(f.deletes==2,"shutdown cleanup can proceed at later update without presentation")
 end
+
+local function finishTransition(f,api,tick,oldId,oldGeneration,expected)
+    local count=f.creates
+    tick();check(f.creates==count and api.status("one").generation==oldGeneration,"retiring body remains sole owned generation")
+    f.finish(oldId);tick()
+    local s=api.status("one")
+    check(s.generation~=oldGeneration and s.profile==expected and s.state=="start_queued" and f.creates==count,
+        "observed old absence creates only a queued new generation with latest profile")
+    tick();s=api.status("one");local id=s.entity.."ULL";local actor=f.complete(id);f.events={};tick()
+    return s.generation,id,actor
+end
+for _,family in ipairs({"judy","mitch"}) do
+    local profile=family.."_encounter"
+    local f,api,tick,g,id,a=encounterReady(profile)
+    api.present("one",g,"reaction");tick(.1)
+    local before=f.native
+    check(api.baseline("one",g,"defeated",.35) and f.native==before,"baseline queues only on public surface")
+    local st=api.status("one")
+    check(st.profile==profile and st.presentation.logicalProfile==profile and st.presentation.life=="defeated"
+        and st.presentation.progress==.35 and not st.presentation.terminal,"defeated supplied separately while old immutable body retained")
+    local ng,nid,na=finishTransition(f,api,tick,id,g,family.."_defeated")
+    check(#f.events==1 and f.events[1].key=="cp_coop_defeated_progress" and f.events[1].value==.35,
+        "actual entrypoint submits one normalized held sample through matched graph")
+    check(f.events[1].actor==na.nativeRef and not api.status("one").presentation.animationObserved,"exact new actor is not visual success")
+    check(not api.baseline("one",g,"dead") and not api.present("one",ng,"reaction"),"stale body and defeated transient reaction rejected")
+    local calls=#f.events;for _=1,12 do tick(.1) end
+    check(#f.events==calls,"held progress has no elapsed time or auto loop")
+    before=f.native;local status=api.status("one");status.presentation.life="dead"
+    check(api.status("one").presentation.life=="defeated" and f.native==before,"new baseline diagnostics copied and engine-free")
+    check(api.baseline("one",ng,"alive"),"explicit alive baseline requests same-family encounter replacement")
+    local ag,aid=finishTransition(f,api,tick,nid,ng,profile)
+    check(#f.events==1 and f.events[1].key=="cp_coop_phase" and f.events[1].value==0,"return to alive restores idle without stale hit")
+    api.baseline("one",ag,"defeated",.6)
+    local dg,did=finishTransition(f,api,tick,aid,ag,family.."_defeated")
+    api.baseline("one",dg,"dead")
+    local deadg=finishTransition(f,api,tick,did,dg,profile)
+    check(#f.events==2 and f.events[1].key=="cp_coop_death_progress" and f.events[1].value==1
+        and f.events[2].value==2,"defeated to dead selects final dead pose without death replay")
+    check(api.status("one").presentation.terminal and not api.baseline("one",deadg,"alive")
+        and not api.baseline("one",deadg,"defeated",0),"terminal dead forbids local resurrection")
+    calls=#f.events;check(api.baseline("one",deadg,"dead"),"final dead repeat converges idempotently");tick()
+    check(#f.events==calls,"final dead repeat not replayed")
+end
+for _,begun in ipairs({false,true}) do
+    local f,api,tick,g=encounterReady("judy_encounter")
+    api.present("one",g,"death");if begun then tick(.1) end
+    check(not api.baseline("one",g,"alive"),"transient dead intent already terminal")
+    check(api.baseline("one",g,"dead"),"supplied Dead supersedes even queued/begun death")
+    f.events={};tick(.1)
+    check(#f.events==2 and f.events[1].value==1 and f.events[2].value==2
+        and api.status("one").presentation.finalDeadBaseline,"supplied baseline is final, not transient death continuation")
+end
+for _,latest in ipairs({"alive","defeated","dead"}) do
+    local f,api,tick,g,id=encounterReady("mitch_encounter")
+    api.baseline("one",g,"defeated",.2);tick()
+    check(api.baseline("one",g,latest,latest=="defeated" and .8 or nil),"latest supplied state can replace pending transition")
+    local ng=finishTransition(f,api,tick,id,g,latest=="defeated" and "mitch_defeated" or "mitch_encounter")
+    check(f.creates==2 and api.status("one").presentation.life==latest,"no obsolete intermediate body spawned")
+    check(f.events[1].value==(latest=="defeated" and .8 or latest=="dead" and 1 or 0),"latest desired state is first replacement sample")
+end
+for _,cancel in ipairs({"stop","reset","shutdown"}) do
+    local f,api,tick,g,id,a,events=encounterReady("judy_encounter")
+    api.baseline("one",g,"defeated",.4);tick()
+    local native=f.native
+    if cancel=="stop" then api.stop("one") elseif cancel=="reset" then api.reset() else events.onShutdown() end
+    check(f.native==native and not api.baseline("one",g,"alive"),"explicit cancellation cannot be rearmed")
+    f.finish(id);tick();tick()
+    check(f.creates==1 and api.status("one").state=="closed" and api.status("one").presentation.life=="defeated","cancel keeps supplied state but creates no body")
+    if cancel~="shutdown" then
+        local ok,ng=api.start("one","judy_encounter",p(2));check(ok and ng~=g,"explicit manual restart after cancellation")
+        tick();local nid=api.status("one").entity.."ULL";f.complete(nid);f.events={};tick()
+        check(api.status("one").profile=="judy_defeated" and f.events[1].value==.4,"manual same-family restart retains supplied defeated")
+    end
+end
+for _,fault in ipairs({"unknown_flags","retained","foreign_native","unknown_spawn"}) do
+    local f,api,tick,g,id,a
+    if fault=="unknown_spawn" then
+        f=make();api,tick=load(f);local ok;ok,g=api.start("one","judy_encounter",p(2));f.spawnThrows=true;tick()
+        check(ok and api.status("one").state=="spawn_outcome_unknown","uncertain native spawn retained")
+    else f,api,tick,g,id,a=encounterReady("judy_encounter") end
+    api.baseline("one",g,"defeated",.2)
+    if fault=="unknown_flags" then f.unknownFlags=true
+    elseif fault=="retained" then f.actors[id],f.globals[id]=nil,nil
+    elseif fault=="foreign_native" then local foreign=setmetatable({nativeRef={}},{__index=a});f.actors[id],f.globals[id]=foreign,foreign end
+    for _=1,4 do tick(.1) end
+    check(f.creates==1 and f.deletes==0 and api.status("one").generation==g,"uncertain or foreign old lifetime blocks replacement: "..fault)
+end
+for _,fault in ipairs({"paused","unknown_pause","requests","pregame","invalid_delta","color","throw_setter"}) do
+    local f,api,tick,g,id=encounterReady("judy_encounter");api.baseline("one",g,"defeated",.2)
+    local ng,nid,a=finishTransition(f,api,tick,id,g,"judy_defeated")
+    api.start("other","mitch_encounter",p(4));tick();local oid=api.status("other").entity.."ULL";f.complete(oid);tick()
+    api.present("other",api.status("other").generation,"reaction")
+    api.baseline("one",ng,"defeated",.8);f.events={}
+    if fault=="paused" then f.paused=true elseif fault=="unknown_pause" then f.paused=nil
+    elseif fault=="requests" then f.requests=false elseif fault=="pregame" then f.preGame=true
+    elseif fault=="color" then a.colorError=true elseif fault=="throw_setter" then
+        f.queueHook=function(actor) if actor.nativeRef==a.nativeRef then error("unknown held submission") end end
+    end
+    tick(fault=="invalid_delta" and 0/0 or .1)
+    local held=0;for _,event in ipairs(f.events) do if event.actor==a.nativeRef then held=held+1 end end
+    check(held==(fault=="throw_setter" and 1 or 0),"unknown context/readback prevents held setter: "..fault)
+    if fault=="color" or fault=="throw_setter" then check(#f.events>=2,"one slot failure cannot block sibling reaction") end
+    f.paused=false;f.requests=true;f.preGame=false;a.colorError=false;f.queueHook=nil
+    api.baseline("one",ng,"defeated",.9);f.events={};tick(.1)
+    local last;for _,event in ipairs(f.events) do if event.actor==a.nativeRef then last=event end end
+    check(last and last.value==.9 and last.key=="cp_coop_defeated_progress","recovery submits newest held sample only")
+end
+
+
+for _,fault in ipairs({"paused","unknown_pause","requests","pregame","missing_resource"}) do
+    local f,api,tick,g,id=encounterReady("judy_encounter")
+    api.baseline("one",g,"defeated",.25);tick();f.finish(id);tick()
+    local nextg=api.status("one").generation
+    if fault=="paused" then f.paused=true elseif fault=="unknown_pause" then f.paused=nil
+    elseif fault=="requests" then f.requests=false elseif fault=="pregame" then f.preGame=true
+    else f.resources[f.engine:profile("judy_defeated").template]=false end
+    tick();tick();check(f.creates==1 and api.status("one").state=="spawn_deferred"
+        and not api.status("one").spawnAttempted,"definite replacement preflight rejection retains active baseline: "..fault)
+    f.paused=false;f.requests=true;f.preGame=false;f.resources={};tick()
+    check(f.creates==2 and api.status("one").generation==nextg,"same deferred generation resumes one native creation")
+    f.complete(api.status("one").entity.."ULL");f.events={};tick()
+    check(f.events[1].value==.25 and api.status("one").state=="ready","deferred replacement eventually presents latest life")
+end
+do
+    local f,api,tick,g,id=encounterReady("mitch_encounter")
+    api.baseline("one",g,"defeated",.1);tick();f.finish(id);tick();f.spawnThrows=true;tick()
+    check(f.creates==2 and api.status("one").state=="spawn_outcome_unknown","automatic native outcome unknown is retained")
+    f.spawnThrows=false;for _=1,4 do tick() end
+    check(f.creates==2,"automatic creation is never retried after an actual native attempt")
+end
+do
+    local f,api,tick,g,id=encounterReady("judy_encounter")
+    api.baseline("one",g,"defeated",.1);tick();f.finish(id);tick();f.paused=true;tick()
+    api.stop("one");f.paused=false;tick();tick()
+    check(api.status("one").state=="closed" and f.creates==1,"stop cancels definitely unsubmitted deferred replacement")
+end
+
+
+for _,fault in ipairs({"new_native","new_id","unknown","throw","constructor_swap"}) do
+    local f,api,tick,g,id=encounterReady("judy_encounter")
+    local original,originalId=f.playerNative,f.playerId
+    api.baseline("one",g,"defeated",.3);tick();f.finish(id);tick()
+    local constructor=StaticEntitySpec.new
+    if fault=="new_native" then f.playerNative={}
+    elseif fault=="new_id" then f.playerId="9007199254741997ULL"
+    elseif fault=="unknown" then f.playerIdentityUnknown=true
+    elseif fault=="throw" then f.playerIdentityThrows=true
+    else StaticEntitySpec.new=function() local spec=constructor();f.playerNative={};return spec end end
+    tick();tick()
+    check(f.creates==1 and api.status("one").state=="spawn_deferred" and not api.status("one").spawnAttempted,
+        "automatic replacement cannot transfer supplied baseline to a different or unknown player: "..fault)
+    StaticEntitySpec.new=constructor;f.playerNative=original;f.playerId=originalId
+    f.playerIdentityUnknown=false;f.playerIdentityThrows=false
+    tick();check(f.creates==2,"exact original native context recovers despite fresh Lua wrappers")
+    f.complete(api.status("one").entity.."ULL");f.events={};tick()
+    check(f.events[1].value==.3 and api.status("one").state=="ready","original context recovery restores supplied sample")
+end
+do
+    local f,api,tick,g,id=encounterReady("mitch_encounter")
+    api.baseline("one",g,"defeated",.4);tick();f.playerNative={}
+    f.finish(id);tick();tick()
+    check(api.status("one").state=="spawn_deferred","different player cannot own automatic continuation")
+    api.stop("one");tick()
+    check(api.status("one").state=="closed" and f.creates==1,"explicit cleanup can close definitely unsubmitted replacement despite player change")
+end
+
+-- Creation preparation may synchronously dispatch another fixture request.
+-- Neither initial nor automatic creation may submit an obsolete body afterward.
+for _,automatic in ipairs({false,true}) do
+    for _,action in ipairs({"stop","reset","shutdown","baseline"}) do
+        local f,api,tick,g,id,events
+        if automatic then
+            local a
+            f,api,tick,g,id,a,events=encounterReady("judy_encounter")
+            api.baseline("one",g,"defeated",.4);tick();f.finish(id);tick()
+        else
+            f=make();api,tick,events=load(f)
+            local ok;ok,g=api.start("one","judy_encounter",p(2));check(ok,"initial queued body")
+        end
+        local before=f.creates
+        local constructor=StaticEntitySpec.new
+        local invoked=false
+        StaticEntitySpec.new=function()
+            local spec=constructor()
+            if not invoked then
+                invoked=true
+                if action=="stop" then check(api.stop("one"),"callback stop")
+                elseif action=="reset" then check(api.reset(),"callback reset")
+                elseif action=="shutdown" then events.onShutdown()
+                else
+                    local progress;if not automatic then progress=.7 end
+                    check(api.baseline("one",api.status("one").generation,
+                        automatic and "alive" or "defeated",progress),"callback newest baseline")
+                end
+            end
+            return spec
+        end
+        tick();StaticEntitySpec.new=constructor
+        check(invoked and f.creates==before and not api.status("one").spawnAttempted,
+            "callback cancellation/supersession prevents obsolete native spawn")
+        for _=1,4 do tick() end
+        if action=="baseline" then
+            local s=api.status("one")
+            check(f.creates==before+1 and s.profile==(automatic and "judy_encounter" or "judy_defeated"),
+                "newest baseline progresses after cancelled unsubmitted creation")
+            f.complete(s.entity.."ULL");f.events={};tick()
+            check(f.events[1].key==(automatic and "cp_coop_phase" or "cp_coop_defeated_progress")
+                and f.events[1].value==(automatic and 0 or .7),"only latest baseline presented")
+        else
+            check(f.creates==before and api.status("one").state=="closed",
+                "explicit cancellation closes without automatic resurrection")
+        end
+    end
+end
+
 print("Passive model real entrypoint checks: "..checks)

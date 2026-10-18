@@ -18,6 +18,7 @@ local function fixture()
     function engine:profile(name)
         if name=="judy_default" or name=="mitch_default" then return {name=name} end
         if name=="judy_encounter" or name=="mitch_encounter" then return {name=name,encounter=true} end
+        if name=="judy_defeated" or name=="mitch_defeated" then return {name=name,defeated=true} end
     end
     function engine:create(e)
         self.calls=self.calls+1;self.creates=self.creates+1
@@ -389,4 +390,70 @@ do
     d.serial=2147483647
     check(not d:start("b","mitch_encounter",pose()),"body counter bounded")
 end
+
+-- Life baseline is independent of transient reaction state and disposable body.
+do
+    local c,e=fixture();local _,g=c:start("one","judy_encounter",pose());c:pump(.1);c:pump(.1)
+    local before=e.calls
+    for _,life in ipairs({"", "Alive", "unconscious", "reaction", false, 1}) do
+        check(not c:baseline("one",g,life),"unsupported life never falls back")
+    end
+    for _,v in ipairs({-1,1.01,0/0,math.huge,"0",true}) do
+        check(not c:baseline("one",g,"defeated",v),"held progress must be finite normalized number")
+    end
+    check(not c:baseline("one",g,"defeated"),"defeated progress explicit")
+    check(not c:baseline("one",g,"alive",0) and not c:baseline("one",g,"dead",1),"baseline final states have no progress")
+    check(e.calls==before and c:status("one").presentation.serial==0,"invalid public calls touch no engine or serial")
+    check(not c:start("direct","judy_defeated",pose()),"internal body variant not a public selector")
+    c:present("one",g,"reaction");c:pump(.1)
+    check(c:baseline("one",g,"defeated",.4),"defeated admitted separately from death")
+    local st=c:status("one");check(st.profile=="judy_encounter" and st.presentation.desiredProfile=="judy_defeated"
+        and st.presentation.logicalProfile=="judy_encounter" and not st.presentation.terminal,"old body provenance immutable")
+    check(not c:present("one",g,"reaction"),"no transient hit while defeated")
+    c:pump(.1);check(e.creates==1 and c:status("one").state=="retirement_pending","no replacement before observed retirement")
+    check(c:baseline("one",g,"alive"),"new baseline admitted against exact retiring generation")
+    e.world.one.gone=true;c:pump(.1)
+    local ng=c:status("one").generation
+    check(ng~=g and c:status("one").profile=="judy_encounter" and e.creates==1,"latest desired baseline wins before replacement spawn")
+    check(not c:baseline("one",g,"defeated",.2),"old generation cannot affect replacement")
+    c:pump(.1);c:pump(.1)
+    check(#e.world.one.samples==1 and e.world.one.samples[1].phase=="idle","return to alive cannot replay old reaction")
+    check(c:baseline("one",ng,"dead"),"explicit final death baseline")
+    c:pump(.1);check(e.world.one.samples[#e.world.one.samples].phase=="dead","dead baseline applies final pose without clip replay")
+    check(not c:baseline("one",ng,"alive") and not c:baseline("one",ng,"defeated",0),"terminal death cannot revive")
+    check(c:baseline("one",ng,"dead"),"same terminal baseline is idempotent")
+end
+for _,stop in ipairs({"stop","reset"}) do
+    local c,e=fixture();local _,g=c:start("one","mitch_encounter",pose());c:pump(.1);c:pump(.1)
+    c:baseline("one",g,"defeated",.7);c:pump(.1)
+    if stop=="stop" then c:stop("one") else c:reset() end
+    check(not c:baseline("one",g,"alive"),"explicit stop cannot be rearmed during cleanup")
+    e.world.one.gone=true;c:pump(.1);c:pump(.1)
+    check(c:status("one").state=="closed" and e.creates==1,"stop cancels automatic replacement")
+    check(not c:start("one","judy_encounter",pose()),"cannot change retained model family")
+    local ok,ng=c:start("one","mitch_encounter",pose());check(ok and ng~=g,"manual restart permitted for same family")
+    c:pump(.1);c:pump(.1)
+    local a=e.world.one.samples
+    check(c:status("one").profile=="mitch_defeated" and #a==1 and a[1].phase=="defeated" and a[1].progress==.7,"manual restart restores held baseline")
+    local count=#a;c:pump(.2);c:pump(.2)
+    check(#a==count,"held sample does not automatically loop or spam")
+    c:baseline("one",ng,"defeated",.2);e.world.one.rejectPresentation=true;c:pump(.1)
+    check(c:status("one").presentation.reason=="engine_rejected","failed held submission retained")
+    c:baseline("one",ng,"defeated",.9);e.world.one.rejectPresentation=false;c:pump(.1)
+    check(a[#a].progress==.9,"retry only newest explicit sample")
+end
+do
+    local c,e=fixture();local _,g=c:start("one","judy_encounter",pose());c:pump(.1);c:pump(.1)
+    c:present("one",g,"death")
+    check(c:status("one").presentation.life=="dead" and not c:baseline("one",g,"alive"),"queued old death participates in same terminal life")
+    c:stop("one");e.world.one.gone=true;c:pump(.1);c:start("one","judy_encounter",pose());c:pump(.1);c:pump(.1)
+    check(e.world.one.samples[1].phase=="dead","unstaged death remains terminal across restart")
+end
+do
+    local c,e=fixture();local _,g=c:start("one","judy_encounter",pose());c:pump(.1);c:pump(.1)
+    c:baseline("one",g,"defeated",0);c:pump(.1);e.world.one.gone=true
+    c.serial=2147483647;c:pump(.1)
+    check(c:status("one").state=="closed" and c:status("one").reason=="body_counter_exhausted" and e.creates==1,"replacement identity cannot overflow")
+end
+
 print("Passive model fixture state/queue checks: "..checks)

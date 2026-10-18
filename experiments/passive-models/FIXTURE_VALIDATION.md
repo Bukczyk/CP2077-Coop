@@ -416,22 +416,67 @@ Validation caught and corrected three source/build issues before acceptance:
 
 These were offline authoring/validation findings, not observed game bugs. The
 new graph exposes normalized 0..1 sampling, default0, without an automatic time
-source. No live held pose, loop, entry/recovery transition, deformation, cleanup
-or synchronized Defeated behavior is claimed. The next runtime slice must add an
-explicit nonlethal state/controller route and then qualify both models in game.
+source. At that asset checkpoint the nonlethal state/controller route was still
+pending. The separate source-only route is recorded below. No live held pose,
+loop, entry/recovery transition, deformation, cleanup or synchronized Defeated
+behavior is claimed.
+
+## Supplied life fixture validation, resumed 2026-10-18
+
+The eight scoped files add `baseline(slot, generation, life, progress)` to the
+existing local fixture. Alive and Dead use the reviewed encounter body; Defeated
+uses the same model family's held-pose body. Exact retirement and observed
+absence precede automatic replacement. Newer supplied baselines survive cleanup,
+Dead stays terminal, and a supplied final Dead overrides an unfinished death
+clip. These are local diagnostic baselines, with no networking or HOST authority.
+
+The moved source is `G:\Projects\CP2077-Coop\collaboration\passive-model-fixture`.
+Current evidence is under
+`G:\Projects\CP2077-Coop\bench-artifacts\20261018-npc-life-final`.
+The earlier `20261015-npc-life-fixture` evidence remains preserved.
+
+- The three updated suites pass **1111 Lua 5.4 / 1113 LuaJIT checks**: 379/381
+  engine, 227 controller and 505 actual-entrypoint checks. Existing encounter
+  state, adapter and connected-encounter suites also pass under both interpreters.
+- The separately staged entrypoint review passes **12 cases / 334 assertions per
+  interpreter**, including retained handles, late callbacks, newer baselines,
+  final Dead, pause recovery, native player replacement and setter reentrancy.
+- Before the final fix, that same review reproduced three failures under both
+  interpreters: stop, reset or a changed baseline during spec construction still
+  allowed an obsolete body to spawn. The saved failing run and corrected run
+  retain module/probe hashes and prove that staged inputs did not change.
+- Creation now checks slot/life ownership after the final native context query.
+  The controller preserves a cancellation or transition raised during that call.
+  Focused regressions additionally cover initial and automatic creation, shutdown
+  and progress of the newer body after an unsubmitted obsolete body is cancelled.
+
+Earlier prepublication corrections remain: ordinary pause/missing resources must
+defer definitely unsubmitted automatic creation; unknown native attempts cannot
+be retried; exact original native player context survives an automatic chain;
+and final Dead must supersede a queued or partly played death clip. All are
+offline fault-injection findings, not observations of live game bugs.
+
+Fresh branch/combined build and hosted results are recorded in the PR and vault
+against the final commits after publication. Old relocated CMake caches are not
+used for this resumption. Native helpers, shared state, authored assets, backend
+and protocol are unchanged by this eight-file slice. Prior script compilation
+applies to unchanged inputs; no new script/native engine signature is introduced.
+Live rendering, transition gaps, actual animation delivery and connected
+life-state synchronization remain deferred and unqualified.
 
 ## Reproduce offline checks
 
 From the source root with a configured Windows Release test build:
 
 ```powershell
-cmake --build build/passive-model-fixture --config Release
-ctest --test-dir build/passive-model-fixture -C Release --output-on-failure
+cmake -S . -B build/npc-life-20261018 -DCOOP_BUILD_PLUGIN=OFF
+cmake --build build/npc-life-20261018 --config Release
+ctest --test-dir build/npc-life-20261018 -C Release --output-on-failure
 ```
 
 Each focused Lua suite also accepts the repository root as its first script
 argument. Run `tests/passive_model_{fixture,engine,entrypoint}_tests.lua` in
-fresh Lua 5.4 and LuaJIT 2.1 states. The suites total 811 and 813 checks,
+fresh Lua 5.4 and LuaJIT 2.1 states. The current suites total 1111 and 1113 checks,
 respectively. Python profile tests and existing asset contract tests run through
 CTest as before.
 
