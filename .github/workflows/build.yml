@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure (fetch pinned SDK)
-        run: cmake -S . -B build/windows -A x64 -DCOOP_BUILD_PLUGIN=ON
+        run: cmake -S . -B build/windows -A x64 -DCOOP_BUILD_PLUGIN=ON -DCOOP_BUILD_REPLAY=ON
       - name: Build
         run: cmake --build build/windows --config Release --parallel
       - name: Test
@@ -29,13 +29,16 @@ jobs:
           luac -p runtime/session/cet/CP2077Coop/init.lua
           bash -n deploy/debian/install.sh
       - name: Build and test portable core
-        run: bash scripts/build.sh
+        run: |
+          cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DCOOP_BUILD_PLUGIN=OFF -DCOOP_BUILD_LEGACY_SERVER=OFF -DCOOP_BUILD_REPLAY=ON
+          cmake --build build/linux --parallel
+          ctest --test-dir build/linux --output-on-failure
   sanitizers:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build/sanitizers -DCMAKE_BUILD_TYPE=Debug -DCOOP_BUILD_LEGACY_SERVER=OFF -DCOOP_SANITIZE=ON
+        run: cmake -S . -B build/sanitizers -DCMAKE_BUILD_TYPE=Debug -DCOOP_BUILD_LEGACY_SERVER=OFF -DCOOP_SANITIZE=ON -DCOOP_BUILD_REPLAY=ON
       - name: Build
         run: cmake --build build/sanitizers --parallel
       - name: Test
