@@ -83,8 +83,9 @@ captured component/material combination. It authors a separate pure entity
 with a `WeaponRight` bone slot, three reference-pose rigs and five initially
 hidden skinned parts. Each rig's authored graph maps the body's animated
 WeaponRight to its inspected root bone through animation control binding.
-This is a mount hypothesis, not a qualified replacement for the rejected
-independent rest rigs. Shadow, placeholder and reload-only parts are excluded;
+The recorded Igla fixture now follows the hands instead of remaining at the
+feet. This does not qualify finger grip, sight alignment or camera pitch/yaw.
+Shadow, placeholder and reload-only parts are excluded;
 unexpected attachments or material/mask/binding combinations reject the recipe.
 The archive contains only our entity and three authored graphs. Installed game meshes,
 rigs and the separate private action cache remain references.

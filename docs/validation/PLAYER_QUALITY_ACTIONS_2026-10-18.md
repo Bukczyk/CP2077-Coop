@@ -187,3 +187,25 @@ finish recording and waits for an actual video frame before starting a fixture.
 The next candidate uses explicit animation-parent mappings from the body
 WeaponRight bone to each inspected weapon rig root, rather than independent
 reference poses. This is an unqualified engine hypothesis until recorded.
+
+## Recorded hand attachment, 01:55 UTC
+
+Source `ad08b3f4336efa0d617d0d88f058f057601db730` is pushed to both task
+branches and passed all 60 tests on Windows, Debian and sanitizers:
+https://github.com/Bukczyk/CP2077-Coop/actions/runs/39187154409
+
+`weapon-mount03-parent` recorded 60.022s with 1,756 fresh frames, mean29.71
+callbacks/s and no recorder errors or synthetic duplicates. The real-frame
+startup guard worked. All eight phases were observed; exact actor10795182
+detached at40.052s. Native-resolution frame review shows the Igla at the hands
+through ready, raised aim, crouched poses and crouch walking. It hides on the
+holster return and disappears with the actor. The earlier floor-level mount
+defect is absent in those reviewed phases.
+
+This qualifies only the isolated hand-attachment/hide sequence. Finger grip,
+exact sight alignment and camera pitch/yaw tracking remain open. The fixed aim
+pose points upward, not at another player's captured target. There is no actual
+player-action delivery, stale-state, late-join or reconnect qualification yet.
+No normal renderer, v5/server/VPS or stable package has been changed by this
+fixture. Its archive contains only the authored entity and three pose graphs;
+the separately generated game-animation cache remains private.
