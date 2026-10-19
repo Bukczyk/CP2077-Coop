@@ -78,3 +78,45 @@ Private evidence root:
 `G:\Projects\CP2077-Coop\bench-artifacts\20261018-player-actions`.
 Relevant folders: `full-detail-build03`, `before-gait6`,
 `full03-gait6-qualification`, `full03-gait6-repeat`, `record-id-probe`.
+
+## Isolated action engine checkpoint, 00:39 UTC
+
+The separate action fixture now compiles and renders crouch idle/walk and
+rifle/handgun ready/aim arm poses, including upper-body aiming while crouched.
+This is a fixed local pose sequence on its own actor, not remote captured state.
+It has no weapon model. The mask uses the installed rig's named upper-body
+bones and leaves hips/root/legs to the lower-body pose. No NPC AI is reintroduced.
+
+- Windows local suite: 58/58 passed. Three new suites cover clip aliasing/data
+  preservation, unsafe graph/default/mask mutations and bounded exact-actor
+  fixture lifecycle. Mock checks are not counted as live game results.
+- Native action asset build04 passed serialization, roundtrip, inventory and
+  extracted payload hashes. Its entity/graph binaries exactly match the build03
+  payload used in the game. Archive bytes differ because of packing metadata;
+  the live installed build03 archive is SHA256
+  `00f60e82168db1475519e7787a090fbfcae5c0070908104b5566605874625aa6`.
+- Private alias cache01 passed native name/buffer preservation and inventory.
+  The later cache02 additionally checks unpacked hashes. The generated cache
+  contains installed-game animation data and is never committed/distributed.
+- `poses-fixture01` completed capture/cleanup but HOST overlapped the observer,
+  so it is rejected for complete visual review. After one HOST staging move,
+  `poses-fixture02-clear` recorded all ten phases and exact actor removal at
+  about 50.09 s. Reviewed frames show the stance/upper-body combinations.
+- Actual HOST C inputs produced crouch true at 00:27:57 UTC and false at
+  00:30:07. Slot key 1 produced `Items.Preset_Igla_Pimp` in the attached
+  right-hand weapon slot at 00:30:20. Right mouse produced aim true at 00:30:37,
+  then false at 00:31:08. A later Alt input changed the slot temporarily to
+  `Items.Preset_Overture_Dodger`, then to empty. These are read-only source
+  observations, not delivered network states. Source video/logs are private.
+- Current capture hooks compiled against both matched installs with Codeware.
+  The optional held-template getter also compiled offline; it is not yet loaded
+  in the running games. Do not claim its template output was observed live.
+- Earlier quality commit `a2b1f3f` passed 55/55 on Windows, Debian and sanitizers:
+  https://github.com/Bukczyk/CP2077-Coop/actions/runs/39179730136
+
+Owned new files: the action/cache builders, private fixture/capture/recording
+helpers, capture REDscript and optional weapon template probe under
+`experiments/player-locomotion`, their three test suites and scoped CMake entries.
+No shared/network/server file has been edited. The actual held model, matching
+grip, accepted persistent state delivery, late join/reconnect and residual
+stutter acceptance remain open. Keep the complete goal active.

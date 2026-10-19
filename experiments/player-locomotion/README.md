@@ -11,6 +11,10 @@ selects neutral idle, distance-sampled walk/sprint, takeoff, airborne and landin
 poses through `cp_coop_loco_phase` and `cp_coop_loco_progress` float inputs.
 No vanilla mesh, rig, graph or animation bytes are packaged.
 
+For the separate, private crouch/upper-body pose test and real source-state
+capture, read [ACTION_FIXTURE.md](ACTION_FIXTURE.md). That fixture is not player
+action synchronization and its game-derived animation cache must stay private.
+
 `build_assets.py` builds only two authored resources in a new output folder.
 It requires official WolvenKit Console 9.0.1 with the pinned executable hash.
 It validates graph wiring and safety before compilation, validates the compiled
