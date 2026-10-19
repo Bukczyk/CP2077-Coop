@@ -69,7 +69,21 @@ private:
     std::uint64_t last_=0;
     std::deque<AcceptedEvent> events_;
 };
-struct RenderPlayer { PlayerId player=0; SessionEntityId entity=0; Transform transform{}; };
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+struct RenderPresentation {
+    PlayerPresentation state{};
+    std::uint32_t sequence=0;
+    std::uint64_t ageMs=0;
+    bool fresh=false;
+};
+enum class PresentationAdmission { Queued, Coalesced, Unchanged, Inactive, Stale, Invalid };
+#endif
+struct RenderPlayer {
+    PlayerId player=0; SessionEntityId entity=0; Transform transform{};
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    std::optional<RenderPresentation> presentation={};
+#endif
+};
 struct RenderNpc { NpcSpawn descriptor{}; LocalEntityId hostLocal=0; Transform transform{}; };
 struct Frame {
     ClientPhase phase=ClientPhase::Disconnected;
@@ -78,6 +92,9 @@ struct Frame {
     std::uint64_t generation=0;
     std::vector<RenderPlayer> players;
     std::vector<RenderNpc> npcs;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    bool presentationBaselineReady=false;
+#endif
 };
 // Game-thread application boundary for the existing opaque reliable route.
 // A scope includes the local activation generation, not just the wire epoch.
@@ -115,6 +132,9 @@ public:
     void SetActive(bool active);
     bool SetLocal(Transform transform);
     Frame ReadFrame(std::uint64_t now) const;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    PresentationAdmission SetLocalPresentation(GameplayScope scope,PresentationValues observed);
+#endif
     bool OfferNpc(LocalEntityId local,std::uint64_t record,Transform transform);
     void ForgetNpc(LocalEntityId local);
     SubmitResult SubmitWorld(const WorldAction&) { return SubmitResult::Unsupported; }
@@ -135,6 +155,11 @@ private:
     bool active_=false;
     std::uint64_t activation_=0;
     std::optional<Transform> local_;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    std::optional<std::pair<GameplayScope,PresentationValues>> desiredPresentation_;
+    bool presentationPending_=false;
+    std::uint64_t presentationGeneration_=0;
+#endif
     Frame frame_;
     std::unordered_map<PlayerId,RemotePlayer> remote_;
     struct DesiredNpc { std::uint64_t adoption=0, record=0; Transform transform{}; bool releasing=false; };

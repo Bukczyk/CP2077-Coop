@@ -18,11 +18,17 @@ local markers = require("player_markers").new(function(status)
     log("[CP2077Session] PLAYER_MARKER " .. status)
 end)
 local passivePlayers = nil
+local playerPresentation = nil
+if config.experimentalPlayerPresentation == true then
+    if config.experimentalPlayerLocomotion == true then
+        playerPresentation = require("player_presentation")
+    else log("[CP2077Session] PLAYER_PRESENTATION unavailable; keeping movement independent") end
+end
 if config.experimentalPassivePlayers == true or config.experimentalPlayerLocomotion == true then
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
     passivePlayers = PassivePlayers.new(function(status)
         log("[CP2077Session] PASSIVE_PLAYER " .. status)
-    end, config.experimentalPlayerLocomotion == true)
+    end, config.experimentalPlayerLocomotion == true, playerPresentation)
 end
 local staticPopulation = require("npc_static_population")
 local npcProjection = nil
@@ -211,6 +217,7 @@ local function update(delta)
     local angles = player:GetWorldOrientation():ToEulerAngles()
     Game.CP2077Session_PushLocal(position.x, position.y, position.z, math.rad(angles.yaw))
     local count = Game.CP2077Session_BeginFrame()
+    if playerPresentation then playerPresentation.capture(player, time) end
     sessionUI:update({loaded=true,phase=Game.CP2077Session_Phase(),session=Game.CP2077Session_Session(),
         player=Game.CP2077Session_Self(),host=Game.CP2077Session_Host(),remotes=count})
     local nextGeneration = tostring(Game.CP2077Session_Generation()) .. ":" .. tostring(Game.CP2077Session_Session()) .. ":" .. tostring(Game.CP2077Session_Epoch())
@@ -262,7 +269,8 @@ local function update(delta)
                 log("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
             end
             if passivePlayers then
-                passiveFrame[#passiveFrame + 1] = {player=id, entity=entity, x=x, y=y, z=z, yaw=yaw}
+                passiveFrame[#passiveFrame + 1] = {player=id, entity=entity, x=x, y=y, z=z, yaw=yaw,
+                    actions=playerPresentation and playerPresentation.read() or nil}
             else
             local entry = proxies[id]
             if entry ~= nil and tostring(entry.entity) ~= tostring(entity) then

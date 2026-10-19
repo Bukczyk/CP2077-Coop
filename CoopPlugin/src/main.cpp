@@ -1,4 +1,6 @@
 #include <Windows.h>
+#include <algorithm>
+#include <initializer_list>
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/entEntityID.hpp>
 #include "coop/game_bridge.hpp"
@@ -182,9 +184,55 @@ NATIVE(GameplayPoll,RED4ext::CString) {
     *out=RED4ext::CString(event?g::EncodeGameplayEvent(*event):std::string{});
 }
 NATIVE(GameplayFault,RED4ext::CString) { ++f->code; *out=RED4ext::CString(bridge?bridge->GameplayFault():"bridge_unavailable"); }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+NATIVE(PresentationVersion,std::uint32_t) { ++f->code; *out=coop::kProtocolVersion; }
+NATIVE(PresentationIsIgla,bool) {
+    RED4ext::TweakDBID record{}; RED4ext::GetParameter(f,&record); ++f->code;
+    *out=(record.value&0xffffffffffULL)==coop::kPresentationIglaPimp;
+}
+NATIVE(PresentationRecordsEqual,bool) {
+    RED4ext::TweakDBID left{},right{}; RED4ext::GetParameter(f,&left); RED4ext::GetParameter(f,&right); ++f->code;
+    *out=(left.value&0xffffffffffULL)==(right.value&0xffffffffffULL);
+}
+NATIVE(PresentationPush,std::uint32_t) {
+    std::uint64_t session=0,generation=0; std::uint32_t epoch=0,stance=0,weapon=0,aim=0;
+    RED4ext::TweakDBID record{};
+    RED4ext::GetParameter(f,&session); RED4ext::GetParameter(f,&epoch); RED4ext::GetParameter(f,&generation);
+    RED4ext::GetParameter(f,&stance); RED4ext::GetParameter(f,&weapon); RED4ext::GetParameter(f,&record);
+    RED4ext::GetParameter(f,&aim); ++f->code;
+    if(stance>2 || weapon>3 || aim>2) { *out=static_cast<unsigned>(g::PresentationAdmission::Invalid); return; }
+    const coop::PresentationValues values{static_cast<coop::PresentationStance>(stance),static_cast<coop::PresentationWeapon>(weapon),
+        record.value&0xffffffffffULL,static_cast<coop::PresentationAim>(aim)};
+    *out=static_cast<unsigned>(bridge?bridge->SetLocalPresentation({{session,epoch},generation},values):g::PresentationAdmission::Inactive);
+}
+NATIVE(PresentationRead,RED4ext::CString) {
+    ++f->code; const auto* current=Current();
+    if(!current || !current->presentation) { *out=RED4ext::CString(""); return; }
+    const auto& p=*current->presentation;
+    *out=RED4ext::CString(std::format("{}|{}|{}|{}|{}|{}|{:010x}|{}",p.fresh?1:0,p.state.revision,p.sequence,
+        std::min<std::uint64_t>(p.ageMs,30001),static_cast<unsigned>(p.state.values.stance),
+        static_cast<unsigned>(p.state.values.weapon),p.state.values.weaponRecord,static_cast<unsigned>(p.state.values.aiming)));
+}
+#endif
 void RegisterTypes() {}
 void RegisterFunctions() {
     auto rtti=RED4ext::CRTTISystem::Get();
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    const auto presentationFunction=[rtti](const char* name,auto address,const char* result,
+        std::initializer_list<std::pair<const char*,const char*>> params) {
+        auto fn=RED4ext::CGlobalFunction::Create(name,name,address);
+        fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType(result);
+        for(const auto& [type,param]:params) fn->AddParam(type,param);
+        rtti->RegisterFunction(fn);
+    };
+    presentationFunction("CP2077Presentation_Version",&PresentationVersion,"Uint32",{});
+    presentationFunction("CP2077Presentation_IsIgla",&PresentationIsIgla,"Bool",{{"TweakDBID","record"}});
+    presentationFunction("CP2077Presentation_RecordsEqual",&PresentationRecordsEqual,"Bool",{{"TweakDBID","left"},{"TweakDBID","right"}});
+    presentationFunction("CP2077Presentation_Read",&PresentationRead,"String",{});
+    presentationFunction("CP2077Presentation_Push",&PresentationPush,"Uint32",{
+        {"Uint64","session"},{"Uint32","epoch"},{"Uint64","generation"},{"Uint32","stance"},
+        {"Uint32","weapon"},{"TweakDBID","record"},{"Uint32","aim"}});
+#endif
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplayScope","CP2077Session_GameplayScope",&GameplayScope);
       fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("String"); rtti->RegisterFunction(fn); }
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_GameplaySubmit","CP2077Session_GameplaySubmit",&GameplaySubmit);

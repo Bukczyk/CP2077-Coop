@@ -126,7 +126,24 @@ SessionBridge::~SessionBridge() { worker_.request_stop(); if(worker_.joinable())
 void SessionBridge::SetActive(bool active) {
     std::lock_guard lock(mutex_); if(active_!=active) ++activation_; active_=active;
     if(!active) { local_.reset(); frame_=Frame{}; remote_.clear(); desiredNpcs_.clear(); npcSnapshots_.clear(); npcLocals_.clear(); nextAdoption_=1; ClearGameplay(); gameplayFault_.clear(); }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(!active) { desiredPresentation_.reset(); presentationPending_=false; presentationGeneration_=0; }
+#endif
 }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+PresentationAdmission SessionBridge::SetLocalPresentation(GameplayScope scope,PresentationValues observed) {
+    std::lock_guard lock(mutex_);
+    if(!active_ || frame_.phase!=ClientPhase::Active) return PresentationAdmission::Inactive;
+    if(scope.identity!=Identity{frame_.member.session,frame_.member.epoch} || scope.generation!=frame_.generation
+        || scope.generation!=presentationGeneration_) return PresentationAdmission::Stale;
+    if(!ValidatePresentation(observed)) return PresentationAdmission::Invalid;
+    if(desiredPresentation_ && desiredPresentation_->first==scope && desiredPresentation_->second==observed)
+        return PresentationAdmission::Unchanged;
+    const auto result=presentationPending_?PresentationAdmission::Coalesced:PresentationAdmission::Queued;
+    desiredPresentation_=std::pair{scope,observed}; presentationPending_=true;
+    return result;
+}
+#endif
 void SessionBridge::ClearGameplay() {
     gameplayCommands_.clear(); gameplayEvents_.clear(); gameplayPending_.clear(); nextGameplayTicket_=1;
 }
@@ -278,7 +295,17 @@ Frame SessionBridge::ReadFrame(std::uint64_t now) const {
     auto result=frame_;
     for(const auto& [id,remote]:remote_) {
         if(!remote.initialized || now<remote.receivedTime || now-remote.receivedTime>1000) continue;
-        if(auto pose=remote.snapshots.Sample(static_cast<double>(now))) result.players.push_back({id,id,*pose});
+        if(auto pose=remote.snapshots.Sample(static_cast<double>(now))) {
+            RenderPlayer player{id,id,*pose};
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+            if(remote.presentation && remote.presentation->state.entity==id && now>=remote.presentation->receivedAt) {
+                const auto age=now-remote.presentation->receivedAt;
+                player.presentation=RenderPresentation{remote.presentation->state,remote.presentation->sequence,age,
+                    age<=config_.presentationStaleAfterMs};
+            }
+#endif
+            result.players.push_back(std::move(player));
+        }
     }
     for(const auto& [id,npc]:npcSnapshots_) {
         (void)id;
@@ -304,7 +331,13 @@ void SessionBridge::Run(std::stop_token stop) {
             std::unordered_map<LocalEntityId,DesiredNpc> desired;
             { std::lock_guard lock(mutex_); active=active_; activation=activation_; local=local_; desired=desiredNpcs_; }
             if(activation!=observedActivation) { client.Disconnect(); connected=false; observedActivation=activation; work.clear(); nextNpcSample=0; }
-            if(active && local && !connected) { client.Connect(); connected=true; ++generation; }
+            if(active && local && !connected) {
+                client.Connect(); connected=true; ++generation;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+                std::lock_guard lock(mutex_);
+                desiredPresentation_.reset(); presentationPending_=false; presentationGeneration_=generation;
+#endif
+            }
             if(!active && connected) { client.Disconnect(); connected=false; }
             if(connected) {
                 if(local) client.SetLocal(*local);
@@ -313,6 +346,13 @@ void SessionBridge::Run(std::stop_token stop) {
                 {
                     std::lock_guard lock(mutex_);
                     if(active_ && activation_==activation) resultPending=ServiceGameplay(client,generation,now);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+                    if(active_ && activation_==activation && desiredPresentation_ && client.Phase()==ClientPhase::Active) {
+                        const auto& scope=desiredPresentation_->first;
+                        if(scope.generation==generation && scope.identity==Identity{client.Member().session,client.Member().epoch}
+                            && client.SetLocalPresentation(desiredPresentation_->second)) presentationPending_=false;
+                    }
+#endif
                 }
                 std::vector<LocalEntityId> retired;
                 std::unordered_map<std::uint64_t,EntityId> accepted;
@@ -343,6 +383,9 @@ void SessionBridge::Run(std::stop_token stop) {
                         }
                     }
                     frame_={gameplayFault_.empty()?client.Phase():ClientPhase::Failed,client.Member(),client.Host(),generation,{},{}};
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+                    frame_.presentationBaselineReady=client.PresentationBaselineReady();
+#endif
                     remote_=client.Remotes(); npcSnapshots_=client.Npcs(); npcLocals_.clear();
                     for(const auto& [id,npc]:desiredNpcs_) if(!npc.releasing) npcLocals_[npc.adoption]=id;
                 }
@@ -353,6 +396,9 @@ void SessionBridge::Run(std::stop_token stop) {
     } catch(const std::exception& error) {
         if(log_) log_(std::string("BRIDGE_ERROR ")+error.what());
         std::lock_guard lock(mutex_); gameplayFault_=error.what(); ClearGameplay(); frame_.phase=ClientPhase::Failed; remote_.clear(); npcSnapshots_.clear(); npcLocals_.clear();
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        desiredPresentation_.reset(); presentationPending_=false; presentationGeneration_=0;
+#endif
     }
 }
 }

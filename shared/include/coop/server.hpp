@@ -17,6 +17,9 @@ struct ServerConfig {
     unsigned snapshotRate = 60, distantRate = 15;
     unsigned npcSnapshotRate=20, npcDistantRate=10;
     float nearDistance = 60, interestDistance = 250;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    std::uint64_t presentationStaleAfterMs=2500;
+#endif
 };
 struct CachedGameplayOutcome {
     std::uint64_t hostEvent=0;
@@ -54,6 +57,10 @@ private:
         std::unordered_map<EntityId,Sent> sent;
         std::deque<Packet> npcOutbox;
         std::unordered_map<EntityId,std::uint64_t> sourceTimes;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        std::unordered_map<PlayerId,Sent> presentationSent;
+        std::deque<PlayerId> presentationBaseline; // IDs only; resolve latest at send time, zero=fence
+#endif
     };
     struct Room { std::string name; std::unordered_map<EntityId,Packet> states; };
     void Control(ConnectionId id, Peer& peer, const Packet& packet, std::uint64_t now);
@@ -64,6 +71,10 @@ private:
     void QueueNpc(Peer& peer,Payload payload);
     void QueueNpc(Peer& peer,Packet packet);
     void RouteNpcs(std::uint64_t now);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    bool PresentationRelevant(const Session& session,PlayerId observer,PlayerId owner) const;
+    void RoutePresentations(std::uint64_t now);
+#endif
     GameplayLedger* EnsureGameplayLedger(SessionId session);
     void GameplayIntentMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now);
     void GameplayResultMessage(ConnectionId id,Peer& peer,const Packet& packet,std::uint64_t now);

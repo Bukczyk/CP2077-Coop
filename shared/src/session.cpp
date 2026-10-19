@@ -23,6 +23,9 @@ bool hostOnly(PacketType t) {
 }
 void eraseEntity(Session& s, EntityId id) {
     s.entities.erase(id); s.npcs.erase(id); s.npcLifeStates.erase(id);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    std::erase_if(s.presentations,[id](const auto& entry) { return entry.second.baseline.state.entity==id; });
+#endif
     for (auto& [unused, m] : s.members) {
         (void)unused;
         std::erase_if(m.sequences, [id](const auto& entry) { return entry.first.second == id; });
@@ -101,6 +104,10 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if (TypeOf(packet.payload) >= PacketType::Hello && TypeOf(packet.payload) <= PacketType::SessionReady) return fail(SessionError::Invalid); // Admission is transport policy, not gameplay.
     if (TypeOf(packet.payload)==PacketType::NpcSpawn || TypeOf(packet.payload)==PacketType::NpcRemoved ||
         TypeOf(packet.payload)==PacketType::NpcSnapshotEnd || TypeOf(packet.payload)==PacketType::NpcDenied) return fail(SessionError::Invalid);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(TypeOf(packet.payload)==PacketType::PlayerPresentationBaseline || TypeOf(packet.payload)==PacketType::PlayerPresentationBaselineEnd)
+        return fail(SessionError::Invalid);
+#endif
     auto it = sessions_.find(packet.header.session);
     if (it == sessions_.end()) return fail(SessionError::MissingSession);
     auto& s = it->second;
@@ -133,6 +140,18 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     if ((type == PacketType::VehicleInput || type == PacketType::VehicleState) && entity->second.kind != EntityKind::Vehicle)
         return fail(SessionError::Kind);
     if (type == PacketType::WorldState && entity->second.kind != EntityKind::World) return fail(SessionError::Kind);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(const auto* state=std::get_if<PlayerPresentation>(&packet.payload)) {
+        if(entity->second.kind!=EntityKind::Player) return fail(SessionError::Kind);
+        if(entity->second.owner!=m.id) return fail(SessionError::Ownership);
+        if(const auto old=s.presentations.find(m.id);old!=s.presentations.end()) {
+            const auto& prior=old->second.baseline.state;
+            if(state->revision==prior.revision) {
+                if(state->entity!=prior.entity || state->values!=prior.values) return fail(SessionError::Invalid);
+            } else if(!IsNewer(state->revision,prior.revision)) return fail(SessionError::Stale);
+        }
+    }
+#endif
 
     if (const auto* spawn = std::get_if<EntitySpawn>(&packet.payload)) {
         if (spawn->entity>=kNpcEntityBase) return fail(SessionError::Kind);
@@ -189,11 +208,20 @@ ReceiveResult SessionRegistry::Receive(ConnectionId connection, const Packet& pa
     ReceiveResult result;
     if (!control) {
         result.route = hostOnly(type) ? Route::Peers : Route::Host;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        if(type==PacketType::PlayerPresentation) result.route=Route::Peers;
+#endif
         for (const auto& [peerId, peer] : s.members) {
             if (peerId != m.id && peer.phase == Phase::Active && !expired(peer, now, limits_.timeoutMs)
                 && (result.route == Route::Peers || peer.role == Role::Host)) result.recipients.push_back(peerId);
         }
     }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(const auto* presentation=std::get_if<PlayerPresentation>(&packet.payload)) {
+        s.presentations[m.id]={{m.id,packet.header.sequence,*presentation},now};
+        return result;
+    }
+#endif
     if (const auto* adopt=std::get_if<NpcAdopt>(&packet.payload)) {
         if(npcDenied) { result.npcDenied=true; return result; } // Command consumed; bounded capacity denial is not an event gap.
         auto prior=s.npcAdoptions.find(adopt->adoption);
@@ -271,6 +299,9 @@ SessionError SessionRegistry::ResetWorld(ConnectionId connection) {
             if (s.epoch == std::numeric_limits<std::uint32_t>::max()) return SessionError::Capacity;
             ++s.epoch;
             s.entities.clear(); s.lastEntity = 0; s.npcs.clear(); s.npcLifeStates.clear(); s.npcAdoptions.clear(); s.lastNpc=kNpcEntityBase-1;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+            s.presentations.clear();
+#endif
             for (auto& [peerId, peer] : s.members) {
                 (void)peerId;
                 peer.sequences.clear(); peer.lastEvent = 0;

@@ -13,7 +13,13 @@ using PlayerId = std::uint32_t;
 using EntityId = std::uint64_t;
 using VehicleId = EntityId;
 using ConnectionToken = std::array<std::uint8_t,16>;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+// Private compatibility domain. NOT an allocation of the next production
+// version and never compatible with the production v5 VPS/client packages.
+constexpr std::uint16_t kProtocolVersion = 0x8005;
+#else
 constexpr std::uint16_t kProtocolVersion = 5;
+#endif
 constexpr std::size_t kHeaderSize = 40;
 constexpr std::size_t kMaxPacketSize = 1200;
 
@@ -28,6 +34,9 @@ enum class PacketType : std::uint16_t {
     NpcAdopt = 0x500, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied,
     GameplayIntent = 0x600, GameplayResult, GameplayStatus,
     NpcLifeState = 0x507
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    , PlayerPresentation = 0x7f00, PlayerPresentationBaseline, PlayerPresentationBaselineEnd
+#endif
 };
 enum class EntityKind : std::uint8_t { Player = 1, Vehicle = 2, World = 3, NPC = 4 };
 struct Header {
@@ -177,11 +186,44 @@ struct GameplayStatus {
     bool committed=false;
     bool operator==(const GameplayStatus&) const = default;
 };
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+// PR18 semantic candidate, with canonical hash/length weapon identity. No native
+// memory, inventory instance ID, TDB cache offset, camera direction or one-shot.
+enum class PresentationStance : std::uint8_t { Unavailable, Standing, Crouching };
+enum class PresentationWeapon : std::uint8_t { Unavailable, Holstered, DrawnSupported, DrawnUnsupported };
+enum class PresentationAim : std::uint8_t { Unavailable, NotAiming, Aiming };
+constexpr std::uint64_t kPresentationIglaPimp = 0x16ac119774ULL;
+struct PresentationValues {
+    PresentationStance stance=PresentationStance::Unavailable;
+    PresentationWeapon weapon=PresentationWeapon::Unavailable;
+    std::uint64_t weaponRecord=0;
+    PresentationAim aiming=PresentationAim::Unavailable;
+    bool operator==(const PresentationValues&) const = default;
+};
+struct PlayerPresentation {
+    EntityId entity=0;
+    std::uint32_t revision=0;
+    PresentationValues values{};
+    bool operator==(const PlayerPresentation&) const = default;
+};
+struct PlayerPresentationBaseline {
+    PlayerId player=0;
+    std::uint32_t sequence=0;
+    PlayerPresentation state{};
+    bool operator==(const PlayerPresentationBaseline&) const = default;
+};
+struct PlayerPresentationBaselineEnd { bool operator==(const PlayerPresentationBaselineEnd&) const = default; };
+bool ValidatePresentation(const PresentationValues& values);
+#endif
 using Payload = std::variant<Heartbeat, Leave, Ack, PlayerPose, PlayerState,
     VehicleInput, VehicleState, HitRequest, DamageApplied, EntitySpawn, EntityDespawn, WorldState, Hello, HelloOk, CreateSession, JoinSession,
     SessionAccepted, Reject, MemberJoined, MemberLeft, SessionClosed, Ready, SessionReady,
     NpcAdopt, NpcSpawn, NpcDespawn, NpcRemoved, NpcState, NpcSnapshotEnd, NpcDenied,
-    GameplayIntent, GameplayResult, GameplayStatus, NpcLifeState>;
+    GameplayIntent, GameplayResult, GameplayStatus, NpcLifeState
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    , PlayerPresentation, PlayerPresentationBaseline, PlayerPresentationBaselineEnd
+#endif
+    >;
 struct Packet {
     Header header{};
     Payload payload{};
