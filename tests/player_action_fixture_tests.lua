@@ -6,7 +6,7 @@ local function check(v,message)checks=checks+1;assert(v,message)end
 local function fixture(stale)
     local f={session="1ULL",self=2,host=1,phase=4,attached=true,paused=false,
         ready=true,spawned=false,managed=false,spawning=false,actorAttached=false,
-        spawns=0,despawns=0,actorKey="100ULL",inputs={}}
+        spawns=0,despawns=0,actorKey="100ULL",inputs={},visibility={},visibilityAccepted=true}
     if stale then f.request={version=1,mode="action-fixture",session="1",request="stale"} end
     local events={}
     registerForEvent=function(n,fn)events[n]=fn end
@@ -24,10 +24,14 @@ local function fixture(stale)
     NewObject=function()return {}end;IsDefined=function(v)return v~=nil end
     StaticEntitySpec={new=function()return {}end}
     local actor={IsAttached=function()return f.actorAttached end,GetEntityID=function()return {hash=f.actorKey}end,
-        SetWorldTransform=function()end,QueueEvent=function(_,event)f.inputs[#f.inputs+1]=event end}
+        SetWorldTransform=function()end,QueueEvent=function(_,event)f.inputs[#f.inputs+1]=event end,
+        CP2077Fixture_SetWeaponVisible=function(_,visible)
+            f.visibility[#f.visibility+1]=visible;return f.visibilityAccepted
+        end}
     local system={IsReady=function()return f.ready end,
         SpawnEntity=function(_,spec)
-            check(spec.templatePath=="base\\cp2077coop\\entities\\player_actions_fixture.ent","fixed fixture only")
+            check(spec.templatePath==(f.request.model=="igla" and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
+                or "base\\cp2077coop\\entities\\player_actions_fixture.ent"),"fixed fixture only")
             f.spawns=f.spawns+1;f.managed=true;f.spawning=true;return {hash="100ULL"}
         end,GetEntity=function()return f.spawned and actor or nil end,
         IsManaged=function()return f.managed end,IsSpawned=function()return f.spawned end,
@@ -65,6 +69,21 @@ do
     end
     check(crouch and aim and neutral,"fixed crouch/aim/neutral sequence submitted")
     check(f.spawns==1 and f.despawns==1 and f.receipt.status=="removed","bounded sequence removes exact actor")
+end
+do
+    local f=fixture();f:arm();f.request.model="igla";f:tick();f:attach();f:tick(850)
+    check(f.visibility[1]==false and f.visibility[3]==true and f.visibility[8]==false,
+        "weapon visibility follows holster/ready/holster sequence")
+    check(#f.visibility==8 and f.receipt.model=="igla" and f.receipt.status=="removed",
+        "one submission per phase and exact cleanup")
+end
+do
+    local f=fixture();f:arm();f.request.model="igla";f:tick();f:attach();f.visibilityAccepted=false;f:tick()
+    check(f.despawns==1 and #f.inputs==0,"rejected visibility cannot continue posing")
+end
+do
+    local f=fixture();f:arm();f.request.model="arbitrary/resource.ent";f:tick(5)
+    check(f.spawns==0,"unknown resource selector rejected")
 end
 do
     local f=fixture();f:arm();f:tick(300);f:arm("second");f:tick(10)

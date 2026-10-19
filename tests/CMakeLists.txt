@@ -61,6 +61,8 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(private_action_clips PROPERTIES TIMEOUT 15)
     add_test(NAME player_action_fixture_asset COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/player_action_fixture_asset_tests.py")
     set_tests_properties(player_action_fixture_asset PROPERTIES TIMEOUT 15)
+    add_test(NAME player_weapon_fixture_asset COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/player_weapon_fixture_asset_tests.py")
+    set_tests_properties(player_weapon_fixture_asset PROPERTIES TIMEOUT 15)
     if(COOP_BUILD_REPLAY)
         add_test(NAME player_replay_input COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/player_replay_tests.py" "$<TARGET_FILE:coop_player_replay>")

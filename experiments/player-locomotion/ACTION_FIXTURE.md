@@ -72,6 +72,36 @@ remain evidence, not visual passes.
 Initial local recordings show crouch idle/walk and distinct ready/aim upper-body
 poses, including crouched combinations. Actual HOST inputs independently
 produced crouch/stand, exact drawn firearm and logical aim on/off observations.
-There is still no held model on the fixture, sight alignment/pitch proof or
-action-state delivery to a remote player. Those are the next gates. See
+The default pose fixture has no held model. Sight alignment/pitch and
+action-state delivery to a remote player remain unverified. See
 `docs/validation/PLAYER_QUALITY_ACTIONS_2026-10-18.md` for the evidence boundary.
+
+## Isolated passive Igla mount
+
+`build_weapon_fixture.py` accepts only the qualified Igla Pimp record and its
+captured component/material combination. It authors a separate pure entity
+with a `WeaponRight` bone slot, three reference-pose rigs and five initially
+hidden skinned parts. Each rig's authored graph maps the body's animated
+WeaponRight to its inspected root bone through animation control binding.
+This is a mount hypothesis, not a qualified replacement for the rejected
+independent rest rigs. Shadow, placeholder and reload-only parts are excluded;
+unexpected attachments or material/mask/binding combinations reject the recipe.
+The archive contains only our entity and three authored graphs. Installed game meshes,
+rigs and the separate private action cache remain references.
+
+The private `weapon_fixture.reds` hook checks the exact fixture template and
+every named part before submitting visibility changes on the game thread.
+It does not equip inventory, create a WeaponObject or run firing/AI/damage.
+The fixture request accepts only `poses` or `igla`, never an arbitrary resource.
+The Igla sequence exercises hidden/ready/aim/crouched/walking/hidden transitions
+and exact actor cleanup. The ready/aim clips are a rifle-pose mount experiment;
+native serialization and submission do not prove correct shotgun grip.
+
+Install this hook/archive only in the controlled JOINER bench with both games
+fully exited and backups recorded. Then record with:
+
+```powershell
+python experiments/player-locomotion/record_action_fixture.py --game-root '<JOINER game root>' --model igla --output '<new private capture folder>'
+```
+
+This remains an engine fixture, not a player-action transport or a release.

@@ -20,6 +20,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--game-root',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
+    parser.add_argument('--model',choices=('poses','igla'),default='poses')
     args=parser.parse_args()
     if args.output.exists():parser.error('Choose a new private output folder')
     mods=args.game_root/'bin/x64/plugins/cyber_engine_tweaks/mods'
@@ -40,18 +41,31 @@ def main():
         'capture_hooks':args.game_root/'r6/scripts/CP2077ActionCapture/player_capture.reds',
         'authored_archive':args.game_root/'archive/pc/mod/CP2077Coop_ActionFixture.archive',
         'private_cache':args.game_root/'archive/pc/mod/PRIVATE_DO_NOT_DISTRIBUTE_ActionClips.archive'}
+    if args.model=='igla':
+        files['weapon_archive']=args.game_root/'archive/pc/mod/CP2077Coop_WeaponFixture.archive'
+        files['weapon_hook']=args.game_root/'r6/scripts/CP2077ActionCapture/weapon_fixture.reds'
     hashes={name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in files.items()}
     args.output.mkdir(parents=True)
     result={'started_utc':datetime.now(timezone.utc).isoformat(),
         'scope':'isolated local game-thread pose fixture; NO synchronized actions',
-        'installed_sha256':hashes,'session':session,'visual_pass':False,'phase_receipts':[]}
+        'installed_sha256':hashes,'session':session,'model':args.model,'visual_pass':False,'phase_receipts':[]}
     process=None
     try:
         with (args.output/'recorder.log').open('w') as log:
             process=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parents[2]/'tools/record_game_window.py'),
                 '--window','COOP JOINER - SIDE BY SIDE','--output',str(args.output/'video'),
                 '--seconds','60','--fps','60'],stdout=log,stderr=subprocess.STDOUT)
-            time.sleep(1)
+            # Imports/capture initialization can outlast a fixed one-second
+            # sleep. Do not start the action sequence before a real frame.
+            until=time.monotonic()+15
+            first_log=args.output/'video/frames.jsonl'
+            while time.monotonic()<until:
+                if process.poll() is not None:raise RuntimeError('Recorder exited before first frame')
+                if first_log.is_file() and first_log.stat().st_size:
+                    result['recording_started_before_fixture']=True
+                    break
+                time.sleep(.1)
+            else:raise RuntimeError('No real frame before fixture start')
             observer_nonce=str(uuid.uuid4())
             request(observer,'observer-request.json',{'version':1,'mode':'place-observer','session':session,'request':observer_nonce})
             until=time.monotonic()+5
@@ -66,7 +80,7 @@ def main():
                 time.sleep(.05)
             else:raise RuntimeError('No observer submission receipt')
             nonce=str(uuid.uuid4());result['request']=nonce
-            request(fixture,'action-request.json',{'version':1,'mode':'action-fixture','session':session,'request':nonce})
+            request(fixture,'action-request.json',{'version':1,'mode':'action-fixture','session':session,'request':nonce,'model':args.model})
             until=time.monotonic()+57
             while time.monotonic()<until:
                 try:
@@ -80,7 +94,9 @@ def main():
                 except (OSError,ValueError):pass
                 time.sleep(.1)
             else:raise RuntimeError('Fixture did not confirm exact actor removal within capture')
-            result['capture_exit']=process.wait(timeout=15)
+            # The weapon sequence is 40s; recording still runs for 60s. Allow
+            # its remaining duration and encoder finalization before stopping.
+            result['capture_exit']=process.wait(timeout=35)
             for name,path in [('source-capture.jsonl',capture),('fixture.log',fixture/'zz_CP2077ActionFixture.log')]:
                 if path.is_file():(args.output/name).write_bytes(path.read_bytes())
     except Exception as error:

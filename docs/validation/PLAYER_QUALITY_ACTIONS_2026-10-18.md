@@ -152,3 +152,38 @@ Private new evidence: `poses-fixture03-auto-camera`,
 `before-weapon-components`, `research/weapon-json`. Raw installed resources stay
 outside source. No protocol/server/VPS change. Exact held model/grip, connected
 state delivery/recovery and complete stutter acceptance remain open.
+
+## Passive weapon candidate, 01:31 UTC
+
+Resource/camera head `a38122e` passed all 59 tests on Windows, Debian and
+sanitizers: https://github.com/Bukczyk/CP2077-Coop/actions/runs/39184589783
+
+The next engine candidate authors an isolated Igla Pimp visual from the exact
+captured mesh/material references. Native build, roundtrip, safe component/rig
+checks, two-resource archive inventory and unpacked hashes passed. The matching
+visibility hook compiled against the installed REDscript/Codeware. The expanded
+Windows Release suite passed 60/60, including rejected selectors/visibility,
+async token retention and holster-return submission. No network code changed.
+
+Private build `weapon-fixture02` SHA256:
+`991c0078e8cb55d7eb146d52ffea849a519907295e64753e1189b39a4d6cd8ba`.
+Private installation/backup `before-weapon-fixture/install.json` records exact
+source/archive hashes. Controls/config/saves were preserved. Source-capture
+logs reached their 2 MiB cap, were archived with hashes while games were closed,
+and the matched launcher restarted for fresh evidence.
+
+Grip, visible attachment and holster behavior are pending video qualification.
+This fixture alone does not deliver actual player state to another client.
+
+`weapon-mount02` produced a valid 60.03s recording with 1,837 fresh frames,
+mean 31.06 callbacks/s and no synthetic duplicates or recorder errors. Eight
+phase submissions completed; exact actor10794447 detached at40.069s. Frame
+review **rejects the mount**: the weapon assembly appears at the feet while the
+body changes poses. Hide/show works, but hand attachment and grip do not.
+`weapon-mount01` is retained as a failed/truncated MP4 after discovering an
+early recorder timeout. The runner now allows the shorter weapon sequence to
+finish recording and waits for an actual video frame before starting a fixture.
+
+The next candidate uses explicit animation-parent mappings from the body
+WeaponRight bone to each inspected weapon rig root, rather than independent
+reference poses. This is an unqualified engine hypothesis until recorded.

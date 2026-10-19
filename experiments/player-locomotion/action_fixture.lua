@@ -14,6 +14,15 @@ local phases={
     {name="crouch_rifle_aim_pose_no_weapon",stance=1,weight=1,pose=3},
     {name="crouch_handgun_aim_pose_no_weapon",stance=1,weight=1,pose=8},
     {name="standing_return",stance=0,weight=0,pose=0}}
+local weaponPhases={
+    {name="igla_holstered",stance=0,weight=0,pose=0},
+    {name="igla_crouch_holstered",stance=1,weight=0,pose=0},
+    {name="igla_ready_mount_test",stance=0,weight=1,pose=0},
+    {name="igla_aim_mount_test",stance=0,weight=1,pose=3},
+    {name="igla_crouch_ready",stance=1,weight=1,pose=0},
+    {name="igla_crouch_aim",stance=1,weight=1,pose=3},
+    {name="igla_crouch_walk",stance=1,weight=1,pose=0,moving=true},
+    {name="igla_holstered_return",stance=0,weight=0,pose=0}}
 local function key(v)return tostring(v):gsub("[uUlL]+$","") end
 local function read()
     local f=io.open("action-request.json","r");if not f then return end
@@ -26,6 +35,7 @@ local prior=read();if prior then seen[prior.request]=true end
 local function report(status,detail)
     local result={version=1,request=active and active.request,status=status,detail=detail,
         local_fixture_only=true,elapsed=active and active.started and clock-active.started,
+        model=active and active.model,
         actor=active and active.id and key(active.id.hash)}
     local f=assert(io.open("action-receipt.json","w"));f:write(json.encode(result));f:close()
     spdlog.info("[ActionFixture] "..status.." "..tostring(detail))
@@ -72,9 +82,18 @@ registerForEvent("onUpdate",function(dt)
         if key(actor:GetEntityID().hash)~=key(active.id.hash) then error("fixture identity changed") end
         active.actor,active.seenReady=actor,true;active.started=active.started or clock
         local elapsed=clock-active.started;local index=math.floor(elapsed/5)+1
-        if index>#phases then active.finishing=true;report("poses_submitted","visual review required");cleanup();return end
-        local phase=phases[index]
-        if active.phase~=index then active.phase=index;report("phase_submitted",phase.name) end
+        local sequence=active.model=="igla" and weaponPhases or phases
+        if index>#sequence then active.finishing=true;report("poses_submitted","visual review required");cleanup();return end
+        local phase=sequence[index]
+        if active.phase~=index then
+            if active.model=="igla" then
+                local ok,submitted=pcall(function()return actor:CP2077Fixture_SetWeaponVisible(phase.weight==1) end)
+                if not ok or submitted~=true then
+                    active.finishing=true;report("failed","exact fixture visibility submission rejected");cleanup();return
+                end
+            end
+            active.phase=index;report("phase_submitted",phase.name)
+        end
         local world=WorldTransform.new()
         WorldTransform.SetPosition(world,Vector4.new(-813+(phase.moving and math.sin(elapsed*1.5) or 0),821.5,24.4042,1))
         WorldTransform.SetOrientationEuler(world,EulerAngles.new(0,0,phase.moving and (math.cos(elapsed*1.5)>0 and -90 or 90) or 160))
@@ -87,11 +106,13 @@ registerForEvent("onUpdate",function(dt)
     if clock>=1800 or count>=3 or clock<due then return end
     due=clock+0.2;local r=read();if not r or seen[r.request] then return end
     seen[r.request]=true;count=count+1
+    if r.model~=nil and r.model~="poses" and r.model~="igla" then spdlog.info("[ActionFixture] rejected model");return end
     if not context(r) then spdlog.info("[ActionFixture] rejected context");return end
     local system=Game.GetStaticEntitySystem();if not system or system:IsReady()~=true then return end
-    active={version=r.version,mode=r.mode,request=r.request,session=r.session,system=system,admitted=clock}
+    active={version=r.version,mode=r.mode,request=r.request,session=r.session,system=system,admitted=clock,model=r.model or "poses"}
     local spec=StaticEntitySpec.new()
-    spec.templatePath=ResRef.FromName("base\\cp2077coop\\entities\\player_actions_fixture.ent")
+    spec.templatePath=ResRef.FromName(active.model=="igla" and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
+        or "base\\cp2077coop\\entities\\player_actions_fixture.ent")
     spec.position=Vector4.new(-813,821.5,24.4042,1);spec.orientation=Quaternion.new(0,0,1,0)
     spec.attached=true;spec.tags={CName.new("CP2077Coop.PrivateActionFixture"),CName.new(r.request)}
     active.id=system:SpawnEntity(spec)
