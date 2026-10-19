@@ -12,7 +12,7 @@ local function pose(player, entity, x)
 end
 local function fixture()
     local f = {entries={}, mapped={}, spawnCalls=0, binds=0, unbinds=0, despawns=0,
-        moves=0, ready=true, mode="immediate", dynamic={}, logs={}}
+        moves=0, ready=true, mode="immediate", dynamic={}, logs={}, queued={}}
     local s = {}
     function s:IsReady() return f.ready end
     function s:SpawnEntity(spec)
@@ -24,6 +24,11 @@ local function fixture()
             GetEntityID=function() return id(e.wrongId or hash) end,
             IsAttached=function() return e.attached end,
             GetWorldPosition=function() return e.position or spec.position end,
+            GetWorldOrientation=function()
+                if f.orientationError then error("orientation unavailable") end
+                return {ToEulerAngles=function()return {yaw=(e.angles and e.angles.yaw or 0)+(f.yawWrap and 360 or 0)}end}
+            end,
+            QueueEvent=function(_,event)f.queued[#f.queued+1]=event end,
             SetWorldTransform=function(_, world)
                 if f.moveError then error("move rejected") end
                 f.moves=f.moves+1; e.position=world.position; e.angles=world.angles
@@ -254,9 +259,20 @@ do
     e.attached=nil
     check(not f.controller:pump(),"unknown retained attachment cannot certify removal")
     e.attached=false; e.globalVisible=true
-    check(not f.controller:pump(),"global actor lookup blocks removal even after detach")
-    e.globalVisible=false
-    check(f.controller:pump() and next(f.controller.owned)==nil,"all exact evidence absent permits release")
+    check(f.controller:pump() and next(f.controller.owned)==nil,
+        "creator removal and exact detached handles qualify despite retained global reference")
+end
+
+do
+    local f=fixture();f.controller:step("scope",{pose(2)},0)
+    local e=f.entries[text(f.controller.owned[2].id.hash)]
+    f.controller:reset();f:goneAll()
+    e.globalVisible=true;e.attached=true
+    check(not f.controller:pump(),"globally attached body still blocks disposal completion")
+    e.attached=false;e.wrongId="9007199254740999"
+    check(not f.controller:pump(),"foreign detached handle cannot qualify exact removal")
+    e.wrongId=nil
+    check(f.controller:pump(),"original detached identity completes observed cleanup")
 end
 
 do
@@ -402,5 +418,43 @@ do
     print=log
 end
 local defaults=assert(loadfile(root.."/runtime/session/cet/CP2077Coop/config.lua"))()
+do
+    local f=fixture()
+    NewObject=function()return {}end
+    f.controller=Passive.new(nil,true)
+    local target=pose(2)
+    check(f.controller:step("locomotion",{target},0),"opt-in locomotion is bound through the existing lifetime owner")
+    local e=f.entries[f.mapped[text(target.entity)]]
+    check(e.spec.templatePath=="base\\cp2077coop\\entities\\cp2077coop_player_locomotion.ent",
+        "locomotion uses its separately authored asset")
+    check(e.angles.yaw==90 and #f.queued==2,"native network yaw is preserved and typed pose inputs submitted")
+    f.yawWrap=true
+    local d=f.controller:diagnostics()["2"]
+    check(d.readback=="available" and d.yawErrorDegrees==0 and d.actualYawDegrees==450,
+        "actual heading readback wraps against the admitted target")
+    f.orientationError=true;d=f.controller:diagnostics()["2"]
+    check(d.readback=="available" and d.actualYawDegrees==nil,
+        "optional heading failure cannot erase an independently valid position")
+end
+-- CET expired native weak references are non-nil Lua userdata. Do not let
+-- those wrappers block observed cleanup forever, or mistake unknown for gone.
+do
+    local oldDefined=IsDefined
+    local f=fixture();f.controller:step("scope",{pose(2)},0)
+    local owned=f.controller.owned[2];local e=f.entries[text(owned.id.hash)]
+    check(not f.controller:reset() and f.despawns==1,"weak cleanup starts with one disposal")
+    f:goneAll()
+    local ghost={GetEntityID=function()error("expired native object accessed")end}
+    Game.FindEntityByID=function()return ghost end
+    IsDefined=function(v)if v==ghost or v==e.actor then return nil end;return v~=nil end
+    check(not f.controller:pump(),"unknown native weak reference cannot certify absence")
+    IsDefined=function(v)if v==ghost then error("query failed")end;return true end
+    check(not f.controller:pump(),"failed weak observation cannot certify absence")
+    IsDefined=function(v)return v~=ghost and v~=e.actor and v~=nil end
+    check(f.controller:pump() and next(f.controller.owned)==nil,
+        "positive weak expiry plus exact registry disappearance completes cleanup")
+    IsDefined=oldDefined
+end
 check(defaults.experimentalPassivePlayers==false,"packaged config stays explicitly false")
+check(defaults.experimentalPlayerLocomotion==false,"new renderer remains explicitly opt-in")
 print("passive_player: PASS ("..checks.." checks; opt-in exact static identity and observed lifecycle, no live collision claim)")

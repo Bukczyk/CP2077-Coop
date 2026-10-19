@@ -5,6 +5,9 @@ return {
     -- Private diagnostic only: original idle-only static cosmetic players.
     -- Requires the experimental asset archive. No player hit collider or PvP.
     experimentalPassivePlayers = false,
+    -- Private no-AI locomotion asset. Requires its separately qualified archive.
+    -- XYZ-derived cosmetic pose inference is not replicated player action state.
+    experimentalPlayerLocomotion = false,
     -- Optional locomotion experiment; keep the latest main pose path by default.
     experimentalPlayerMovement = false,
     -- Independent per-player map markers; visual qualification still pending.

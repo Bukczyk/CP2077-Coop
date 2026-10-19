@@ -22,6 +22,18 @@ end
 local function finite(value)
     return type(value) == "number" and value == value and math.abs(value) ~= math.huge
 end
+local function liveReference(actor)
+    if actor == nil then return nil end
+    -- CET can return a non-nil WeakReference after its native object expired.
+    -- A positive native expiry observation is absence; an error/unknown result
+    -- remains unqualified. Lua truthiness alone cannot observe engine lifetime.
+    if type(IsDefined) == "function" then
+        local defined = IsDefined(actor)
+        if type(defined) ~= "boolean" then error("invalid_static_reference_observation") end
+        if not defined then return nil end
+    end
+    return actor
+end
 local function observe(entry)
     -- Keep the creator system and exact observed actor through unbind and
     -- world transitions. A fresh global system must not inherit an old token.
@@ -31,7 +43,7 @@ local function observe(entry)
     if type(managed) ~= "boolean" or type(spawning) ~= "boolean" or type(spawned) ~= "boolean" then
         error("invalid_static_lifecycle")
     end
-    local actor, globalActor = s:GetEntity(entry.id), Game.FindEntityByID(entry.id)
+    local actor, globalActor = liveReference(s:GetEntity(entry.id)), liveReference(Game.FindEntityByID(entry.id))
     local function attachment(candidate)
         if candidate == nil then return false end
         if key(candidate:GetEntityID()) ~= key(entry.id) then error("static_actor_identity_changed") end
@@ -42,19 +54,24 @@ local function observe(entry)
     local attached, globalAttached = attachment(actor), attachment(globalActor)
     -- Never replace a retained exact handle just because a lookup disappeared.
     if entry.actor == nil then entry.actor = actor or globalActor end
-    local retainedAttached = attachment(entry.actor)
+    local retainedAttached = attachment(liveReference(entry.actor))
     -- A global handle may appear before the creator has finished registration.
     -- Only a completed exact creator-owned spawn can qualify later absence.
     if attached and managed and spawned and not spawning then entry.seenReady = true end
     return {system=s, actor=actor, globalActor=globalActor, attached=attached,
         managed=managed, spawning=spawning, spawned=spawned,
+        -- Retained native references keep a detached object alive and therefore
+        -- FindEntityByID may continue returning it. Require observed removal
+        -- from the creator AND false attachment on every exact handle, rather
+        -- than waiting for our own retained reference to destroy itself.
         absent=not managed and not spawning and not spawned
-            and actor == nil and globalActor == nil and not retainedAttached}
+            and not attached and not globalAttached and not retainedAttached}
 end
 local Controller = {}
 Controller.__index = Controller
-function M.new(log)
-    return setmetatable({owned = {}, retryAfter = {}, scope = nil, resetting = false, log = log}, Controller)
+function M.new(log, locomotion)
+    return setmetatable({owned = {}, retryAfter = {}, scope = nil, resetting = false, log = log,
+        locomotion = locomotion and require("player_locomotion") or nil}, Controller)
 end
 function Controller:status(reason)
     if self.lastStatus ~= reason then
@@ -118,7 +135,7 @@ function Controller:spawn(s, entry, pose, now)
     entry.system = s
     local ok, id = pcall(function()
         local spec = StaticEntitySpec.new()
-        spec.templatePath = ResRef.FromName(M.template)
+        spec.templatePath = ResRef.FromName(self.locomotion and self.locomotion.template or M.template)
         spec.position = Vector4.new(pose.x, pose.y, pose.z, 1.0)
         spec.orientation = Quaternion.new(0.0, 0.0, math.sin(pose.yaw * 0.5), math.cos(pose.yaw * 0.5))
         spec.attached = true
@@ -129,7 +146,7 @@ function Controller:spawn(s, entry, pose, now)
     entry.id = id -- retain the exact token even while creation is pending
     return true
 end
-function Controller:place(entry, pose)
+function Controller:place(entry, pose, now)
     local ok, state = pcall(observe, entry)
     if not ok or state == nil then return false, "observation_unavailable" end
     local actor = state.actor
@@ -151,8 +168,15 @@ function Controller:place(entry, pose)
     local moved = pcall(function()
         local world = WorldTransform.new()
         WorldTransform.SetPosition(world, Vector4.new(pose.x, pose.y, pose.z, 1.0))
-        WorldTransform.SetOrientationEuler(world, EulerAngles.new(0.0, 0.0, math.deg(pose.yaw)))
+        WorldTransform.SetOrientationEuler(world, EulerAngles.new(0.0, 0.0,
+            math.deg(pose.yaw+(self.locomotion and self.locomotion.yawOffset or 0))))
         actor:SetWorldTransform(world)
+        entry.target = pose
+        if self.locomotion then
+            entry.presentation = entry.presentation or self.locomotion.new()
+            self.locomotion.step(entry.presentation, pose, now)
+            self.locomotion.apply(actor, entry.presentation)
+        end
     end)
     -- SetWorldTransform returning is not proof of placement. The live fixture
     -- separately compares actual position with the native interpolated sample.
@@ -201,7 +225,7 @@ function Controller:step(scope, players, now)
         else
             if entry.id == nil and not self:spawn(s, entry, pose, now) then complete, reason = false, "spawn_retry" end
             if entry.id ~= nil then
-                local placed, why, retire = self:place(entry, pose)
+                local placed, why, retire = self:place(entry, pose, now)
                 if not placed then complete, reason = false, why end
                 if retire then self:retire(player, entry) end
             end
@@ -216,5 +240,40 @@ function Controller:boundIds()
         if entry.bound and not entry.retiring then ids[#ids + 1] = entry.id end
     end
     return ids
+end
+function Controller:diagnostics()
+    local result = {}
+    for player, entry in pairs(self.owned) do
+        local t, m = entry.target, entry.presentation
+        local p = {entity=entry.session, actor=entry.id and key(entry.id),
+            mode=self.locomotion and "passive_locomotion" or "passive_idle",
+            loadedPresentationVersion=self.locomotion and self.locomotion.revision,
+            visualYawOffsetDegrees=self.locomotion and math.deg(self.locomotion.yawOffset),
+            retirementSubmitted=entry.removing == true, seenReady=entry.seenReady == true,
+            lifecycle=entry.retiring and "retiring" or "static",
+            x=t and t.x,y=t and t.y,z=t and t.z,yaw=t and t.yaw,
+            speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0}
+        local ok, actual, heading = pcall(function()
+            local o = observe(entry)
+            if o and o.actor and o.attached then
+                local position = o.actor:GetWorldPosition()
+                local yawOk, yaw = pcall(function() return o.actor:GetWorldOrientation():ToEulerAngles().yaw end)
+                return position, yawOk and yaw or nil
+            end
+        end)
+        p.readback = ok and actual and "available" or "unavailable"
+        if not ok then p.lifecycleObservationError=tostring(actual) end
+        if p.readback == "available" then
+            p.actualX,p.actualY,p.actualZ = actual.x,actual.y,actual.z
+            p.actualYawDegrees = heading
+            if t and type(heading)=="number" then
+                local expected=math.deg(t.yaw)+(self.locomotion and math.deg(self.locomotion.yawOffset) or 0)
+                p.yawErrorDegrees=math.abs((heading-expected+180)%360-180)
+            end
+            if t then p.error=math.sqrt((actual.x-t.x)^2+(actual.y-t.y)^2+(actual.z-t.z)^2) end
+        end
+        result[tostring(player)] = p
+    end
+    return result
 end
 return M

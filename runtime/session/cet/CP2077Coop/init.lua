@@ -1,4 +1,9 @@
 -- Matched typed-session bridge. No combat/world side effects or legacy native calls.
+-- print() reaches only the CET console; spdlog writes this mod's own .log file.
+local function log(message)
+    print(message)
+    if spdlog then spdlog.info(tostring(message)) end
+end
 local NpcRuntime = require("npc_runtime")
 local PlayerPose = assert(require("player_pose"), "player_pose module missing")
 local PlayerLifetime = assert(require("player_lifetime"), "player_lifetime module missing")
@@ -10,14 +15,14 @@ local overlayOpen = false
 local reconnect, reconnectRequested
 local usePlayerMotor = config.experimentalPlayerMovement == true
 local markers = require("player_markers").new(function(status)
-    print("[CP2077Session] PLAYER_MARKER " .. status)
+    log("[CP2077Session] PLAYER_MARKER " .. status)
 end)
 local passivePlayers = nil
-if config.experimentalPassivePlayers == true then
+if config.experimentalPassivePlayers == true or config.experimentalPlayerLocomotion == true then
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
     passivePlayers = PassivePlayers.new(function(status)
-        print("[CP2077Session] PASSIVE_PLAYER " .. status)
-    end)
+        log("[CP2077Session] PASSIVE_PLAYER " .. status)
+    end, config.experimentalPlayerLocomotion == true)
 end
 local staticPopulation = require("npc_static_population")
 local npcProjection = nil
@@ -29,7 +34,7 @@ local function ensureNpcProjection()
     staticProjectionEnabled = ok and enabled == true
     activePopulation = staticProjectionEnabled and staticPopulation or population
     npcProjection = NpcRuntime.new(activePopulation)
-    if staticProjectionEnabled then print("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION enabled; requires imported asset base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent") end
+    if staticProjectionEnabled then log("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION enabled; requires imported asset base\\cp2077coop\\entities\\cp2077coop_networkhumanoid.ent") end
 end
 local pendingNpcs, hostNpcs = {}, {}
 local npcLimit, npcWarning = 128, false
@@ -41,7 +46,7 @@ local commonTag = "CP2077Session.Projection"
 local retiring, recoveryPending = {}, true
 local function own(entry, id)
     entry.life = PlayerLifetime.new(id, function(status)
-        print("[CP2077Session] PLAYER_LIFETIME " .. status)
+        log("[CP2077Session] PLAYER_LIFETIME " .. status)
     end, function()
         -- Never unbind a different exact mapping after a session transition.
         if entry.bound then
@@ -68,7 +73,7 @@ local function actorStatus(entry, status)
     entry.actorReports = entry.actorReports or {}
     if not entry.actorReports[status] then
         entry.actorReports[status] = true
-        print("[CP2077Session] PLAYER_ACTOR entity=" .. tostring(entry.entity)
+        log("[CP2077Session] PLAYER_ACTOR entity=" .. tostring(entry.entity)
             .. " actor=" .. (entry.life and entry.life.key or "pending") .. " status=" .. status)
     end
 end
@@ -254,7 +259,7 @@ local function update(delta)
                 Game.CP2077Session_PushLocal(x + 1.75, y, z, yaw)
                 joined = true
                 bubble.centers[1] = {x=x+1.75,y=y,z=z}
-                print("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
+                log("[CP2077Session] JOINER_BASELINE_TELEPORT player=" .. tostring(id))
             end
             if passivePlayers then
                 passiveFrame[#passiveFrame + 1] = {player=id, entity=entity, x=x, y=y, z=z, yaw=yaw}
@@ -267,7 +272,7 @@ local function update(delta)
             if entry == nil then
                 entry = { tag = CName.new(commonTag .. "." .. tostring(id)), entity = entity, nextSpawn = 0 }
                 entry.pose = PlayerPose.new(function(status)
-                    print("[CP2077Session] PLAYER_POSE player=" .. tostring(id) .. " " .. status)
+                    log("[CP2077Session] PLAYER_POSE player=" .. tostring(id) .. " " .. status)
                 end)
                 proxies[id] = entry
             end
@@ -294,7 +299,7 @@ local function update(delta)
                 if entry.localKey ~= localKey then
                     entry.pose:reset()
                     if entry.motor then entry.motor:stop() end
-                    entry.localKey = localKey
+                    entry.localKey, entry.motorRetryAt = localKey, nil
                     if usePlayerMotor then entry.motor = PlayerMotor.new(proxy) end
                 end
                 if not Game.CP2077Session_Bind(entry.entity, proxy:GetEntityID()) then
@@ -304,9 +309,25 @@ local function update(delta)
                 bubble.exclusions[#bubble.exclusions+1] = proxy:GetEntityID()
                 -- Keep sampling interpolation while one owned engine command is
                 -- pending. Only actual transform readback confirms placement.
-                if entry.motor then
+                local motor = entry.motor
+                -- A latched motor fault used to freeze this actor until it was
+                -- recreated. Present it through the pose actuator meanwhile and
+                -- retry a fresh motor after a cooldown. An unconfirmed
+                -- cancellation still owns an engine command, so it never retries.
+                if motor and motor.fault and motor.fault ~= "cancellation_unconfirmed" then
+                    entry.motorRetryAt = entry.motorRetryAt or time + 5
+                    if time >= entry.motorRetryAt and entry.pose:release() then
+                        entry.pose:reset()
+                        entry.motorRetryAt = nil
+                        entry.motorRecoveries = (entry.motorRecoveries or 0) + 1
+                        entry.motor = PlayerMotor.new(proxy)
+                    else
+                        entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time, paused)
+                    end
+                end
+                if entry.motor and not (entry.motor == motor and motor.fault) then
                     if not paused then entry.motor:step({x=x,y=y,z=z,yaw=yaw}, delta) end
-                else
+                elseif not entry.motor then
                     entry.pose:step(proxy, {x=x,y=y,z=z,yaw=yaw}, time, paused)
                 end
             end
@@ -364,16 +385,16 @@ local function update(delta)
                 local ready, reason = activePopulation.available()
                 if ready then
                     if staticProjectionEnabled then
-                        print("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION_ACTIVE: render-only prototype; not a gameplay NPC")
+                        log("[CP2077Session] EXPERIMENTAL_STATIC_NPC_PROJECTION_ACTIVE: render-only prototype; not a gameplay NPC")
                     else
-                        print("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
+                        log("[CP2077Session] NPC_PROJECTION_ACTIVE: creation enabled; AI and ambient suppression are not implemented")
                     end
                 else
-                    print("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
+                    log("[CP2077Session] NPC_PROJECTION_UNAVAILABLE: " .. tostring(reason))
                 end
             end
             if not npcProjection:step(generation, bubble, npcs) and #npcs > 0 then
-                print("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
+                log("[CP2077Session] NPC_PROJECTION_RETRY: create, bind or cleanup did not complete")
             end
         end
     end -- experimentalNpcReplication; player cleanup always runs
@@ -391,7 +412,7 @@ registerForEvent("onInit", function()
         end
     end)
     initialized = true
-    print("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication)
+    log("[CP2077Session] INIT npc_replication=" .. tostring(config.experimentalNpcReplication)
         .. " passive_players=" .. tostring(passivePlayers ~= nil))
 end)
 registerForEvent("onUpdate", function(delta)
@@ -425,7 +446,7 @@ registerForEvent("onUpdate", function(delta)
         -- update already advanced time. Do not count the failed interval or
         -- advance the clock again while invalidating cleanup qualification.
         invalidateRetirementObservation()
-        print("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
+        log("[CP2077Session] BRIDGE_ERROR " .. tostring(reason)
             .. (stopped and "" or "; cleanup: " .. tostring(cleanupReason)))
     end
 end)
@@ -434,16 +455,16 @@ registerForEvent("onShutdown", function()
     local ok, reason = pcall(stop)
     if not ok then
         failed = true
-        print("[CP2077Session] BRIDGE_ERROR shutdown: " .. tostring(reason))
+        log("[CP2077Session] BRIDGE_ERROR shutdown: " .. tostring(reason))
     end
     for key, entry in pairs(retiring) do
         local released, reason = pcall(shutdownCommands, entry)
         if not released then
             failed = true
-            print("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key
+            log("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key
                 .. " status=unconfirmed reason=" .. tostring(reason))
         else
-            print("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key .. " status=requested")
+            log("[CP2077Session] PLAYER_SHUTDOWN_RELEASE actor=" .. key .. " status=requested")
         end
     end
 end)
@@ -452,7 +473,7 @@ reconnect = function()
     sessionUI:reconnect()
     local ok, reason = pcall(stop)
     failed = not ok
-    if not ok then print("[CP2077Session] BRIDGE_ERROR reconnect: " .. tostring(reason)) end
+    if not ok then log("[CP2077Session] BRIDGE_ERROR reconnect: " .. tostring(reason)) end
 end
 registerHotkey("cp2077_session_reconnect", "Reconnect coop session", reconnect)
 registerForEvent("onOverlayOpen", function() overlayOpen=true end)
@@ -476,13 +497,15 @@ playerRetirementDiagnostics = function()
     end
     return result
 end, playerDiagnostics = function()
+    if passivePlayers then return passivePlayers:diagnostics() end
     local result = {}
     for id, entry in pairs(proxies) do
         local t, m = entry.target, entry.motor
         local p = {
             entity=tostring(entry.entity), actor=entry.localKey,
             x=t and t.x, y=t and t.y, z=t and t.z, yaw=t and t.yaw,
-            mode=m and "motor" or "pose", fault=m and m.fault or entry.pose and entry.pose.fault,
+            mode=m and (m.fault and m.fault ~= "cancellation_unconfirmed" and "pose_fallback" or "motor") or "pose",
+            fault=m and m.fault or entry.pose and entry.pose.fault, motorRecoveries=entry.motorRecoveries or 0,
             motorLastFailure=m and m.lastFailure, observedSnaps=m and m.observedSnaps,
             pose=entry.pose and entry.pose:diagnostics(),
             lifecycle=entry.life and (entry.life.status == "owned" and entry.actorState or entry.life.status),
@@ -504,6 +527,39 @@ end, playerDiagnostics = function()
         p.readback = ok and x ~= nil and "available" or "unavailable"
         if p.readback == "available" then
             p.actualX, p.actualY, p.actualZ, p.actualYawDegrees = x, y, z, yaw
+            -- Independent optional observations: a missing animation helper
+            -- must not erase a valid transform or change any actuator state.
+            local sampleOk, changes, action, idle, pathFailed = pcall(function()
+                local changes = actor:CP2077Session_MotorGaitChanges()
+                local component = actor:GetMovePolicesComponent()
+                if not component then return changes end
+                return changes, tostring(component:GetCurrentLocomotionAction()),
+                    component:IsInIdle(), component:IsPathfindingFailed()
+            end)
+            if sampleOk then
+                p.gaitChangeRequests, p.locomotionAction = changes, action
+                p.policyIdle, p.pathFailed = idle, pathFailed
+            end
+            local destinationOk, dx, dy, dz, movement, blocked = pcall(function()
+                local component = actor:GetMovePolicesComponent()
+                if not component then return end
+                local destination = component:GetDestination()
+                local policies = component:GetTopPolicies()
+                return destination.x, destination.y, destination.z,
+                    policies and tostring(policies:GetMovementType()) or nil,
+                    component:IsPausedByDynamicCollision()
+            end)
+            if destinationOk then
+                p.destinationX, p.destinationY, p.destinationZ = dx, dy, dz
+                p.policyMovementType, p.collisionPaused = movement, blocked
+            end
+            local timeOk, scale = pcall(function() return actor:GetTimeDilationValue() end)
+            if timeOk then p.actorTimeScale = scale end
+            local stateOk, high, upper = pcall(function()
+                return tostring(actor:GetHighLevelStateFromBlackboard()),
+                    tostring(actor:GetUpperBodyStateFromBlackboard())
+            end)
+            if stateOk then p.highLevelState, p.upperBodyState = high, upper end
         end
         result[tostring(id)] = p
     end
