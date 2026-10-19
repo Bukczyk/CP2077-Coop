@@ -3,7 +3,7 @@ local originalIo=io
 local checks=0
 local function check(v,s)checks=checks+1;assert(v,s)end
 local function fixture(stale)
-    local f={self=2,host=1,session="1ULL",phase=4,actor="100ULL",attached=true,paused=false,moves=0,captures=0}
+    local f={self=2,host=1,session="1ULL",phase=4,actor="100ULL",attached=true,paused=false,moves=0,captures=0,hx=-807,hy=823.5}
     if stale then f.request={version=1,mode="place-observer",session="1",request="old"} end
     local events={}
     registerForEvent=function(n,fn)events[n]=fn end
@@ -14,15 +14,18 @@ local function fixture(stale)
     end}
     json={decode=function()return f.request end,encode=function(value)f.receipt=value;return "receipt"end}
     spdlog={info=function()end}
-    GetMod=function()return {startCapture=function()f.captures=f.captures+1 end}end
+    GetMod=function()return {startCapture=function()f.captures=f.captures+1 end,
+        playerDiagnostics=function()return {[tostring(f.host)]={actualX=f.hx,actualY=f.hy}} end}end
     local player={IsAttached=function()return f.attached end,GetEntityID=function()return {hash=f.actor}end}
     Game={GetPlayer=function()return player end,
         CP2077Session_Self=function()return f.self end,CP2077Session_Host=function()return f.host end,
         CP2077Session_Session=function()return f.session end,CP2077Session_Phase=function()return f.phase end,
         GetSystemRequestsHandler=function()return {IsGamePaused=function()return f.paused end}end,
         GetTeleportationFacility=function()return {Teleport=function(_,p,v,a)
-            check(p==player and v.x==-815 and v.y==817.5 and v.z==24.4042
-                and math.abs(a.yaw+18.43494882)<0.000001,"only the fixed observing actor/view, clear of HOST")
+            local alternate=(f.hx+815)^2+(f.hy-817.5)^2<2.25
+            check(p==player and v.x==(alternate and -811 or -815) and v.y==817.5 and v.z==24.4042
+                and math.abs(a.yaw-(alternate and 18.43494882 or -18.43494882))<0.000001,
+                "one of two fixed observing views, clear of HOST")
             f.moves=f.moves+1
         end}end}
     Vector4={new=function(x,y,z,w)return {x=x,y=y,z=z,w=w}end}
@@ -51,6 +54,15 @@ do
     local f=fixture()
     for i=1,20 do f:arm("nonce"..i);f:tick(5)end
     check(f.moves==16,"request count stays bounded")
+end
+
+do
+    local f=fixture();f.hx,f.hy=-815,817.5;f:arm();f:tick(5)
+    check(f.moves==1 and f.receipt.accepted==true,"same-save HOST uses the alternate fixed view")
+end
+do
+    local f=fixture();f.hx=nil;f:arm();f:tick(5)
+    check(f.moves==0 and f.receipt.reason=="host_position_unavailable","unknown HOST position cannot qualify a camera view")
 end
 io=originalIo
 print("player_locomotion_observer: PASS ("..checks.." checks; explicit single placement, no persistent movement lock)")

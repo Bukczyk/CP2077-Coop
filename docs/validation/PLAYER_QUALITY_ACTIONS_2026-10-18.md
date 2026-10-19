@@ -120,3 +120,35 @@ helpers, capture REDscript and optional weapon template probe under
 No shared/network/server file has been edited. The actual held model, matching
 grip, accepted persistent state delivery, late join/reconnect and residual
 stutter acceptance remain open. Keep the complete goal active.
+
+## Resource capture and automatic camera checkpoint, 01:06 UTC
+
+- The optional held-template probe is now loaded in both real games. An attached
+  Igla reports generic `base/weapons/weapon_root.ent`, not its visible model.
+- Read-only component capture was added and compiled against both matched
+  installs. It covers separate static and skinned component types plus rig
+  references. Resource identity must agree twice; native masks never pass
+  through Lua doubles. Optional probe failure is bounded and cannot stop core
+  crouch/aim/weapon-state capture. Local suite passed 59/59, with the latest
+  capture/observer changes also passing their focused checks.
+- Actual slot-key inputs 1/2/3 produced qualified component snapshots for
+  `Items.Preset_Igla_Pimp`, `Items.Preset_Overture_Dodger` and
+  `Items.Preset_Ticon_Gwent`. Igla has `pimp1`/`pimp1_igla` mesh appearances;
+  Overture has `rosco` plus attached `neon_1` scope components; Ticon has
+  `redplay`. Right-hand item appearance lookup returned `None` in these samples.
+  Metadata includes shadow/placeholder/reload components and does not prove
+  that every authored-enabled component is visible. No weapon model is yet
+  attached to the pure player projection.
+- `poses-fixture03-auto-camera` completed the ten poses and exact removal at
+  50.046s. The observer detected HOST at the first view and submitted the second
+  fixed view, x=-811. Frame review shows a clear actor and pose changes without
+  a manual HOST staging move. The receipt records a submitted target, not an
+  exact observed camera transform. A brief ambient NPC crossing is retained.
+- Source action checkpoint `125a007` passed all58 tests in Windows, Debian and
+  sanitizers: https://github.com/Bukczyk/CP2077-Coop/actions/runs/39182070194
+
+Private new evidence: `poses-fixture03-auto-camera`,
+`weapon-source-resources01/weapon-snapshots.json`, `before-weapon-probe`,
+`before-weapon-components`, `research/weapon-json`. Raw installed resources stay
+outside source. No protocol/server/VPS change. Exact held model/grip, connected
+state delivery/recovery and complete stutter acceptance remain open.

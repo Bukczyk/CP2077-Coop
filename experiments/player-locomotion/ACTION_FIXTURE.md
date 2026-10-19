@@ -40,6 +40,18 @@ The log is not a wire codec or proof that arbitrary locomotion states are
 classified correctly. Unsupported entity/weapon/state handling needs production
 capture policy before connection.
 
+The optional `weapon-probe/components/held_components.reds` now records bounded
+rig/static/skinned component metadata for the exact attached weapon. Its source
+capture waits for two matching resource observations and preserves native chunk
+masks as strings. Unavailable metadata cannot stop basic source-state capture.
+The live template getter returned generic `base/weapons/weapon_root.ent` for
+Igla, so that path must not be used as the visible model. Actual component
+snapshots include per-mesh appearances and attached optics. Item appearance
+lookup returned `None` in this bench even while meshes had named appearances.
+Authored `isEnabled` metadata alone does not prove that every component is
+currently rendered. Shadow meshes, placeholders and reload-only magazines
+must not be blindly cloned into a ready/aim presentation.
+
 After a controlled private installation and fresh game load:
 
 ```powershell
@@ -51,8 +63,11 @@ requests one observer placement, records per-phase submission receipts and
 requires exact fixture removal. `visual_pass` stays false until frame review.
 Keep CET's overlay open with its console hidden to prevent mouse rotation.
 Verify the camera is clear: shared saves can load HOST at the observer location.
-A single explicit staging move can clear it; do not hold a player with repeated
-teleports. Failed/obstructed recordings remain evidence, not visual passes.
+The observer now reads HOST's current root position and selects the other of
+two fixed views if HOST occupies the first. Missing position rejects placement;
+the receipt records only the submitted target, not an observed camera pose.
+Do not hold a player with repeated teleports. Failed/obstructed recordings
+remain evidence, not visual passes.
 
 Initial local recordings show crouch idle/walk and distinct ready/aim upper-body
 poses, including crouched combinations. Actual HOST inputs independently

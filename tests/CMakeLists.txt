@@ -85,6 +85,8 @@ add_test(NAME player_locomotion_observer COMMAND coop_lua_test "${CMAKE_CURRENT_
 set_tests_properties(player_locomotion_observer PROPERTIES TIMEOUT 15)
 add_test(NAME player_action_fixture COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_action_fixture_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(player_action_fixture PROPERTIES TIMEOUT 15)
+add_test(NAME player_action_capture COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_action_capture_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(player_action_capture PROPERTIES TIMEOUT 15)
 add_test(NAME movement_diagnostics COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/movement_diagnostics_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(movement_diagnostics PROPERTIES TIMEOUT 15)
 if(Python3_Interpreter_FOUND)
