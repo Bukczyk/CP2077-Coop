@@ -22,6 +22,23 @@ def utc():
     return datetime.now(timezone.utc).isoformat()
 
 
+def collect_trace(log, output):
+    """Keep bounded CET rotations; the current file alone can omit run start."""
+    parts, copies = [], {}
+    for source in [*(log.with_name(f"{log.stem}.{i}{log.suffix}") for i in (3, 2, 1)), log]:
+        if not source.is_file():
+            continue
+        # CET's current rotation limit is 5 MiB. Refuse unexpected unbounded input.
+        if source.stat().st_size > 8*1024*1024:
+            raise ValueError("Diagnostic file exceeds capture bound")
+        data = source.read_bytes()
+        target = output / ("movement.log" if source == log else f"movement.{source.stem.rsplit('.', 1)[1]}.log")
+        target.write_bytes(data)
+        copies[target.name] = hashlib.sha256(data).hexdigest()
+        parts.append(data.decode("utf-8", errors="replace"))
+    return "\n".join(parts), copies
+
+
 def analyze_trace(text, player, started, finished):
     """Require this admitted player's actual timestamped rows, not file mtime."""
     rows = []
@@ -165,13 +182,13 @@ def main():
                 process.wait(timeout=5)
         log = args.game_root / "bin/x64/plugins/cyber_engine_tweaks/mods/CP2077MovementDiagnostics/CP2077MovementDiagnostics.log"
         if log.is_file():
-            shutil.copy2(log, args.output / "movement.log")
+            trace_text, result["diagnostic_log_sha256"] = collect_trace(log, args.output)
             result["diagnostics_modified_utc"] = datetime.fromtimestamp(log.stat().st_mtime, timezone.utc).isoformat()
             result["diagnostics_fresh"] = log.stat().st_mtime >= datetime.fromisoformat(result["started_utc"]).timestamp()
             replay_log = (args.output / "replay.log").read_text(errors="replace")
             admitted = re.search(r"REPLAY_ACTIVE session=(\d+) player=(\d+)", replay_log)
             if admitted and "replay_finished_utc" in result:
-                result["trace"] = analyze_trace(log.read_text(errors="replace"), int(admitted[2]),
+                result["trace"] = analyze_trace(trace_text, int(admitted[2]),
                     datetime.fromisoformat(result["replay_started_utc"]),
                     datetime.fromisoformat(result["replay_finished_utc"]))
                 result["diagnostics_fresh"] = result["trace"]["fresh"]

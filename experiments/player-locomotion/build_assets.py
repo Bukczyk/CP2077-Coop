@@ -13,6 +13,30 @@ SETS = tuple(r'base\animations\npc\gameplay\woman_average\gang\unarmed\wa_gang_u
              for s in ('locomotion_relaxed', 'exploration_relaxed'))
 CLIPS = ('idle_stand', 'walk_0', 'sprint_0', 'jump_walk_loop', 'jump_walk_recover', 'jump_walk_startup')
 CONTROLLER = 'CP2077Coop_LocomotionController'
+# Authored reference recipe, inspected against the installed 2.31 clothed default.
+# No mesh vertices, textures, skeleton data or vanilla graphs enter our archive.
+DETAIL_RIGS = (
+    ('deformations', 'root', r'base\characters\base_entities\woman_base\deformations_rigs\woman_base_deformations.rig',
+     r'base\characters\base_entities\woman_base\deformations_rigs\woman_base_deformations.animgraph'),
+    ('breasts', 'root', r'base\characters\base_entities\woman_base\deformations_rigs\woman_base_breasts.rig',
+     r'base\characters\base_entities\woman_base\deformations_rigs\woman_base_breasts.animgraph'),
+    ('face_rig', 'root', r'base\characters\main_npc\judy\h0_001_wa_c__judy\h0_001_wa_c__judy_skeleton.rig',
+     r'base\animations\facial\_facial_graphs\player_woman_photomode_sermo.animgraph'),
+    ('hair_dangle', 'face_rig', r'base\characters\common\hair\hh_051_wa__judy\hh_051_wa__judy_dangle_skeleton.rig',
+     r'base\characters\common\hair\hh_051_wa__judy\hh_051_wa__judy_dangle.animgraph'),
+    ('dangle_setup', 'root', r'base\characters\main_npc\judy\l1_001_wa_pants__judy_dangle_skeleton.rig',
+     r'base\characters\main_npc\judy\l1_001_wa_pants__judy_dangle.animgraph'))
+DETAIL_MESHES = (
+    (r'base\characters\main_npc\judy\h0_001_wa_c__judy\h0_001_wa_c__judy.mesh', 'face_rig', 'default'),
+    (r'base\characters\main_npc\judy\h0_001_wa_c__judy\he_001_wa_c__judy.mesh', 'face_rig', 'default'),
+    (r'base\characters\main_npc\judy\h0_001_wa_c__judy\ht_001_wa_c__judy.mesh', 'face_rig', 'default'),
+    (r'base\characters\main_npc\judy\h0_001_wa_c__judy\hb_001_wa_c__judy.mesh', 'face_rig', 'default'),
+    (r'base\characters\main_npc\judy\h0_001_wa_c__judy\h0_001_wa_c__judy_cyberware.mesh', 'face_rig', 'default'),
+    (r'base\characters\main_npc\judy\t0_001_wa_body__judy.mesh', 'root', 'default'),
+    (r'base\characters\main_npc\judy\t1_001_wa_tank__judy.mesh', 'root', 'default'),
+    (r'base\characters\main_npc\judy\l1_001_wa_pants__judy.mesh', 'dangle_setup', 'default'),
+    (r'base\characters\garment\citizen_casual\feet\s1_074_shoe__platform_shoe\s1_074_wa_shoe__platform_shoe.mesh', 'root', 'default'),
+    (r'base\characters\common\hair\hh_051_wa__judy\hh_051_wa__judy.mesh', 'hair_dangle', 'custom_judy'))
 
 def walk(value):
     if isinstance(value, dict):
@@ -25,7 +49,7 @@ def cname(value): return {'$type':'CName', '$storage':'string', '$value':value}
 def resource(value, flags='Default'):
     return {'DepotPath':{'$type':'ResourcePath','$storage':'string','$value':value},'Flags':flags}
 
-def validate(entity, graph):
+def validate(entity, graph, model='proxy'):
     """Validate native wiring as well as the no-AI/no-root-motion boundary."""
     def require(value, message):
         if not value: raise ValueError(message)
@@ -33,7 +57,10 @@ def validate(entity, graph):
         require(doc['Data']['EmbeddedFiles']==[], 'No embedded resources')
     er=entity['Data']['RootChunk']; gr=graph['Data']['RootChunk']
     require(er['entity']['Data']['$type']=='entEntity','Pure entity required')
-    types=['entAnimatedComponent','entSkinnedMeshComponent','entAnimationControllerComponent']
+    require(model in ('proxy','full'), 'Unknown model profile')
+    types=(['entAnimatedComponent','entSkinnedMeshComponent','entAnimationControllerComponent'] if model=='proxy'
+        else ['entAnimatedComponent']*(1+len(DETAIL_RIGS))
+             + ['entSkinnedMeshComponent']*len(DETAIL_MESHES)+['entAnimationControllerComponent'])
     require([v['$type'] for v in er['components']]==types,'Unexpected template components')
     require([v['$type'] for v in er['compiledData']['Data']['Chunks']]==['entEntity',*types],
             'Unexpected compiled components')
@@ -51,11 +78,33 @@ def validate(entity, graph):
         return {k:resolve(x) for k,x in v.items()}
     require(resolve(er['components'])==resolve(er['compiledData']['Data']['Chunks'][1:]),
             'Template/compiled component mismatch')
-    for a,mesh,c in (er['components'],er['compiledData']['Data']['Chunks'][1:]):
+    for components in (er['components'],er['compiledData']['Data']['Chunks'][1:]):
+        a,c=components[0],components[-1]
         require(a['graph']==resource(GRAPH,'Obligatory'),'Wrong animation graph')
         require(a['rig']==resource(r'base\characters\base_entities\woman_base\woman_base.rig','Obligatory'),'Wrong rig')
-        require(mesh['mesh']==resource(r'base\characters\appearances\main_npc\proxy\judy_default\judy_default.mesh'),
-                'Wrong model reference')
+        if model=='proxy':
+            require(components[1]['mesh']==resource(r'base\characters\appearances\main_npc\proxy\judy_default\judy_default.mesh'),
+                    'Wrong model reference')
+        else:
+            require(a['name']==cname('root'),'Preserve the inspected stock root component name')
+            require(a['clientForcedLod']==0 and a['serverForcedLod']==0, 'Full animation LOD required')
+            names=[v['name']['$value'] for v in components]
+            require(len(set(names))==len(names), 'Duplicate component name')
+            rigs=components[1:1+len(DETAIL_RIGS)]
+            for rig,(name,parent,path,graph_path) in zip(rigs,DETAIL_RIGS):
+                target=a['name']['$value'] if parent=='root' else parent
+                require(rig['name']==cname(name) and rig['rig']==resource(path,'Obligatory')
+                    and rig['graph']==resource(graph_path,'Obligatory'), 'Wrong detail rig reference')
+                require(resolve(rig['parentTransform'])['bindName']==cname(target)
+                    and resolve(rig['controlBinding'])['bindName']==cname(target),'Unbound detail rig')
+            meshes=components[1+len(DETAIL_RIGS):-1]
+            for mesh,(path,parent,appearance) in zip(meshes,DETAIL_MESHES):
+                target=a['name']['$value'] if parent=='root' else parent
+                require(mesh['mesh']==resource(path) and mesh['meshAppearance']==cname(appearance),
+                    'Wrong full-detail mesh reference')
+                require(resolve(mesh['skinning'])['bindName']==cname(target)
+                    and resolve(mesh['parentTransform'])['bindName']==cname(target),'Unbound detail mesh')
+                require(mesh['forceLODLevel']==0 and mesh['isEnabled']==1,'Full mesh LOD required')
         require(resolve(a['controlBinding'])['bindName']==cname(CONTROLLER)
                 and c['name']==cname(CONTROLLER),'Controller not bound to graph')
         require(c['animDatabaseCollection']['animDatabases']==[]
@@ -98,7 +147,55 @@ def validate(entity, graph):
     require(gr['animFeatures']==[] and gr['additionalAnimDatabases']==[]
             and all(gr[k]==0 for k in ('useAnimCommands','useAnimCommandsForCrowd','useAnimStaticCommands')),
             'No gameplay graph features or command execution')
-def sources():
+def full_detail(entity):
+    er=entity['Data']['RootChunk']; animated,mesh,controller=er['components']
+    prototypes={v.get('$type'):copy.deepcopy(v) for v in walk(er)}
+    next_handle=100
+    def binding(kind,target):
+        nonlocal next_handle
+        data=copy.deepcopy(prototypes[kind]);data['bindName']=cname(target)
+        next_handle+=1
+        return {'HandleId':str(next_handle),'Data':data}
+    animated['clientForcedLod']=animated['serverForcedLod']=0
+    # Preserve the inspected stock root name as well as explicit bindings.
+    # This and the complete deformation-rig recipe are qualified together.
+    animated['name']=cname('root')
+    components=[animated]
+    main=animated['name']['$value']
+    for name,parent,rig,graph in DETAIL_RIGS:
+        target=main if parent=='root' else parent
+        part=copy.deepcopy(animated);part['name']=cname(name)
+        part['graph']=resource(graph,'Obligatory');part['rig']=resource(rig,'Obligatory')
+        part['parentTransform']=binding('entHardTransformBinding',target)
+        part['controlBinding']=binding('entAnimationControlBinding',target)
+        part['animations']['gameplay']=[];part['animations']['cinematics']=[]
+        if name=='face_rig':
+            part['facialSetup']=resource(r'base\characters\main_npc\judy\h0_001_wa_c__judy\h0_001_wa_c__judy_rigsetup.facialsetup')
+            setup=copy.deepcopy(animated['animations']['gameplay'][0])
+            setup['animSet']=resource(r'base\animations\ui\photomode\photomode_female_facial.anims')
+            part['animations']['gameplay']=[setup]
+        components.append(part)
+    for i,(path,parent,appearance) in enumerate(DETAIL_MESHES):
+        target=main if parent=='root' else parent
+        part=copy.deepcopy(mesh);part['name']=cname('CP2077Coop_DetailMesh_'+str(i))
+        part['mesh']=resource(path);part['meshAppearance']=cname(appearance)
+        part['parentTransform']=binding('entHardTransformBinding',target)
+        part['skinning']=binding('entSkinningBinding',target)
+        part['forceLODLevel']=0
+        if path.endswith('t0_001_wa_body__judy.mesh'):part['chunkMask']='18446744073709529497'
+        if path.endswith('h0_001_wa_c__judy_cyberware.mesh'):part['chunkMask']='18446744073709551606'
+        components.append(part)
+    components.append(controller)
+    for i,component in enumerate(components):component['id']=str(3500000000000000000+i)
+    er['components']=components
+    er['compiledData']['Data']['Chunks']=[copy.deepcopy(er['entity']['Data']),*copy.deepcopy(components)]
+    er['compiledData']['Data']['CruidDict']={str(i):str(component.get('id','0'))
+        for i,component in enumerate(er['compiledData']['Data']['Chunks'])}
+    refs=sorted({v['DepotPath']['$value'] for c in components for v in walk(c)
+        if isinstance(v.get('DepotPath'),dict) and v['DepotPath'].get('$storage')=='string'})
+    er['resolvedDependencies']=[resource(path,'Soft') for path in refs]
+
+def sources(model='proxy'):
     original = ROOT/'experiments/shared-encounter/assets/raw/base/cp2077coop'
     e = json.loads((original/'entities/cp2077coop_networkhumanoid_encounter.ent.json').read_text())
     g = json.loads((original/'animations/networkhumanoid_encounter.animgraph.json').read_text())
@@ -157,9 +254,10 @@ def sources():
         v=copy.deepcopy(variable_proto);v['name']=cname(name);v.update(value=0,default=0,min=0,max=maximum)
         variables['floatVariables'].append(node(v))
     gr['variables']=node(variables)
+    if model=='full':full_detail(e)
     return e,g
 
-def build(wolvenkit,output):
+def build(wolvenkit,output,model='proxy'):
     if output.exists(): raise ValueError('Choose a new output folder')
     if hashlib.sha256(wolvenkit.read_bytes()).hexdigest()!='7ae9c308da2fe003220b55ce4ca9c122b51f0701a67db1618cca3ff4f7ff6738':
         raise ValueError('Pinned official WolvenKit 9.0.1 required')
@@ -170,8 +268,8 @@ def build(wolvenkit,output):
         logs.append(r.stdout+r.stderr);(output/'build.log').write_text('\n'.join(logs),encoding='utf-8')
         if r.returncode:raise RuntimeError('WolvenKit failed; see build.log')
         return r.stdout
-    e,g=sources()
-    validate(e,g)
+    e,g=sources(model)
+    validate(e,g,model)
     input_paths=[pathlib.Path(__file__), *(
         ROOT/'experiments/shared-encounter/assets/raw/base/cp2077coop'/p
         for p in ['entities/cp2077coop_networkhumanoid_encounter.ent.json',
@@ -188,7 +286,7 @@ def build(wolvenkit,output):
     for path in (ENTITY,GRAPH):
         run('convert','serialize',stage/path.replace('\\','/'),'-o',roundtrip)
     validate(json.loads((roundtrip/'cp2077coop_player_locomotion.ent.json').read_text()),
-             json.loads((roundtrip/'player_locomotion.animgraph.json').read_text()))
+             json.loads((roundtrip/'player_locomotion.animgraph.json').read_text()),model)
     run('pack',stage,'-o',packed)
     archive=packed/(stage.name+'.archive')
     listing=run('archive',archive,'--list').strip().splitlines()
@@ -199,10 +297,12 @@ def build(wolvenkit,output):
         if hashlib.sha256(f.read_bytes()).hexdigest()!=binary_hashes[path]:raise RuntimeError('Payload mismatch')
     record={'scope':'isolated local fixture, not a release or verified animation fix',
         'archive':str(archive),'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),
-        'resources':binary_hashes,'clips':CLIPS,'bundled_vanilla_resources':[],
+        'resources':binary_hashes,'model_profile':model,'clips':CLIPS,'bundled_vanilla_resources':[],
         'source_sha256':source_hashes,'roundtrip_native_contract':'PASS'}
     (output/'manifest.json').write_text(json.dumps(record,indent=2)+'\n');print(json.dumps(record))
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--wolvenkit',required=True,type=pathlib.Path)
-    p.add_argument('--output-dir',required=True,type=pathlib.Path);a=p.parse_args();build(a.wolvenkit,a.output_dir)
+    p.add_argument('--output-dir',required=True,type=pathlib.Path)
+    p.add_argument('--model',choices=('proxy','full'),default='proxy')
+    a=p.parse_args();build(a.wolvenkit,a.output_dir,a.model)

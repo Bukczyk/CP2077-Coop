@@ -35,7 +35,9 @@ registerForEvent("onUpdate",function(dt)
         or not p or not p:IsAttached() or not system or system:IsGamePaused()~=false then
         receipt(r,false,"context_rejected");return
     end
-    Game.GetTeleportationFacility():Teleport(p,Vector4.new(-813,817.5,24.4042,1),EulerAngles.new(0,0,0))
+    -- Offset two metres and face the route centre. A HOST loaded at the old
+    -- observer spot otherwise fills the camera with its own projection.
+    Game.GetTeleportationFacility():Teleport(p,Vector4.new(-815,817.5,24.4042,1),EulerAngles.new(0,0,-18.43494882))
     GetMod("CP2077MovementDiagnostics").startCapture("observer_placed")
     receipt(r,true,"single_placement_submitted_not_observed")
 end)

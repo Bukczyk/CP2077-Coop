@@ -21,6 +21,20 @@ It never installs or activates the result.
 python experiments/player-locomotion/build_assets.py --wolvenkit '<path-to-WolvenKit.CLI.exe>' --output-dir '<new-private-output-folder>'
 ```
 
+Use `--model full` to select the inspected 2.31 clothed Judy reference recipe.
+The default remains the earlier proxy profile. Full uses separate head, eyes,
+teeth, body, clothing and hair references with matching deformation/facial/
+hair/pants rigs and explicit LOD settings. It still packs only two authored
+resources. A single full-detail skinned body without its supporting rigs was
+rejected in recorded testing because it visibly deformed. Do not substitute
+that earlier candidate or treat a native roundtrip as visual validation.
+
+Revision 6 filters gait selection only, adds walk/sprint hysteresis and holds
+short zero-motion gaps. It does not delay network/body XYZ. A source teleport
+resets the inferred ground baseline, and a sustained vertical stop can settle
+a landing on a higher ledge. These are cosmetic inference with bounded tests,
+not an authoritative ground/stance signal. Real crouch remains separate work.
+
 A controlled local install additionally requires `player_locomotion.lua`, the
 matching session entrypoint/passive controller, and the generated
 `CP2077Coop_PlayerLocomotion.archive`. Set `experimentalPlayerLocomotion=true`
@@ -57,6 +71,9 @@ teleports to freeze a camera: that invalidated actor-removal timing. The helper
 is private local test control and must never enter a distributable game-root.
 Use a route about six metres ahead and verify the camera/scene in the recording.
 NVENC recording requests 60 FPS and reports actual callback cadence separately.
+The runner retains up to three bounded CET diagnostic rotations plus the current
+log. It still validates timestamps and the exact admitted replay participant;
+a touched file or log from another player cannot satisfy freshness.
 
 Revision 4 passed recorded local flat-ground walk/sprint/reversal, two replay
 jumps, real HOST jumps, extended neutral idle, four-way turning and repeated

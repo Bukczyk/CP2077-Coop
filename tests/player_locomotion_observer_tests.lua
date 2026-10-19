@@ -21,7 +21,8 @@ local function fixture(stale)
         CP2077Session_Session=function()return f.session end,CP2077Session_Phase=function()return f.phase end,
         GetSystemRequestsHandler=function()return {IsGamePaused=function()return f.paused end}end,
         GetTeleportationFacility=function()return {Teleport=function(_,p,v,a)
-            check(p==player and v.x==-813 and v.y==817.5 and v.z==24.4042 and a.yaw==0,"only the fixed observing actor/view")
+            check(p==player and v.x==-815 and v.y==817.5 and v.z==24.4042
+                and math.abs(a.yaw+18.43494882)<0.000001,"only the fixed observing actor/view, clear of HOST")
             f.moves=f.moves+1
         end}end}
     Vector4={new=function(x,y,z,w)return {x=x,y=y,z=z,w=w}end}
