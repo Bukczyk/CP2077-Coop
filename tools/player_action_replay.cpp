@@ -41,6 +41,13 @@ constexpr auto DirectionPhases=[] {
     phases[5]={"armed_walk_left",36,Ready};
     return phases;
 }();
+constexpr auto UnarmedDirectionPhases=[] {
+    auto phases=DirectionPhases;
+    for(std::size_t i=0;i<6;++i)phases[i].values=Holstered;
+    phases[2].name="unarmed_walk_forward";phases[3].name="unarmed_walk_right";
+    phases[4].name="unarmed_walk_backward";phases[5].name="unarmed_walk_left";
+    return phases;
+}();
 constexpr auto GaitPhases=[] {
     auto phases=Phases;
     phases[1]={"gait_walk_forward",12,Ready};
@@ -116,13 +123,14 @@ void Admit(coop::SessionClient& client,coop::Transform origin) {
 int main(int argc,char** argv) {
     try {
         std::string keyPath,session,originText="-818,821.5,24.393097,-3.141592653589793";
-        bool validate=false,directions=false,gaits=false,crouches=false;
+        bool validate=false,directions=false,gaits=false,crouches=false,unarmed=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--validate-only"){validate=true;continue;}
             if(arg=="--directions"){directions=true;continue;}
             if(arg=="--gaits"){gaits=true;continue;}
             if(arg=="--crouch-directions"){crouches=true;continue;}
+            if(arg=="--unarmed-directions"){unarmed=true;continue;}
             if(i+1>=argc)throw std::runtime_error("Missing option value");
             const std::string value=argv[++i];
             if(arg=="--key-file")keyPath=value;
@@ -132,10 +140,10 @@ int main(int argc,char** argv) {
         }
         if(session.empty()||session.size()>64||session.find_first_of("\r\n\0",0,3)!=std::string::npos)
             throw std::runtime_error("Invalid session name");
-        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)>1)
+        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)+static_cast<int>(unarmed)>1)
             throw std::runtime_error("Choose one fixture trajectory");
         const auto origin=ParseOrigin(originText);
-        const auto& phases=crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
+        const auto& phases=unarmed?UnarmedDirectionPhases:crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
         for(const auto& p:phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
         if(validate) {
             std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
@@ -176,7 +184,7 @@ int main(int argc,char** argv) {
                 auto pose=origin;
                 if(crouches&&index<=5)pose=CrouchPose(origin,t);
                 else if(gaits&&index>=1&&index<=5)pose=GaitPose(origin,t);
-                else if(directions&&index>=2&&index<=5) {
+                else if((directions||unarmed)&&index>=2&&index<=5) {
                     double x=0,y=0;
                     if(index==2)y=t-12;
                     if(index==3){x=t-18;y=6;}

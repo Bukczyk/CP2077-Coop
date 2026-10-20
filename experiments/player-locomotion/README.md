@@ -49,7 +49,8 @@ of files changed after game launch do not prove those scripts were loaded.
 For the private action replay, prepare both observers and explicitly start fresh
 diagnostics first. `tools/run_player_action_capture.py` then starts both window
 recorders together, waits for both first frames and admits the92s action replay.
-Its `--mode` selects `actions`, `gaits`, `directions` or `crouch-directions`.
+Its `--mode` selects `actions`, `gaits`, `directions`, `crouch-directions` or
+`unarmed-directions`.
 Supply `--replay`, the distinct `--host-root`/`--joiner-root`, `--session`, private
 `--key-file` and a new private `--output` folder. It neither launches games nor
 positions cameras. Require `recording_complete=true` and inspect both videos;
@@ -73,8 +74,19 @@ additional qualification. The projection has no collision, damage or PvP role.
 The private action renderer additionally supports the default-off
 `experimentalPlayerDirectionalWalk` candidate. It requires matching action AND
 weapon assets built with `--directional-walk`, the separate uniquely aliased
-private standing-direction and backward-crouch caches, and experimental presentation. Fresh standing supported
-Igla walking selects four directions relative to unchanged body yaw. Standing unarmed, unsupported and stale state retain the original walk path.
+private normalized-direction and backward-crouch caches, and experimental presentation. Fresh standing supported
+Igla walking selects four directions relative to unchanged body yaw. The current
+candidate also admits coherent fresh standing holstered state. Both directional
+layers copy only nine inspected hip/leg/foot/toe bones; relaxed spine/arms remain
+the base, so the combat bank's fists must not leak into unarmed movement.
+The matched M12 candidate also normalizes the hips to the relaxed forward basis
+while preserving both source foot paths. A lower-body mask alone left the torso
+sideways because pelvis rotation still affects descendants. The new cache has
+its own path and aliases; the old isolated direction fixture remains separate.
+See the [private regeneration recipe](NORMALIZED_DIRECTION_RECIPE.md).
+Unsupported/unknown and stale state retain the original walk path. Matched graph
+and Lua are required. See
+[unarmed candidate and validation](../../docs/validation/UNARMED_DIRECTION_2026-10-20.md).
 Fresh crouch additionally selects the separately qualified backward clip and
 measured stealth stride, holding its last sample through stop fades. Sideways
 crouch retains the original forward fallback and is not qualified. Direction

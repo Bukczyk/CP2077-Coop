@@ -12,7 +12,7 @@ return {
     -- local game-derived clips required. Does not work with the v5 VPS.
     experimentalPlayerPresentation = false,
     -- PRIVATE matched directional action/weapon graphs and unique clip cache.
-    -- Standing supported-weapon directions and qualified crouch forward/back.
+    -- Masked standing supported-weapon/holstered directions and crouch forward/back.
     -- Requires the separate private backward-crouch clip, no sideways-crouch claim.
     experimentalPlayerDirectionalWalk = false,
     -- Optional locomotion experiment; keep the latest main pose path by default.

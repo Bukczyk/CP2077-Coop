@@ -1,7 +1,7 @@
 -- Local cosmetic inference from interpolated XYZ, not an authoritative action.
 -- This experimental renderer has no AI, navigation, root motion or gameplay.
 local M = {}
-M.revision = "20261020-locomotion-10"
+M.revision = "20261020-locomotion-12"
 -- Installed walk/sprint clips travel along rig +Y. Preserve network/entity
 -- heading; the earlier guessed 180-degree correction made movement face back.
 M.yawOffset = 0
@@ -12,16 +12,19 @@ function M.new(directional,smooth)
         crouchBackward=0,crouchTarget=0,crouchProgress=0,
         direction=0,previousDirection=0,directionBlend=1,directionWeight=0,directionPreviousProgress=0}
 end
-local strides={5.960565090179443,5.90962028503418,1.6499662399291992,1.7075181007385254}
+-- Corrected rifle locomotion derivatives retain these original motion distances.
+-- Their hips follow the relaxed forward reference while solved feet keep paths.
+local strides={6.4955267906188965,1.4817253351211548,1.593894124031067,1.4952208995819092}
 local function finite(v)return type(v)=="number" and v==v and math.abs(v)<math.huge end
 local function direction_step(state,pose,dt,dx,dy,speed,oldProgress)
     local a=pose.actions
-    local eligible=state.phase==1 and a and a.fresh==true and a.stance==1 and a.weapon==2
-        and a.record=="16ac119774" and (a.aim==1 or a.aim==2)
+    local supported=a and (a.weapon==1 and a.record=="0000000000" and a.aim==1
+        or a.weapon==2 and a.record=="16ac119774" and (a.aim==1 or a.aim==2))
+    local eligible=state.phase==1 and a and a.fresh==true and a.stance==1 and supported
         and finite(pose.yaw) and dt>0 and dt<=.25
     if not eligible then
-        -- Never expose the combat bank's fists when weapon/crouch/stale state
-        -- leaves this narrowly qualified experiment.
+        -- Matched graphs mask the directional bank to lower bones only. Unknown
+        -- weapon/crouch/stale state still leaves this bounded experiment.
         state.directionWeight,state.directionBlend=0,1
         state.previousDirection=state.direction
         state.directionPreviousProgress=oldProgress

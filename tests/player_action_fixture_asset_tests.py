@@ -24,7 +24,7 @@ for profile in ['rifle','shotgundual']:
         else:raise AssertionError('Directional cache/graph silently accepted without opt-in')
         bad=copy.deepcopy(dg)
         node=next(v for v in m.base.walk(bad) if v.get('$type')=='animAnimNode_SkFrameAnim'
-                  and v['animation']['$value']=='cp_coop_directional_walk_090')
+                  and v['animation']['$value']=='cp_coop_directional_neutral_walk_090')
         node['animation']=m.base.cname('walk_090')
         try:m.validate(de,bad,profile,aim,True)
         except ValueError:pass
@@ -39,6 +39,21 @@ for profile in ['rifle','shotgundual']:
         try:m.validate(de,bad,profile,aim,True)
         except ValueError:pass
         else:raise AssertionError('Backward crouch may not reset feet to ordinary idle progress')
+
+
+de,dg=m.sources('shotgundual',True,True)
+lower=[v for v in m.base.walk(dg) if v.get('$type')=='animAnimNode_BlendOverride'
+       and v['bones'][0]['transformIndex']['name']['$value']=='Hips']
+assert len(lower)==2 and all([b['transformIndex']['name']['$value'] for b in v['bones']]==list(m.LOWER_BONES) for v in lower)
+for change in (lambda n:n['bones'][0]['transformIndex'].update(name=m.base.cname('Spine')),
+               lambda n:n.update(blendAllTracks=1),lambda n:n.update(getDeltaMotionFromOverride=1)):
+    bad=copy.deepcopy(dg)
+    node=next(v for v in m.base.walk(bad) if v.get('$type')=='animAnimNode_BlendOverride'
+              and v['bones'][0]['transformIndex']['name']['$value']=='Hips')
+    change(node)
+    try:m.validate(de,bad,'shotgundual',True,True)
+    except ValueError:pass
+    else:raise AssertionError('Directional legs may not replace the relaxed upper body or root motion')
 
 
 def find(doc,kind):return next(v for v in m.base.walk(doc) if v.get('$type')==kind)

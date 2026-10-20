@@ -13,7 +13,7 @@ local function route(dx,dy,yaw,expected)
 end
 route(0,1.2,0,0);route(1.2,0,0,1);route(0,-1.2,0,2);route(-1.2,0,0,3)
 route(-1.2,0,math.pi/2,0);route(0,1.2,math.pi/2,1)
-local back=route(0,-1.2,0,2);near(back.cycles,1.2/1.6499662399291992)
+local back=route(0,-1.2,0,2);near(back.cycles,1.2/1.593894124031067)
 do
     local hold=route(1.2,0,0,1);local a=action()
     L.step(hold,pose(1.2,0,0,a),1.02)

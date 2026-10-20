@@ -27,6 +27,8 @@ UPPER_BONES = ('Spine','Spine1','Spine2','Spine3','LeftShoulder','RightShoulder'
         if finger!='Thumb' or index<3)
 UPPER_CLIPS = tuple('cp_coop_'+profile+'_'+clip for profile in ('rifle','handgunboth')
     for clip in ('ovr_idle','ovr_walk','ovr_sprint','aim_ovr_idle','aim_ovr_walk'))
+LOWER_BONES=('Hips','LeftUpLeg','RightUpLeg','LeftLeg','RightLeg',
+             'LeftFoot','RightFoot','LeftToeBase','RightToeBase')
 
 
 def profile_values(weapon_profile,directional_walk=False):
@@ -35,7 +37,7 @@ def profile_values(weapon_profile,directional_walk=False):
     # shoulder-aim clips for the iron-sight Igla while comparing shotgun ready.
     profiles=('stealth','rifle','handgunboth') if weapon_profile=='rifle' else ('stealth','shotgundual','rifle','handgunboth')
     cache=tuple(r'base\cp2077coop\private\player_'+name+'.anims' for name in profiles)
-    if directional_walk:cache += (r'base\cp2077coop\private\player_directional.anims',
+    if directional_walk:cache += (r'base\cp2077coop\private\player_directional_neutral.anims',
                                   r'base\cp2077coop\private\player_crouch_backward.anims')
     clips=tuple('cp_coop_'+weapon_profile+'_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint'))+tuple(
         'cp_coop_rifle_'+clip for clip in ('aim_ovr_idle','aim_ovr_walk'))+tuple(
@@ -119,17 +121,27 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
         return link(add({'$type':'animAnimNode_Blend2','id':4294967295,
             'minInputValue':0,'maxInputValue':1,'timeWarpingEnabled':0,'syncMethod':None,
             'firstInputNode':first,'secondInputNode':second,'weightNode':link(reader,'animFloatLink')}))
+    def lower_override(first,second,reader):
+        # Only the separately qualified forward-hip derivative may enter here.
+        # Raw combat hips rotate the baseline torso even through a lower mask.
+        # Keep the baseline spine/shoulders/arms and copy only corrected legs.
+        return link(add({'$type':'animAnimNode_BlendOverride','id':4294967295,
+            'inputNode':first,'overrideInputNode':second,'weightNode':link(reader,'animFloatLink'),
+            'bones':[{'$type':'animOverrideBlendBoneInfo','transformIndex':{'$type':'animTransformIndex','name':base.cname(name)},'weight':1}
+                     for name in LOWER_BONES],
+            'blendAllTracks':0,'blendTrackMode':'AGBT_Interpolate','tracks':[],
+            'getDeltaMotionFromOverride':0,'timeWarpingEnabled':0,'syncMethod':None,'blendMethod':None,'postProcess':None}))
     if directional_walk:
-        names=tuple('cp_coop_directional_'+n for n in ('walk_0','walk_090','walk_180','walk_270'))
+        names=tuple('cp_coop_directional_neutral_'+n for n in ('walk_0','walk_090','walk_180','walk_270'))
         selected=blend(switch([clip(n,True,direction_progress) for n in names],previous_direction),
                        switch([clip(n,True) for n in names],direction),direction_blend)
         lower_selector=data(standing['node'])
-        lower_selector['inputNodes'][1]=blend(lower_selector['inputNodes'][1],selected,direction_weight)
+        lower_selector['inputNodes'][1]=lower_override(lower_selector['inputNodes'][1],selected,direction_weight)
     # Explicit real-clock weights replace instant lower phase changes. Freeze
     # the departing gait rather than running its engine clock after a stop.
     previous_clips=[clip(name,i!=0,gait_progress) for i,name in enumerate(base.CLIPS)]
     if directional_walk:
-        previous_clips[1]=blend(previous_clips[1],
+        previous_clips[1]=lower_override(previous_clips[1],
             switch([clip(n,True,gait_progress) for n in names],gait_direction),gait_direction_weight)
     standing=blend(standing,switch(previous_clips,previous_phase),gait_weight)
     crouch_walk=clip('cp_coop_stealth_walk_0',True,crouch_progress if directional_walk else progress)
@@ -233,8 +245,10 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
             if any(value[k] for k in ('applyMotion','collectEvents','fireAnimLoopEvent','resume')):
                 raise ValueError('Gameplay/root motion forbidden')
     overrides=[v for v in definitions.values() if v.get('$type')=='animAnimNode_BlendOverride']
-    if len(overrides)!=1:raise ValueError('One upper-body overlay required')
-    overlay=overrides[0]
+    if len(overrides)!=(3 if directional_walk else 1):raise ValueError('Wrong masked overlay count')
+    upper_overlays=[v for v in overrides if [b['transformIndex']['name']['$value'] for b in v['bones']]==list(UPPER_BONES)]
+    if len(upper_overlays)!=1:raise ValueError('One upper-body overlay required')
+    overlay=upper_overlays[0]
     terminal=data(output['node']['node'])
     rotations=[v for v in definitions.values() if v.get('$type')=='animAnimNode_RotateBone']
     if len(rotations)!=(2 if aim_fixture else 0):raise ValueError('Unexpected aim rotation layer')
@@ -266,6 +280,14 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
             or value['timeWarpingEnabled'] or value['syncMethod'] not in (None,{'HandleRefId':'-1'})
             or data(value['weightNode']['node'])['variableName']!=base.cname(name)):
             raise ValueError('Wrong real-time pose blend')
+    def lower_mask(value,name):
+        if (value['$type']!='animAnimNode_BlendOverride' or value['getDeltaMotionFromOverride']
+            or value['blendAllTracks'] or value['timeWarpingEnabled'] or value['tracks']
+            or value['blendTrackMode']!='AGBT_Interpolate'
+            or [v['transformIndex']['name']['$value'] for v in value['bones']]!=list(LOWER_BONES)
+            or any(v['weight']!=1 for v in value['bones'])
+            or data(value['weightNode']['node'])['variableName']!=base.cname(name)):
+            raise ValueError('Unsafe directional lower-body mask')
     blend(stance,'cp_coop_stance');blend(upper,'cp_coop_weapon_blend')
     gait=data(stance['firstInputNode']['node']);blend(gait,'cp_coop_loco_blend_weight')
     standing=data(gait['firstInputNode']['node']);departing=data(gait['secondInputNode']['node'])
@@ -292,10 +314,10 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
     standing_clips=list(standing['inputNodes'])
     departing_clips=list(departing['inputNodes'])
     if directional_walk:
-        walking=data(standing_clips[1]['node']);blend(walking,'cp_coop_walk_direction_weight')
-        standing_clips[1]=walking['firstInputNode']
-        selected=data(walking['secondInputNode']['node']);blend(selected,'cp_coop_walk_direction_blend')
-        names=tuple('cp_coop_directional_'+n for n in ('walk_0','walk_090','walk_180','walk_270'))
+        walking=data(standing_clips[1]['node']);lower_mask(walking,'cp_coop_walk_direction_weight')
+        standing_clips[1]=walking['inputNode']
+        selected=data(walking['overrideInputNode']['node']);blend(selected,'cp_coop_walk_direction_blend')
+        names=tuple('cp_coop_directional_neutral_'+n for n in ('walk_0','walk_090','walk_180','walk_270'))
         for field,name,reader in (('firstInputNode','cp_coop_walk_previous_direction','cp_coop_walk_previous_progress'),
                                   ('secondInputNode','cp_coop_walk_direction','cp_coop_loco_progress')):
             switch=data(selected[field]['node']);selector(switch,name,4)
@@ -307,9 +329,9 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
                     or data(node['progressLink']['node'])['variableName']!=base.cname(reader)
                     or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                     raise ValueError('Directional walk must use distance samples')
-        walking=data(departing_clips[1]['node']);blend(walking,'cp_coop_loco_previous_direction_weight')
-        departing_clips[1]=walking['firstInputNode']
-        selected=data(walking['secondInputNode']['node']);selector(selected,'cp_coop_loco_previous_direction',4)
+        walking=data(departing_clips[1]['node']);lower_mask(walking,'cp_coop_loco_previous_direction_weight')
+        departing_clips[1]=walking['inputNode']
+        selected=data(walking['overrideInputNode']['node']);selector(selected,'cp_coop_loco_previous_direction',4)
         if [data(v['node'])['animation']['$value'] for v in selected['inputNodes']]!=list(names):
             raise ValueError('Wrong departing direction clips')
         for pose in selected['inputNodes']:
@@ -338,7 +360,7 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
                 raise ValueError('Wrong weapon gait progress')
             if sampled and (node['isLooped'] or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                 raise ValueError('Weapon gait must not use engine-time playback')
-    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(8 if directional_walk else 4):
+    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(6 if directional_walk else 4):
         raise ValueError('Wrong real-time blend layer count')
     nodes={k for k,v in definitions.items() if v.get('$type','').startswith('animAnimNode_')}
     init=[v.get('HandleId',v.get('HandleRefId')) for v in gr['nodesToInit']]
