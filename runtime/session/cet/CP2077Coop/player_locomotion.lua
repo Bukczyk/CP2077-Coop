@@ -1,7 +1,7 @@
 -- Local cosmetic inference from interpolated XYZ, not an authoritative action.
 -- This experimental renderer has no AI, navigation, root motion or gameplay.
 local M = {}
-M.revision = "20261020-locomotion-13"
+M.revision = "20261020-locomotion-14"
 -- Installed walk/sprint clips travel along rig +Y. Preserve network/entity
 -- heading; the earlier guessed 180-degree correction made movement face back.
 M.yawOffset = 0
@@ -212,6 +212,23 @@ end
 function M.apply(actor, state)
     -- Queue admission is not an animation receipt. Live video must verify the
     -- actual selected pose and the next-frame world/root readback separately.
+    local hash=actor:GetEntityID().hash
+    assert(type(hash)~="number","lossy locomotion actor identity")
+    local id=tostring(hash):gsub("[uUlL]+$","")
+    assert(id:match("^[1-9][0-9]*$") and (#id<20 or #id==20 and id<="18446744073709551615"),
+        "invalid locomotion actor identity")
+    assert(not state.inputActor or state.inputActor==id,"locomotion input actor changed")
+    state.inputActor,state.inputValues=id,state.inputValues or {}
+    local now=state.previous and state.previous.time
+    if finite(now) then
+        if state.inputClock and (now<state.inputClock or now-state.inputClock>.25)
+            or state.inputRepairAt and now>=state.inputRepairAt then
+            state.inputValues={}
+            state.inputRepairAt=nil
+        end
+        state.inputClock=now
+        state.inputRepairAt=state.inputRepairAt or now+1
+    end
     local inputs={{"cp_coop_loco_progress",state.progress}}
     if state.smooth then
         for _,v in ipairs({{"cp_coop_loco_previous_phase",state.previousPhase},
@@ -238,9 +255,18 @@ function M.apply(actor, state)
     end
     inputs[#inputs+1]={"cp_coop_loco_phase",state.phase}
     for _, input in ipairs(inputs) do
-        local event = assert(NewObject("entAnimInputSetterFloat"), "animation input unavailable")
-        event.key, event.value = CName.new(input[1]), input[2]
-        actor:QueueEvent(event)
+        -- Float inputs persist in this graph, as in the action adapter. Avoid
+        -- resubmitting nineteen identical events per idle actor every frame.
+        -- A once-per-real-second full repair covers unobserved graph resets;
+        -- clock gaps/rewinds repair immediately without changing graph timing.
+        -- Cache only after QueueEvent returns, so a thrown call still retries.
+        if state.inputValues[input[1]]~=input[2] then
+            local event = assert(NewObject("entAnimInputSetterFloat"), "animation input unavailable")
+            event.key, event.value = CName.new(input[1]), input[2]
+            actor:QueueEvent(event)
+            state.inputValues[input[1]]=input[2]
+            state.inputSubmissions=(state.inputSubmissions or 0)+1
+        end
     end
 end
 return M

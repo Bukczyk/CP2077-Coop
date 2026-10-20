@@ -44,7 +44,8 @@ L.step(s,pose(0,-10),3);near(s.crouchBackward,0);near(s.crouchProgress,0)
 local ordinary=L.new();L.step(ordinary,pose(0,0),0);L.step(ordinary,pose(0,-.1),.1)
 near(ordinary.cycles,.1/3.7953503131866455);near(ordinary.crouchBackward,0)
 local events={};CName={new=function(v)return v end};NewObject=function()return {}end
-L.apply({QueueEvent=function(_,e)events[#events+1]=e end},s)
+L.apply({GetEntityID=function()return {hash="9007199254740993ULL"}end,
+    QueueEvent=function(_,e)events[#events+1]=e end},s)
 assert(#events==19 and events[1].key=="cp_coop_loco_progress" and events[19].key=="cp_coop_loco_phase")
 for _,e in ipairs(events)do assert(e.value==e.value and e.value>=0 and e.value<=5,"finite graph inputs")end
 print("Crouch direction: forward/back/yaw, native stride, frozen stop, real-clock weights and fail-neutral passed")

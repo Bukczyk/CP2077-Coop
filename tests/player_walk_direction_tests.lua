@@ -56,7 +56,8 @@ for i=1,60 do
 end
 L.step(back,pose(50,50,0,a),3);assert(back.phase==0 and back.directionWeight==0,'teleport/gap resets direction eligibility')
 local events={};CName={new=function(v)return v end};NewObject=function()return {}end
-L.apply({QueueEvent=function(_,e)events[#events+1]=e end},s)
+L.apply({GetEntityID=function()return {hash="9007199254740993ULL"}end,
+    QueueEvent=function(_,e)events[#events+1]=e end},s)
 assert(#events==14 and events[1].key=='cp_coop_loco_progress' and events[14].key=='cp_coop_loco_phase')
 for _,e in ipairs(events)do assert(e.value==e.value and e.value>=0 and e.value<=3,'all cosmetic graph values finite/bounded')end
 print('Armed walk direction: four-way/yaw axes, measured stride, hysteresis, fixed pose, real-time blend and guarded fallback passed')

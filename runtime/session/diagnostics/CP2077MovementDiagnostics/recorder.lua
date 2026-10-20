@@ -25,7 +25,7 @@ local fields = {"entity", "actor", "mode", "loadedPresentationVersion", "lifecyc
     "gaitBlendEnabled", "gaitBlendWeight", "gaitBlendPreviousPhase", "gaitBlendPreviousProgress",
     "gaitBlendPreviousDirection", "gaitBlendPreviousDirectionWeight", "gaitCrouchBackward", "gaitCrouchProgress",
     "gaitCrouchDirection", "gaitCrouchSide", "gaitCrouchPreviousSide", "gaitCrouchSideBlend", "gaitCrouchSideWeight", "gaitCrouchPreviousProgress",
-    "presentationTime"}
+    "gaitInputSubmissions", "presentationTime"}
 function Recorder.new(emit, maxBytes, rateHz)
     -- Explicit bounded timing investigation only. Normal captures remain5Hz.
     assert(rateHz==nil or rateHz==5 or rateHz==30,"unsupported diagnostic rate")
