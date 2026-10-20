@@ -1,5 +1,12 @@
 # Local persistent player-action experiment
 
+Recorded follow-up: [local game validation](LOCAL_PLAYER_ACTIONS_GAME_TEST_2026-10-19.md).
+Actual input worked in both directions for stationary crouch, Igla and logical
+aim, including holster and a real reconnect. A synthetic participant separately
+qualified presentation expiry while movement continued. Crouch-walking posture,
+other weapons, accurate aim direction and full locomotion quality remain open.
+The older pending paragraphs below describe the initial9f27bd4 checkpoint.
+
 Experimental candidate owned by KyleBuildsAI for the user's request to work on
 both sides of local sync. Bukczyk remains the production backend owner. This
 implements a test candidate from PR18's direction; it does not claim an accepted

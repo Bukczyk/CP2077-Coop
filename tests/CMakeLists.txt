@@ -78,6 +78,11 @@ if(Python3_Interpreter_FOUND)
         add_test(NAME player_replay_evidence COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/player_replay_evidence_tests.py")
         set_tests_properties(player_replay_evidence PROPERTIES TIMEOUT 10)
+        if(COOP_EXPERIMENTAL_PLAYER_PRESENTATION)
+            add_test(NAME player_action_replay_input COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/player_action_replay_tests.py" "$<TARGET_FILE:coop_player_action_replay>")
+            set_tests_properties(player_action_replay_input PROPERTIES TIMEOUT 20)
+        endif()
     endif()
     add_test(NAME passive_hittable_asset COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/passive_hittable_asset_tests.py")
     add_test(NAME passive_asset_contract COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/passive_asset_contract_tests.py")
