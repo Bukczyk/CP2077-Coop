@@ -101,7 +101,7 @@ local function fixture(hashes)
         SetOrientationEuler = function(world, angles) world.angles = angles end
     }
     package.loaded.npc_static_population = nil
-    f.adapter = require("npc_static_population")
+    f.adapter = arg[2] and assert(loadfile(arg[2]))() or require("npc_static_population")
     return f
 end
 
@@ -411,8 +411,28 @@ do
     assert(original:IsAttached() == false and a.remove(id))
 end
 
--- Global registry visibility independently blocks release, including a detached
--- object, and foreign identity must never be treated as absence.
+-- A retained exact native handle can keep a detached object in the global
+-- registry after creator-owned disposal has completed. Waiting for nil here
+-- can deadlock retirement on the adapter's own reference.
+do
+    local first,second="9007199254740993ULL","9007199254740994ULL"
+    local f=fixture({first,second})
+    local controller=require("npc_runtime").new(f.adapter)
+    local source=npc("retained-detached-recreation")
+    local bubble={radius=20,centers={{x=0,y=0,z=0}}}
+    assert(controller:step("old-generation",bubble,{source}))
+    assert(not controller:reset() and f.despawnCalls==1)
+    local old=f.entries[first]
+    old.managed,old.spawning,old.spawned=false,false,false
+    old.visibleHandle,old.attached,old.globalVisible=false,false,true
+    assert(controller:step("new-generation",bubble,{source}),
+        "creator-removed exact detached global handle must not deadlock NPC recreation")
+    assert(f.spawnCalls==2 and f.mapped[source.entity]==second and f.despawnCalls==1,
+        "retirement must admit a distinct replacement without repeat disposal")
+end
+
+-- An attached global object independently blocks release. A known detached
+-- exact handle does not; foreign identity is unknown rather than absence.
 do
     local hash = "9007199254740993ULL"
     local f = fixture({hash})
@@ -421,13 +441,35 @@ do
     assert(a.bind(source.entity, id) and a.unbind(source.entity))
     assert(not a.remove(id))
     local entry = f.entries[hash]
-    entry.managed, entry.spawning, entry.spawned, entry.visibleHandle, entry.attached = false, false, false, false, false
+    entry.managed, entry.spawning, entry.spawned, entry.visibleHandle, entry.attached = false, false, false, false, true
     entry.globalVisible = true
-    assert(not a.remove(id), "global entity is still registered")
+    assert(not a.remove(id), "attached global/retained object must block replacement")
+    entry.attached = false
     entry.globalActor = {GetEntityID=function() return entityId("foreign") end, IsAttached=function() return false end}
     assert(not a.remove(id), "wrong global identity is unknown, not absent")
-    entry.globalVisible = false
+    entry.globalActor = entry.actor
     assert(a.remove(id))
+end
+
+-- Non-nil expired weak references must not be dereferenced forever, while
+-- unknown/error expiry results retain the exact owner and never permit reuse.
+do
+    local savedDefined=IsDefined
+    local hash="9007199254740993ULL"
+    local f=fixture({hash});local a,source=f.adapter,npc("expired-static-handles")
+    local id=assert(a.spawn(source));assert(a.bind(source.entity,id) and a.unbind(source.entity))
+    assert(not a.remove(id) and f.despawnCalls==1)
+    local old=f.entries[hash];local retained=old.actor
+    old.managed,old.spawning,old.spawned,old.visibleHandle,old.attached=false,false,false,false,false
+    local ghost={GetEntityID=function()error("expired native reference dereferenced")end}
+    old.globalVisible,old.globalActor=true,ghost
+    IsDefined=function(v)if v==retained or v==ghost then return nil end;return true end
+    assert(not a.remove(id),"unknown weak lifetime cannot prove removal")
+    IsDefined=function(v)if v==retained or v==ghost then error("expiry unavailable")end;return true end
+    assert(not a.remove(id),"failed weak lifetime cannot prove removal")
+    IsDefined=function(v)return v~=retained and v~=ghost end
+    assert(a.remove(id) and f.despawnCalls==1,"positive weak expiry must complete creator-owned retirement")
+    IsDefined=savedDefined
 end
 
 -- Only creator-owned, managed, spawned and attached observation completes a
