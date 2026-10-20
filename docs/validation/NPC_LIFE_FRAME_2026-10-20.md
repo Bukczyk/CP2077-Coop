@@ -69,3 +69,38 @@ These checks qualify data transfer, not live NPC reaction/death or world sync.
 Native in-game loading and player-regression video are still pending at this
 checkpoint. Preserve the tested installed M14/action4 + NPC cleanup1 recovery
 package until its matched replacement passes. Stable v0.0.37 stays unchanged.
+
+## Native loading and player regression
+
+Both actual game copies loaded the matching DLL/declarations/CET files and
+reached phase4 in the existing private32773 loopback session. All five new
+getters were called from each CET console. With no selected NPC baseline,
+Known=false and the other values are zero, not an admitted Alive/Dead result.
+The native DLL hash is
+`4112b5a9bed8e3cbd08ee34b9893543deea9fd8e2fd23fde25dd50a36558a399`.
+
+A 92-second synthetic connected player-action route recorded117 seconds in
+both real games: 2,592 HOST and2,612 JOINER original frames, completed with
+unchanged recording tools and no capture errors.404/409 complete action4
+diagnostic rows report no faults and root error <=0.000002 m. Exact actor IDs
+are HOST10851968/10852095 and JOINER10852042/10852219 across rejoin.
+Fifteen original frames per view were reviewed: expected low crouch, armed/aim,
+idle, expiry/repair and reconnect poses remain present. No sustained T-pose is
+seen in those reviewed visible samples. This is not physical-keyboard or WAN
+qualification, or proof of positive NPC life-state application.
+
+At code commit `f6ca4f7d5643ecdb0e3ec2b35c68aab17ab7016e`, all six hosted
+Windows/Debian/sanitizer jobs pass, including both protocol configurations,
+run39487402798. Raw smoke logs and video remain private. Both games/server
+were then closed normally; all13 protected settings hashes and8 installed
+task-file hashes match. No old settings or saves were restored.
+
+The complete PRIVATE recovery package is refreshed to88 payload files with a
+reproducible ZIP and explicit native/CET f6ca4f7 and NPC cleanup2f9ce9c source
+provenance. Relative to the preceding86 files, only two DLLs, two native
+declarations and two entrypoints change; two reader modules are added. No
+server, animation asset, key, save or protected configuration is replaced.
+
+Next: qualify the existing NPC life-pose fixture and then connect supported
+engine observation/application. Existing backend baseline transport is present;
+this remaining engine work is not waiting for a replacement network design.
