@@ -51,6 +51,9 @@ diagnostics first. `tools/run_player_action_capture.py` then starts both window
 recorders together, waits for both first frames and admits the92s action replay.
 Its `--mode` selects `actions`, `gaits`, `directions`, `crouch-directions`,
 `unarmed-directions`, `crouch-sides`, `crouch-diagonals` or `jump-actions`.
+Admission now waits for stable encoded frames after recorder warmup. A replay
+frame gap over250 ms or changed capture tool fails completion. See the
+[recording gate evidence](../../docs/validation/RECORDER_WARMUP_2026-10-20.md).
 Supply `--replay`, the distinct `--host-root`/`--joiner-root`, `--session`, private
 `--key-file` and a new private `--output` folder. It neither launches games nor
 positions cameras. Require `recording_complete=true` and inspect both videos;
