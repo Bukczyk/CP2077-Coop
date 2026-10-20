@@ -13,6 +13,22 @@ import statistics
 import time
 
 
+def capture_quality(times, seconds, closed=False):
+    """Separate recorder startup from gaps between actual captured frames."""
+    gaps = sorted(b-a for a,b in zip(times,times[1:]))
+    last_frame = times[-1] if times else 0
+    errors = []
+    if closed and last_frame < seconds-0.5:
+        errors.append("Window closed before capture duration")
+    if last_frame < seconds-0.5:
+        errors.append("Capture ended early or frames stopped arriving")
+    if not times or times[0] > 10:
+        errors.append("Capture startup exceeded ten seconds or no frame arrived")
+    if not gaps or max(gaps) > 2:
+        errors.append("Fresh capture frame gap exceeds two seconds")
+    return errors, gaps
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--window", required=True, help="Exact existing window title")
@@ -113,14 +129,9 @@ def main():
             except Exception as error:errors.append("Encoder finalization: "+str(error))
         frame_log.close()
     last_frame = times[-1] if times else 0
-    max_gap = max([times[0]] + [b-a for a,b in zip(times, times[1:])]) if times else None
-    gaps = sorted(b-a for a,b in zip(times,times[1:]))
-    if closed and last_frame < args.seconds - 0.5:
-        errors.append("Window closed before capture duration")
-    if last_frame < args.seconds - 0.5:
-        errors.append("Capture ended early or frames stopped arriving")
-    if max_gap is None or max_gap > 2:
-        errors.append("Fresh capture frame gap exceeds two seconds")
+    timing_errors, gaps = capture_quality(times,args.seconds,closed)
+    errors.extend(timing_errors)
+    max_gap = max(gaps) if gaps else None
     result = {"started_utc": started_utc, "window": args.window, "size": size,
         "video_started_utc":first_utc,"first_frame_elapsed":first_elapsed,
         "encoder":args.encoder,"timing":"variable frame rate, no synthetic duplicates",

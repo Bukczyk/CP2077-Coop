@@ -43,7 +43,11 @@ The published recorder logs at most 16 remotes per frame and up to 5 Hz. The too
 cannot see every animation frame, identify untracked orphan actors, measure RTT,
 prove camera/seat correctness, or award a multiplayer PASS. A byte/frame STOP is
 the end of that recording, not proof of disconnection. Multiple STARTs are separate
-recording runs, including CET reinitialization.
+recording runs, including CET reinitialization. Explicit CAPTURE headers also
+start separate runs after a STOP, so counters and motion are never compared
+across operator restarts. Current30Hz timing captures report their requested rate
+and label; legacy headers without a rate retain5Hz. A valid CAPTURE can begin a
+retained rotated log. This does not recover bytes already lost to rotation.
 
 Known diagnostic caveats in the published test build: the command-state field can
 temporarily retain the preceding handle's state; a recovered actor can retain an

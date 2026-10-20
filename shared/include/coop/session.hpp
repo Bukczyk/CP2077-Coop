@@ -48,6 +48,10 @@ struct Session {
     EntityId lastNpc=kNpcEntityBase-1;
     std::unordered_map<EntityId,NpcSpawn> npcs;
     std::unordered_map<EntityId,NpcLifeState> npcLifeStates;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    struct PresentationCache { PlayerPresentationBaseline baseline; std::uint64_t receivedAt=0; };
+    std::unordered_map<PlayerId,PresentationCache> presentations;
+#endif
     // Tombstones prevent an adoption token from resurrecting a retired NPC.
     std::unordered_map<std::uint64_t,EntityId> npcAdoptions;
 };

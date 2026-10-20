@@ -29,6 +29,10 @@ SessionServer::SessionServer(ServerConfig config,LogSink log)
     udp_=net::BindUdp(config_.bind,Port());
     if(!udp_) throw std::runtime_error("UDP bind failed");
     Log("LISTEN tcp+udp="+std::to_string(Port())+" max_players="+std::to_string(config_.limits.maxMembers));
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(config_.presentationStaleAfterMs<500 || config_.presentationStaleAfterMs>30000)
+        throw std::invalid_argument("Invalid experimental presentation freshness interval");
+#endif
 }
 GameplayLedger* SessionServer::EnsureGameplayLedger(SessionId id) {
     const auto* session=registry_.Find(id);
@@ -250,6 +254,13 @@ void SessionServer::Control(ConnectionId id,Peer& p,const Packet& packet,std::ui
                 QueueNpc(p,Packet{{m.session,m.epoch,s->host,life->second.revision,0},life->second});
         }
         QueueNpc(p,NpcSnapshotEnd{});
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        for(const auto& [owner,cached]:s->presentations) {
+            if(owner!=m.player && now>=cached.receivedAt && now-cached.receivedAt<=config_.presentationStaleAfterMs
+                && PresentationRelevant(*s,m.player,owner)) p.presentationBaseline.push_back(owner);
+        }
+        p.presentationBaseline.push_back(0); // Independent fence, never gates SessionReady/Ready.
+#endif
         if(create) p.control.Queue(serverPacket(m,SessionReady{}));
         Log(std::string(create?"CREATE_SESSION":"JOIN_SESSION")+" session="+std::to_string(m.session)
             +" player="+std::to_string(m.player)+" host="+std::to_string(s->host));
@@ -317,6 +328,15 @@ void SessionServer::State(const net::Datagram& d,std::uint64_t now) {
             || (p.endpoint && *p.endpoint!=d.sender)) { ++stats_.rejected; return; }
         if(now-p.window>=1000) { p.window=now; p.frames=0; }
         if(++p.frames > 120+config_.snapshotRate*config_.limits.maxMembers*2+config_.npcSnapshotRate*config_.limits.maxNpcs*2) { ++stats_.rejected; return; }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        if(std::holds_alternative<PlayerPresentation>(packet.payload)) {
+            const auto accepted=registry_.Receive(connection,packet,now);
+            if(accepted) { p.endpoint=d.sender; ++stats_.acceptedStates; }
+            else if(accepted.error==SessionError::Stale) ++stats_.stale;
+            else ++stats_.rejected;
+            return;
+        }
+#endif
         if(std::holds_alternative<NpcState>(packet.payload)) {
             const auto accepted=registry_.Receive(connection,packet,now);
             if(accepted) { p.endpoint=d.sender; ++stats_.acceptedStates; }
@@ -426,6 +446,10 @@ void SessionServer::NotifyRemoval(const Removal& r,std::uint64_t now) {
     }
     for(auto& [unused,p]:peers_) {
         (void)unused;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        p.presentationSent.erase(r.player);
+        std::erase(p.presentationBaseline,r.player);
+#endif
         if(!p.member || p.member->session!=r.session || p.member->player==r.player) continue;
         if(r.closed) { p.control.Queue(serverPacket(*p.member,SessionClosed{})); p.closing=now+100; }
         else {
@@ -470,5 +494,56 @@ void SessionServer::Tick(std::uint64_t now) {
         it=peers_.erase(it);
     }
     RouteStates(now); RouteNpcs(now);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    RoutePresentations(now);
+#endif
 }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+bool SessionServer::PresentationRelevant(const Session& session,PlayerId observer,PlayerId owner) const {
+    const auto room=rooms_.find(session.id);
+    if(room==rooms_.end()) return false;
+    const auto& states=room->second.states;
+    const auto watching=states.find(observer),source=states.find(owner);
+    // Same unknown-observer policy as movement's initial HOST baseline.
+    if(watching==states.end()) return owner==session.host;
+    if(source==states.end()) return false;
+    return distance(std::get<PlayerState>(watching->second.payload).transform.position,
+                    std::get<PlayerState>(source->second.payload).transform.position)<=config_.interestDistance;
+}
+void SessionServer::RoutePresentations(std::uint64_t now) {
+    for(auto& [unused,peer]:peers_) {
+        (void)unused;
+        if(!peer.member || peer.closing) continue;
+        const auto& member=*peer.member;
+        const auto* session=registry_.Find(member.session);
+        if(!session) continue;
+        while(!peer.presentationBaseline.empty() && peer.control.CanQueue()) {
+            const auto owner=peer.presentationBaseline.front();
+            if(!owner) {
+                if(!peer.control.Queue(serverPacket(member,PlayerPresentationBaselineEnd{}))) break;
+            } else {
+                const auto cached=session->presentations.find(owner);
+                if(cached!=session->presentations.end() && now>=cached->second.receivedAt
+                    && now-cached->second.receivedAt<=config_.presentationStaleAfterMs
+                    && PresentationRelevant(*session,member.player,owner)) {
+                    if(!peer.control.Queue(serverPacket(member,cached->second.baseline))) break;
+                }
+            }
+            peer.presentationBaseline.pop_front();
+        }
+        if(!peer.endpoint || session->members.at(member.player).phase!=Phase::Active) continue;
+        for(const auto& [owner,cached]:session->presentations) {
+            if(owner==member.player || now<cached.receivedAt || now-cached.receivedAt>config_.presentationStaleAfterMs
+                || !PresentationRelevant(*session,member.player,owner)) continue;
+            const auto& baseline=cached.baseline;
+            if(const auto sent=peer.presentationSent.find(owner);sent!=peer.presentationSent.end()
+                && (sent->second.sequence==baseline.sequence || now<sent->second.time || now-sent->second.time<34)) continue;
+            const Packet packet{{member.session,member.epoch,owner,baseline.sequence,0},baseline.state};
+            if(net::SendUdp(udp_,*peer.endpoint,peer.token,packet)) {
+                peer.presentationSent[owner]={baseline.sequence,now,true}; ++stats_.routed;
+            }
+        }
+    }
+}
+#endif
 } // namespace coop

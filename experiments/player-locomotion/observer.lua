@@ -30,7 +30,7 @@ registerForEvent("onUpdate",function(dt)
     seen[r.request]=true;requests=requests+1
     local p=Game.GetPlayer()
     local system=Game.GetSystemRequestsHandler()
-    if r.version~=1 or r.mode~="place-observer" or r.session~=key(Game.CP2077Session_Session())
+    if r.version~=1 or (r.mode~="place-observer" and r.mode~="place-direction-observer") or r.session~=key(Game.CP2077Session_Session())
         or Game.CP2077Session_Phase()~=4 or Game.CP2077Session_Self()==Game.CP2077Session_Host()
         or not p or not p:IsAttached() or not system or system:IsGamePaused()~=false then
         receipt(r,false,"context_rejected");return
@@ -41,9 +41,12 @@ registerForEvent("onUpdate",function(dt)
     local hx,hy=host and host.actualX,host and host.actualY
     local function finite(v)return type(v)=="number" and v==v and math.abs(v)<math.huge end
     if not finite(hx) or not finite(hy) then receipt(r,false,"host_position_unavailable");return end
-    local x,yaw=-815,-18.43494882
-    if (hx-x)^2+(hy-817.5)^2<2.25 then x,yaw=-811,18.43494882 end
-    Game.GetTeleportationFacility():Teleport(p,Vector4.new(x,817.5,24.4042,1),EulerAngles.new(0,0,yaw))
+    local x,y,yaw=-815,817.5,-18.43494882
+    if r.mode=="place-direction-observer" then
+        x,y,yaw=-810,817.5,0
+        if (hx-x)^2+(hy-y)^2<2.25 then receipt(r,false,"direction_view_occupied");return end
+    elseif (hx-x)^2+(hy-y)^2<2.25 then x,yaw=-811,18.43494882 end
+    Game.GetTeleportationFacility():Teleport(p,Vector4.new(x,y,24.4042,1),EulerAngles.new(0,0,yaw))
     GetMod("CP2077MovementDiagnostics").startCapture("observer_placed")
-    receipt(r,true,"single_placement_submitted_not_observed",{x=x,y=817.5,z=24.4042,yaw=yaw})
+    receipt(r,true,"single_placement_submitted_not_observed",{x=x,y=y,z=24.4042,yaw=yaw})
 end)

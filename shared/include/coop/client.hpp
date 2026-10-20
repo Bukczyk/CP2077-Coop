@@ -14,12 +14,20 @@ struct ClientConfig {
     std::size_t gameplayQueueCapacity=128;
     InterpolationConfig interpolation{};
     std::uint64_t timeoutMs=10000;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    unsigned presentationRepairRate=2;
+    std::uint64_t presentationStaleAfterMs=2500;
+#endif
 };
 struct RemotePlayer {
     SnapshotBuffer snapshots;
     std::uint32_t sequence=0;
     std::uint64_t sourceTime=0, receivedTime=0;
     bool initialized=false;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    struct PresentationReceipt { PlayerPresentation state; std::uint32_t sequence=0; std::uint64_t receivedAt=0; };
+    std::optional<PresentationReceipt> presentation;
+#endif
     explicit RemotePlayer(InterpolationConfig config = {}) : snapshots(config) {}
 };
 struct RemoteNpc {
@@ -41,6 +49,10 @@ public:
     void SetLocal(Transform value) { local_=value; }
     // Engine snapshots have explicit sequence/time. Automatic Tick uses the configured rate.
     bool SendLocalSnapshot(Transform value, std::uint32_t sequence, std::uint64_t sourceTime);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    bool SetLocalPresentation(PresentationValues observed);
+    bool PresentationBaselineReady() const { return presentationBaselineReady_; }
+#endif
     bool AdoptNpc(std::uint64_t adoption,std::uint64_t record,Transform transform);
     bool DespawnNpc(EntityId entity);
     bool SendNpcSnapshot(EntityId entity,Transform transform,std::uint32_t sequence,std::uint64_t time);
@@ -65,6 +77,13 @@ private:
     void State(const net::Datagram& datagram,std::uint64_t now);
     void Fail(const std::string& reason);
     bool Snapshot(PlayerId player,const Packet& packet,const Transform& value,std::uint64_t sourceTime,std::uint64_t now);
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    bool Presentation(PlayerId player,std::uint32_t sequence,const PlayerPresentation& state,std::uint64_t now);
+    std::optional<PlayerPresentation> localPresentation_;
+    std::uint32_t presentationSequence_=0;
+    std::uint64_t presentationNextAttempt_=0,presentationRepairAt_=0;
+    bool presentationDirty_=false,presentationBaselineReady_=false;
+#endif
     void Log(const std::string& message) const { if(log_) log_(message); }
     ClientConfig config_;
     LogSink log_;

@@ -1,6 +1,6 @@
 local root=assert(arg[1])
 package.path=root.."/runtime/session/cet/CP2077Coop/?.lua;"..package.path
-local L=require("player_locomotion")
+local L=arg[2] and assert(loadfile(arg[2]))() or require("player_locomotion")
 local checks=0
 local function check(v,m) checks=checks+1;assert(v,m) end
 local function pose(x,z) return {x=x,y=0,z=z or 10} end
@@ -50,7 +50,40 @@ check(not ledge.airborne and ledge.ground==10.5,"higher landing settles without 
 L.step(a,pose(2.1,100),20);check(a.phase==0 and not a.airborne,"long gap is a new baseline")
 local queued={}; NewObject=function(name) check(name=="entAnimInputSetterFloat","typed engine input");return {} end
 CName={new=function(x)return x end}
-L.apply({QueueEvent=function(_,event)queued[#queued+1]=event end},a)
+local actor={GetEntityID=function()return {hash="9007199254740993ULL"}end,
+    QueueEvent=function(_,event)queued[#queued+1]=event end}
+L.apply(actor,a)
 check(#queued==2 and queued[1].key=="cp_coop_loco_progress" and queued[2].key=="cp_coop_loco_phase",
     "progress precedes selector; queueing alone is not playback evidence")
+local before=#queued
+for i=1,600 do L.apply(actor,a) end
+check(#queued==before,"unchanged idle inputs must not be submitted every frame")
+a.progress=.25;L.apply(actor,a)
+check(#queued==before+1 and queued[#queued].key=="cp_coop_loco_progress","changed progress must still reach the graph")
+local otherActor={GetEntityID=function()return {hash="9007199254740994ULL"}end,QueueEvent=actor.QueueEvent}
+before=#queued;check(not pcall(L.apply,otherActor,a) and #queued==before,"input cache cannot cross exact actor identities")
+local numeric={GetEntityID=function()return {hash=9007199254740993}end,QueueEvent=actor.QueueEvent}
+check(not pcall(L.apply,numeric,L.new()),"lossy numeric actor identity cannot qualify an input cache")
+local retry=L.new();local accepted={};local fail=true
+local recovering={GetEntityID=actor.GetEntityID,QueueEvent=function(_,event)
+    if fail and event.key=="cp_coop_loco_phase" then error("queue temporarily unavailable") end
+    accepted[#accepted+1]=event.key
+end}
+check(not pcall(L.apply,recovering,retry) and #accepted==1,"partial queue failure must remain observable")
+fail=false;L.apply(recovering,retry)
+check(#accepted==2 and accepted[2]=="cp_coop_loco_phase","failed input must retry without replaying an admitted input")
+local full=L.new(true,true);before=#queued;L.apply(actor,full)
+local initial=#queued-before
+for i=1,600 do L.apply(actor,full) end
+check(initial==19 and #queued==before+19,"full directional idle must settle after its 19 initial inputs")
+check(full.inputSubmissions==19,"diagnostic counter must count successful queue submissions only")
+local timed=L.new(true,true);L.step(timed,pose(0),0);before=#queued;L.apply(actor,timed)
+for i=1,30 do L.step(timed,pose(0),i/60);L.apply(actor,timed) end
+check(#queued==before+19,"stable idle must not repeat inputs before its repair deadline")
+for i=31,60 do L.step(timed,pose(0),i/60);L.apply(actor,timed) end
+check(#queued==before+38,"a bounded real-second repair must refresh every graph input")
+L.step(timed,pose(0),-1);L.apply(actor,timed)
+check(#queued==before+57,"clock rewind must repair the graph once")
+L.step(timed,pose(0),-1);L.apply(actor,timed)
+check(#queued==before+57,"duplicate clock must not cause a repair burst")
 print("player_locomotion: PASS ("..checks.." checks, cosmetic inference only)")

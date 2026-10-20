@@ -17,10 +17,20 @@ local fields = {"entity", "actor", "mode", "loadedPresentationVersion", "lifecyc
     "turns", "commandKind", "commandState", "commandAge", "motorRecoveries",
     "gaitChangeRequests", "locomotionAction", "policyIdle", "pathFailed",
     "actorTimeScale", "highLevelState", "upperBodyState",
-    "destinationX", "destinationY", "destinationZ", "policyMovementType", "collisionPaused"}
-function Recorder.new(emit, maxBytes)
+    "destinationX", "destinationY", "destinationZ", "policyMovementType", "collisionPaused",
+    "actionStatus", "actionRevision", "actionSequence", "actionFresh", "actionAgeMs",
+    "actionStance", "actionWeapon", "actionRecord", "actionAim", "actionPose", "actionCrouchMotion",
+    "actionLayerVersion", "actionStanceWeight", "actionWeaponBlend", "actionPreviousPose", "actionPreviousProgress", "actionInputSubmissions",
+    "gaitDirectionEnabled", "gaitDirection", "gaitPreviousDirection", "gaitDirectionBlend", "gaitDirectionWeight", "gaitPreviousProgress",
+    "gaitBlendEnabled", "gaitBlendWeight", "gaitBlendPreviousPhase", "gaitBlendPreviousProgress",
+    "gaitBlendPreviousDirection", "gaitBlendPreviousDirectionWeight", "gaitCrouchBackward", "gaitCrouchProgress",
+    "gaitCrouchDirection", "gaitCrouchSide", "gaitCrouchPreviousSide", "gaitCrouchSideBlend", "gaitCrouchSideWeight", "gaitCrouchPreviousProgress",
+    "gaitInputSubmissions", "presentationTime"}
+function Recorder.new(emit, maxBytes, rateHz)
+    -- Explicit bounded timing investigation only. Normal captures remain5Hz.
+    assert(rateHz==nil or rateHz==5 or rateHz==30,"unsupported diagnostic rate")
     return setmetatable({emit=emit, maxBytes=maxBytes or 8*1024*1024,
-        bytes=0, clock=0, due=0, frames=0}, Recorder)
+        bytes=0, clock=0, due=0, frames=0, rateHz=rateHz or 5}, Recorder)
 end
 function Recorder:write(line)
     if self.stopped then return end
@@ -36,7 +46,7 @@ function Recorder:step(delta, capture)
     if self.stopped or type(delta) ~= "number" or delta ~= delta or delta <= 0 or delta == math.huge then return end
     self.clock = self.clock+delta
     if self.clock < self.due then return end
-    self.due = self.clock+0.2 -- 5 Hz, never catch up in a burst after a pause.
+    self.due = self.clock+1/self.rateHz -- Never catch up in a burst after a pause.
     if self.frames >= 9000 then
         self:write("[CP2077Movement] STOP reason=frame_limit")
         self.stopped = true

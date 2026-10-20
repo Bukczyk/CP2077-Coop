@@ -22,6 +22,11 @@ local function fixture(stale)
         CP2077Session_Session=function()return f.session end,CP2077Session_Phase=function()return f.phase end,
         GetSystemRequestsHandler=function()return {IsGamePaused=function()return f.paused end}end,
         GetTeleportationFacility=function()return {Teleport=function(_,p,v,a)
+            if f.request.mode=="place-direction-observer" then
+                check(p==player and v.x==-810 and v.y==817.5 and v.z==24.4042 and a.yaw==0,
+                    "one fixed distant direction-fixture view")
+                f.moves=f.moves+1;return
+            end
             local alternate=(f.hx+815)^2+(f.hy-817.5)^2<2.25
             check(p==player and v.x==(alternate and -811 or -815) and v.y==817.5 and v.z==24.4042
                 and math.abs(a.yaw-(alternate and 18.43494882 or -18.43494882))<0.000001,
@@ -59,6 +64,14 @@ end
 do
     local f=fixture();f.hx,f.hy=-815,817.5;f:arm();f:tick(5)
     check(f.moves==1 and f.receipt.accepted==true,"same-save HOST uses the alternate fixed view")
+end
+do
+    local f=fixture();f:arm();f.request.mode="place-direction-observer";f:tick(200)
+    check(f.moves==1 and f.captures==1 and f.receipt.accepted,"direction view is one placement only")
+end
+do
+    local f=fixture();f.hx,f.hy=-810,817.5;f:arm();f.request.mode="place-direction-observer";f:tick(5)
+    check(f.moves==0 and f.receipt.reason=="direction_view_occupied","occupied distant view rejected")
 end
 do
     local f=fixture();f.hx=nil;f:arm();f:tick(5)

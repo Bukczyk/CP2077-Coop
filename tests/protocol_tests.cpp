@@ -6,10 +6,13 @@ using namespace coop;
 
 void Golden() {
     const Packet packet{{0x0102030405060708ULL, 9, 10, 11, 0}, Heartbeat{}};
-    const std::vector<std::uint8_t> golden{
+    std::vector<std::uint8_t> golden{
         0x43,0x50,0x53,0x31, 0,5, 0,1, 0,0,0,0,
         1,2,3,4,5,6,7,8, 0,0,0,9, 0,0,0,10, 0,0,0,11,
         0,0,0,0,0,0,0,0};
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    golden[4]=0x80; // Private compatibility domain; the default v5 golden above remains unchanged.
+#endif
     CHECK(Encode(packet).value() == golden);
     CHECK(Decode(golden).packet.value() == packet);
     const Packet pose{{1,1,1,1,0}, PlayerPose{2, {{1.0f, -2.0f, 0}, {0,0,0}}}};

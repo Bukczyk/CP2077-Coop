@@ -9,7 +9,7 @@ namespace coop {
 namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 constexpr std::uint32_t kMagic = 0x43505331; // CPS1
-constexpr std::array<PacketType, 34> kTypes{
+constexpr std::array<PacketType, std::variant_size_v<Payload>> kTypes{
     PacketType::Heartbeat, PacketType::Leave, PacketType::Ack,
     PacketType::PlayerPose, PacketType::PlayerState, PacketType::VehicleInput,
     PacketType::VehicleState, PacketType::HitRequest, PacketType::DamageApplied,
@@ -19,8 +19,16 @@ constexpr std::array<PacketType, 34> kTypes{
     PacketType::SessionClosed, PacketType::Ready, PacketType::SessionReady,
     PacketType::NpcAdopt, PacketType::NpcSpawn, PacketType::NpcDespawn, PacketType::NpcRemoved,
     PacketType::NpcState, PacketType::NpcSnapshotEnd, PacketType::NpcDenied,
-    PacketType::GameplayIntent, PacketType::GameplayResult, PacketType::GameplayStatus, PacketType::NpcLifeState};
-constexpr std::array<std::uint32_t, 34> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8, 0, 0, 12, 21};
+    PacketType::GameplayIntent, PacketType::GameplayResult, PacketType::GameplayStatus, PacketType::NpcLifeState
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    , PacketType::PlayerPresentation, PacketType::PlayerPresentationBaseline, PacketType::PlayerPresentationBaselineEnd
+#endif
+    };
+constexpr std::array<std::uint32_t, std::variant_size_v<Payload>> kSizes{0, 0, 8, 40, 40, 20, 40, 20, 28, 37, 8, 32, 64, 0, 32, 32, 24, 2, 4, 4, 0, 0, 0, 40, 60, 8, 8, 40, 0, 8, 0, 0, 12, 21
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    , 23, 31, 0
+#endif
+    };
 struct Writer {
     std::vector<std::uint8_t> data;
     void integer(std::uint64_t value, unsigned width) {
@@ -34,6 +42,14 @@ struct Writer {
     void scalar(float value) { integer(std::bit_cast<std::uint32_t>(value), 4); }
     void vector(Vec3 v) { scalar(v.x); scalar(v.y); scalar(v.z); }
     void transform(const Transform& t) { vector(t.position); vector(t.rotation); }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    void presentation(const PlayerPresentation& p) {
+        integer(p.entity,8); integer(p.revision,4);
+        integer(static_cast<std::uint8_t>(p.values.stance),1);
+        integer(static_cast<std::uint8_t>(p.values.weapon),1);
+        integer(p.values.weaponRecord,8); integer(static_cast<std::uint8_t>(p.values.aiming),1);
+    }
+#endif
 };
 // Decode checks the exact type-specific size before any payload reads.
 struct Reader {
@@ -65,6 +81,15 @@ struct Reader {
     float scalar() { return std::bit_cast<float>(u32()); }
     Vec3 vector() { return {scalar(), scalar(), scalar()}; }
     Transform transform() { return {vector(), vector()}; }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    PlayerPresentation presentation() {
+        PlayerPresentation p; p.entity=integer(8); p.revision=u32();
+        p.values.stance=static_cast<PresentationStance>(integer(1));
+        p.values.weapon=static_cast<PresentationWeapon>(integer(1));
+        p.values.weaponRecord=integer(8); p.values.aiming=static_cast<PresentationAim>(integer(1));
+        return p;
+    }
+#endif
 };
 bool bounded(float value, float low, float high) {
     return std::isfinite(value) && value >= low && value <= high;
@@ -80,6 +105,21 @@ bool valid(EntityKind kind) {
     return kind == EntityKind::Player || kind == EntityKind::Vehicle || kind == EntityKind::World;
 }
 } // namespace
+
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+bool ValidatePresentation(const PresentationValues& p) {
+    if(p.stance>PresentationStance::Crouching || p.weapon>PresentationWeapon::DrawnUnsupported
+        || p.aiming>PresentationAim::Aiming) return false;
+    const bool record=p.weaponRecord && p.weaponRecord<=0xffffffffffULL
+        && (p.weaponRecord>>32)!=0 && static_cast<std::uint32_t>(p.weaponRecord)!=0;
+    if(p.weapon==PresentationWeapon::Holstered || p.weapon==PresentationWeapon::Unavailable) {
+        if(p.weaponRecord || p.aiming==PresentationAim::Aiming) return false;
+    } else if(p.weapon==PresentationWeapon::DrawnSupported) {
+        if(p.weaponRecord!=kPresentationIglaPimp) return false;
+    } else if(p.weaponRecord && !record) return false;
+    return true;
+}
+#endif
 
 PacketType TypeOf(const Payload& payload) { return kTypes[payload.index()]; }
 bool IsReliable(PacketType type) {
@@ -98,14 +138,29 @@ bool Validate(const Packet& packet) {
         || type == PacketType::CreateSession || type == PacketType::JoinSession || type == PacketType::Reject;
     const bool server = type == PacketType::SessionAccepted || type == PacketType::MemberJoined
         || type == PacketType::MemberLeft || type == PacketType::SessionClosed || type == PacketType::SessionReady
-        || type == PacketType::NpcSpawn || type == PacketType::NpcRemoved || type == PacketType::NpcSnapshotEnd || type == PacketType::NpcDenied || type == PacketType::GameplayStatus;
+        || type == PacketType::NpcSpawn || type == PacketType::NpcRemoved || type == PacketType::NpcSnapshotEnd || type == PacketType::NpcDenied || type == PacketType::GameplayStatus
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        || type == PacketType::PlayerPresentationBaseline || type == PacketType::PlayerPresentationBaselineEnd
+#endif
+        ;
     if (pre) { if (h.session || h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (server) { if (!h.session || !h.epoch || h.sender || h.sequence || h.event) return false; }
     else if (h.session == 0 || h.epoch == 0 || h.sender == 0) return false;
     if (IsReliable(TypeOf(packet.payload)) ? (h.event == 0 || h.sequence != 0) : h.event != 0) return false;
     if (type == PacketType::NpcLifeState && (!h.sequence || h.sequence != std::get<NpcLifeState>(packet.payload).revision)) return false;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(type==PacketType::PlayerPresentation && !h.sequence) return false;
+#endif
     return std::visit([](const auto& p) {
         using T = std::decay_t<decltype(p)>;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        if constexpr(std::is_same_v<T,PlayerPresentation>)
+            return p.entity && p.revision && ValidatePresentation(p.values);
+        else if constexpr(std::is_same_v<T,PlayerPresentationBaseline>)
+            return p.player && p.sequence && p.state.entity && p.state.revision && ValidatePresentation(p.state.values);
+        else if constexpr(std::is_same_v<T,PlayerPresentationBaselineEnd>) return true;
+        else
+#endif
         if constexpr (std::is_same_v<T, Heartbeat> || std::is_same_v<T, Leave>) return true;
         else if constexpr (std::is_same_v<T, Hello>) {
             if (p.key.size() != 64) return false;
@@ -158,6 +213,13 @@ std::optional<std::vector<std::uint8_t>> Encode(const Packet& packet) {
     w.integer(h.sequence, 4); w.integer(h.event, 8);
     std::visit([&](const auto& p) {
         using T = std::decay_t<decltype(p)>;
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+        if constexpr(std::is_same_v<T,PlayerPresentation>) w.presentation(p);
+        else if constexpr(std::is_same_v<T,PlayerPresentationBaseline>) {
+            w.integer(p.player,4); w.integer(p.sequence,4); w.presentation(p.state);
+        } else if constexpr(std::is_same_v<T,PlayerPresentationBaselineEnd>) {}
+        else
+#endif
         if constexpr (std::is_same_v<T, GameplayIntent>) { w.integer(p.kind,2); w.integer(p.body.size(),2); w.bytes(p.body); }
         else if constexpr (std::is_same_v<T, GameplayResult>) {
             w.integer(p.requester,4); w.integer(p.requestEvent,8); w.integer(p.kind,2);
@@ -225,6 +287,11 @@ DecodeResult Decode(std::span<const std::uint8_t> bytes) {
     Packet packet;
     packet.header = {r.integer(8), r.u32(), r.u32(), r.u32(), r.integer(8)};
     switch (type) {
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    case PacketType::PlayerPresentation: packet.payload=r.presentation(); break;
+    case PacketType::PlayerPresentationBaseline: { const auto player=r.u32(),sequence=r.u32(); packet.payload=PlayerPresentationBaseline{player,sequence,r.presentation()}; break; }
+    case PacketType::PlayerPresentationBaselineEnd: packet.payload=PlayerPresentationBaselineEnd{}; break;
+#endif
     case PacketType::NpcAdopt: packet.payload=NpcAdopt{r.integer(8),r.integer(8),r.transform()}; break;
     case PacketType::NpcSpawn: packet.payload=NpcSpawn{r.integer(8),r.integer(8),r.integer(8),r.transform(),r.u32(),r.integer(8)}; break;
     case PacketType::NpcDespawn: packet.payload=NpcDespawn{r.integer(8)}; break;

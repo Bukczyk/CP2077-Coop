@@ -69,9 +69,10 @@ local function observe(entry)
 end
 local Controller = {}
 Controller.__index = Controller
-function M.new(log, locomotion)
+function M.new(log, locomotion, actions, directionalWalk)
     return setmetatable({owned = {}, retryAfter = {}, scope = nil, resetting = false, log = log,
-        locomotion = locomotion and require("player_locomotion") or nil}, Controller)
+        locomotion = locomotion and require("player_locomotion") or nil, actions=actions,
+        directionalWalk=directionalWalk==true and actions~=nil}, Controller)
 end
 function Controller:status(reason)
     if self.lastStatus ~= reason then
@@ -135,7 +136,8 @@ function Controller:spawn(s, entry, pose, now)
     entry.system = s
     local ok, id = pcall(function()
         local spec = StaticEntitySpec.new()
-        spec.templatePath = ResRef.FromName(self.locomotion and self.locomotion.template or M.template)
+        spec.templatePath = ResRef.FromName(self.actions and self.actions.available() and self.actions.template
+            or self.locomotion and self.locomotion.template or M.template)
         spec.position = Vector4.new(pose.x, pose.y, pose.z, 1.0)
         spec.orientation = Quaternion.new(0.0, 0.0, math.sin(pose.yaw * 0.5), math.cos(pose.yaw * 0.5))
         spec.attached = true
@@ -173,9 +175,16 @@ function Controller:place(entry, pose, now)
         actor:SetWorldTransform(world)
         entry.target = pose
         if self.locomotion then
-            entry.presentation = entry.presentation or self.locomotion.new()
+            entry.presentation = entry.presentation or self.locomotion.new(self.directionalWalk,
+                self.actions and self.actions.available())
             self.locomotion.step(entry.presentation, pose, now)
             self.locomotion.apply(actor, entry.presentation)
+        end
+        if self.actions and self.actions.available() then
+            entry.actions=entry.actions or {}
+            -- Presentation failure must not retire or stall the moving body.
+            local applied,status=pcall(self.actions.apply,actor,entry.actions,pose.actions,entry.presentation)
+            entry.actionStatus=applied and status or "presentation_adapter_error"
         end
     end)
     -- SetWorldTransform returning is not proof of placement. The live fixture
@@ -252,7 +261,37 @@ function Controller:diagnostics()
             retirementSubmitted=entry.removing == true, seenReady=entry.seenReady == true,
             lifecycle=entry.retiring and "retiring" or "static",
             x=t and t.x,y=t and t.y,z=t and t.z,yaw=t and t.yaw,
-            speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0}
+            speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0,
+            presentationTime=m and m.previous and m.previous.time,
+            gaitInputSubmissions=m and m.inputSubmissions,
+            gaitBlendEnabled=m and m.smooth,gaitBlendWeight=m and m.phaseWeight,
+            gaitBlendPreviousPhase=m and m.previousPhase,gaitBlendPreviousProgress=m and m.previousProgress,
+            gaitBlendPreviousDirection=m and m.phaseDirection,gaitBlendPreviousDirectionWeight=m and m.phaseDirectionWeight,
+            gaitCrouchBackward=m and m.crouchBackward,gaitCrouchProgress=m and m.crouchProgress,
+            gaitCrouchDirection=m and m.crouchDirection,gaitCrouchSide=m and m.crouchSide,
+            gaitCrouchPreviousSide=m and m.crouchPreviousSide,gaitCrouchSideBlend=m and m.crouchSideBlend,
+            gaitCrouchSideWeight=m and m.crouchSideWeight,gaitCrouchPreviousProgress=m and m.crouchPreviousProgress,
+            gaitDirectionEnabled=self.directionalWalk,gaitDirection=m and m.direction,
+            gaitPreviousDirection=m and m.previousDirection,gaitDirectionBlend=m and m.directionBlend,
+            gaitDirectionWeight=m and m.directionWeight,gaitPreviousProgress=m and m.directionPreviousProgress}
+        if self.actions then
+            p.actionLayerVersion=self.actions.revision
+            p.actionStatus=entry.actionStatus
+            p.actions=t and t.actions
+            local a=p.actions
+            p.actionRevision=a and a.revision;p.actionSequence=a and a.sequence
+            p.actionFresh=a and a.fresh;p.actionAgeMs=a and a.ageMs
+            p.actionStance=a and a.stance;p.actionWeapon=a and a.weapon
+            p.actionRecord=a and a.record;p.actionAim=a and a.aim
+            local inputs=entry.actions and entry.actions.inputs or {}
+            p.actionPose=inputs.cp_coop_weapon_pose
+            p.actionCrouchMotion=inputs.cp_coop_crouch_motion
+            p.actionStanceWeight=inputs.cp_coop_stance
+            p.actionWeaponBlend=inputs.cp_coop_weapon_blend
+            p.actionPreviousPose=inputs.cp_coop_weapon_previous_pose
+            p.actionPreviousProgress=inputs.cp_coop_weapon_previous_progress
+            p.actionInputSubmissions=entry.actions and entry.actions.inputSubmissions
+        end
         local ok, actual, heading = pcall(function()
             local o = observe(entry)
             if o and o.actor and o.attached then

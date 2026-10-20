@@ -8,6 +8,13 @@ return {
     -- Private no-AI locomotion asset. Requires its separately qualified archive.
     -- XYZ-derived cosmetic pose inference is not replicated player action state.
     experimentalPlayerLocomotion = false,
+    -- Private incompatible protocol0x8005, authored weapon/body assets and
+    -- local game-derived clips required. Does not work with the v5 VPS.
+    experimentalPlayerPresentation = false,
+    -- PRIVATE matched directional action/weapon graphs and unique clip cache.
+    -- Masked standing supported-weapon/holstered directions and four-way crouch.
+    -- Requires separate private backward and side crouch caches and matched assets.
+    experimentalPlayerDirectionalWalk = false,
     -- Optional locomotion experiment; keep the latest main pose path by default.
     experimentalPlayerMovement = false,
     -- Independent per-player map markers; visual qualification still pending.

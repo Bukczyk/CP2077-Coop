@@ -11,6 +11,10 @@ SessionClient::SessionClient(ClientConfig config,LogSink log) : config_(std::mov
         || config_.vehicleSnapshotRate<1 || config_.vehicleSnapshotRate>60 || config_.timeoutMs<1000 || !config_.gameplayQueueCapacity || config_.gameplayQueueCapacity>4096)
         throw std::invalid_argument("Invalid client config");
     SnapshotBuffer validation{config_.interpolation};
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(!config_.presentationRepairRate || config_.presentationRepairRate>10 || config_.presentationStaleAfterMs<500
+        || config_.presentationStaleAfterMs>30000) throw std::invalid_argument("Invalid presentation config");
+#endif
 }
 bool SessionClient::Connect() {
     Disconnect();
@@ -27,6 +31,10 @@ bool SessionClient::Connect() {
 void SessionClient::Disconnect() {
     control_.Close(); udp_.Close(); members_.clear(); remotes_.clear(); member_={}; host_=0; token_={};
     phase_=ClientPhase::Disconnected; npcs_.clear(); npcDenied_.clear(); npcRequests_.clear(); npcReleasing_.clear(); npcEvent_=0; npcSnapshotReady_=false; gameplayEvent_=0; blockedGameplayResult_.reset(); gameplayIntents_.clear(); gameplayOutcomes_.clear(); gameplayStatuses_.clear(); lastGameplayResultEvent_=0; outboundGameplayResults_.clear(); npcLifeRevisions_.clear();
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    localPresentation_.reset(); presentationSequence_=0; presentationNextAttempt_=presentationRepairAt_=0;
+    presentationDirty_=presentationBaselineReady_=false;
+#endif
 }
 void SessionClient::Fail(const std::string& reason) { Disconnect(); phase_=ClientPhase::Failed; Log(reason); }
 void SessionClient::Control(const Packet& packet,std::uint64_t now) {
@@ -95,6 +103,12 @@ void SessionClient::Control(const Packet& packet,std::uint64_t now) {
         Log("MEMBER_JOINED player="+std::to_string(joined->player));
     } else if(const auto* left=std::get_if<MemberLeft>(&packet.payload)) {
         members_.erase(left->player); remotes_.erase(left->player); Log("MEMBER_LEFT player="+std::to_string(left->player));
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    } else if(const auto* baseline=std::get_if<PlayerPresentationBaseline>(&packet.payload)) {
+        Presentation(baseline->player,baseline->sequence,baseline->state,now);
+    } else if(std::holds_alternative<PlayerPresentationBaselineEnd>(packet.payload)) {
+        presentationBaselineReady_=true; Log("PLAYER_PRESENTATION_BASELINE_COMPLETE");
+#endif
     } else if(const auto* spawn=std::get_if<NpcSpawn>(&packet.payload)) {
         auto prior=npcs_.find(spawn->entity);
         if(prior!=npcs_.end()) {
@@ -146,6 +160,11 @@ void SessionClient::State(const net::Datagram& d,std::uint64_t now) {
     const auto& packet=*parsed.packet;
     if(packet.header.session!=member_.session || packet.header.epoch!=member_.epoch) { ++stats_.rejected; return; }
     if(std::holds_alternative<Heartbeat>(packet.payload) && packet.header.sender==member_.player) { lastReceive_=now; return; }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(const auto* state=std::get_if<PlayerPresentation>(&packet.payload)) {
+        Presentation(packet.header.sender,packet.header.sequence,*state,now); return;
+    }
+#endif
     if(const auto* state=std::get_if<NpcState>(&packet.payload)) {
         auto it=npcs_.find(state->entity);
         if(config_.host || packet.header.sender!=host_ || it==npcs_.end()) { ++stats_.rejected; return; }
@@ -285,5 +304,43 @@ std::optional<GameplayStatus> SessionClient::PopGameplayStatus() {
         SendLocalSnapshot(*local_,++sequence_,now);
         nextSnapshot_=static_cast<double>(now)+1000.0/config_.playerSnapshotRate;
     }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+    if(phase_==ClientPhase::Active && localPresentation_ && now>=presentationNextAttempt_
+        && (presentationDirty_ || now>=presentationRepairAt_)) {
+        if(++presentationSequence_==0) ++presentationSequence_;
+        const Packet packet{{member_.session,member_.epoch,member_.player,presentationSequence_,0},*localPresentation_};
+        presentationNextAttempt_=now+34; // bounded change attempts; repairs remain independently 2Hz by default
+        if(net::SendUdp(udp_,config_.server,token_,packet)) {
+            presentationDirty_=false; presentationRepairAt_=now+1000/config_.presentationRepairRate; ++stats_.sent;
+        }
+    }
+#endif
 }
+#ifdef COOP_EXPERIMENTAL_PLAYER_PRESENTATION
+bool SessionClient::SetLocalPresentation(PresentationValues observed) {
+    if(phase_!=ClientPhase::Active || !ValidatePresentation(observed)) return false;
+    if(localPresentation_ && localPresentation_->values==observed) return true;
+    auto revision=localPresentation_?localPresentation_->revision+1:1;
+    if(!revision) revision=1;
+    localPresentation_=PlayerPresentation{member_.player,revision,observed};
+    presentationDirty_=true;
+    return true;
+}
+bool SessionClient::Presentation(PlayerId player,std::uint32_t sequence,const PlayerPresentation& state,std::uint64_t now) {
+    const auto found=remotes_.find(player);
+    if((phase_!=ClientPhase::Synchronizing && phase_!=ClientPhase::Active) || player==member_.player
+        || !members_.contains(player) || found==remotes_.end() || state.entity!=player || !state.revision
+        || !sequence || !ValidatePresentation(state.values)) { ++stats_.rejected; return false; }
+    auto& prior=found->second.presentation;
+    if(prior) {
+        if(!IsNewer(sequence,prior->sequence) || now<prior->receivedAt) { ++stats_.stale; return false; }
+        if(state.revision==prior->state.revision) {
+            if(state.values!=prior->state.values || state.entity!=prior->state.entity) { ++stats_.rejected; return false; }
+        } else if(!IsNewer(state.revision,prior->state.revision)) { ++stats_.stale; return false; }
+    }
+    prior=RemotePlayer::PresentationReceipt{state,sequence,now};
+    lastReceive_=now; ++stats_.received;
+    return true;
+}
+#endif
 } // namespace coop

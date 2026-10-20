@@ -1,5 +1,15 @@
 # Isolated crouch and upper-body pose experiment
 
+Current crouch-walk follow-up:
+[recorded correction and rejected mask experiment](../../docs/validation/CROUCH_WALK_2026-10-20.md).
+`lower_crouch_walk.py` is an optional PRIVATE owned-export recipe. It lowers the
+moving pelvis and solves both legs back to the original foot paths. Generated
+GLB/anims/cache must stay outside Git and all public packages. Import with the
+inspected71-joint rig as Anims, then apply `sanitize_native` to the native JSON
+roundtrip to remove retained events/root extraction without changing pose buffers.
+Use a new output, native roundtrip/inventory/hash checks, stopped-game backups and
+fresh recorded visual qualification. This does not change the public runtime.
+
 This is game-side engine work, not connected player-action synchronization.
 The ordinary optional locomotion renderer remains separate and unchanged.
 No protocol/server/VPS or production configuration is changed by these tools.
@@ -39,6 +49,28 @@ Record identity remains native on capture, with a diagnostic string in the log.
 The log is not a wire codec or proof that arbitrary locomotion states are
 classified correctly. Unsupported entity/weapon/state handling needs production
 capture policy before connection.
+
+The optional source-pose diagnostic adds the actual root position, body yaw and
+native locomotion enum to that same game-thread callback, beside crouch, aim and
+camera angles. Exact local EntityID and SessionEntityId remain separate strings;
+session generation and epoch are rechecked after readback. A missing getter,
+non-finite value, lossy numeric ID or changing scope marks only this optional
+context unavailable. It cannot stop the essential action log. The bounded local
+observation ordinal and update clock are not packet sequence/capture timestamps,
+and these reads are not an atomic engine/network snapshot. `Default` does not
+prove ground contact. See the
+[source-pose validation](../../docs/validation/SOURCE_POSE_DIAGNOSTICS_2026-10-20.md).
+
+`ground_probe.lua` is a separate PRIVATE opt-in diagnostic, installed only as
+`zz_CP2077GroundProbe/init.lua` before a fresh game load. It registers read-only
+locomotion observers in CET onInit, checks the exact current local execution
+owner and samples the native state-interface `IsOnGround()` getter. It retains
+no interface/player handle and never applies movement or changes a callback's
+result. Missing/foreign/invalid scope does not become false. Logs stop after
+300 update-clock seconds,36,000 callbacks,1,800 rows or1 MiB, whichever comes
+first. Do not silently rearm or loop around those limits. Raw logs remain local.
+This is a verified source observation, not connected terrain correction; see
+[ground-contact evidence](../../docs/validation/GROUND_CONTACT_2026-10-20.md).
 
 The optional `weapon-probe/components/held_components.reds` now records bounded
 rig/static/skinned component metadata for the exact attached weapon. Its source
@@ -93,7 +125,7 @@ rigs and the separate private action cache remain references.
 The private `weapon_fixture.reds` hook checks the exact fixture template and
 every named part before submitting visibility changes on the game thread.
 It does not equip inventory, create a WeaponObject or run firing/AI/damage.
-The fixture request accepts only `poses` or `igla`, never an arbitrary resource.
+The fixture request accepts only `poses`, `igla` or `igla-aim`, never an arbitrary resource.
 The Igla sequence exercises hidden/ready/aim/crouched/walking/hidden transitions
 and exact actor cleanup. The ready/aim clips are a rifle-pose mount experiment;
 native serialization and submission do not prove correct shotgun grip.
@@ -106,3 +138,25 @@ python experiments/player-locomotion/record_action_fixture.py --game-root '<JOIN
 ```
 
 This remains an engine fixture, not a player-action transport or a release.
+
+## Isolated upper-body aim
+
+`build_action_fixture.py --aim-fixture --weapon-profile shotgundual` adds two
+bounded model-space `Spine2` rotations after the weapon overlay. Pitch uses X
+within +/-40 degrees and yaw uses Z within +/-45. Both default to zero, clamp,
+and use nonincremental rotation. Pelvis, feet and entity transforms are outside
+this rotation layer. This is an explicit opt-in; the ordinary graph has no aim
+rotation nodes. The weapon entity is unchanged and references the same graph.
+
+With the matched private graph installed in stopped games, the recorder accepts
+`--model igla-aim`. It tests ten five-second standing/crouched, single/combined
+angle phases and exact removal. Recordings show both signs of both axes moving
+the hands and passive weapon. This does not qualify camera-to-sight calibration,
+all torso deformation, aim delivery or actual player-input synchronization.
+
+The read-only source diagnostic now uses the player's own FPP camera component:
+`Matrix.GetDirectionVector(player:GetFPPCameraComponent():GetLocalToWorld())`.
+Actual2.31 calls and matrix RTTI were verified in game. Invalid matrices or an
+absent component return no angle, with no active-scene-camera fallback. Current
+view eligibility in vehicles, menus, scenes and photo mode remains unqualified.
+The helper never changes cameras, actors, inventory or network state.

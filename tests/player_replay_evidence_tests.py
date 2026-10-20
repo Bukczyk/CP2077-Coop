@@ -52,3 +52,17 @@ with tempfile.TemporaryDirectory() as folder:
     except ValueError:
         pass
 print("replay evidence: freshness, exact identity, invalid numeric and truncated rows passed")
+
+spec=importlib.util.spec_from_file_location("window_recorder",root/"tools/record_game_window.py")
+recorder=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(recorder)
+errors,gaps=recorder.capture_quality([2.7,2.74,2.78,2.82,3.01],3)
+assert not errors and max(gaps)<0.2, "Recorder initialization is not an inter-frame gap"
+errors,gaps=recorder.capture_quality([0.2,0.3,4.0,4.1],4)
+assert max(gaps)>3 and any('Fresh capture' in e for e in errors)
+assert any('startup' in e for e in recorder.capture_quality([11,11.1,12],12)[0])
+assert any('early' in e for e in recorder.capture_quality([0.1,0.2,0.3],4)[0])
+assert any('Window closed' in e for e in recorder.capture_quality([0.1,0.2],4,True)[0])
+assert recorder.capture_quality([],4)[0]
+assert recorder.capture_quality([4],4)[0], "One frame cannot establish fresh cadence"
+print("window capture: startup, actual stalls, early closure and missing frames distinguished")

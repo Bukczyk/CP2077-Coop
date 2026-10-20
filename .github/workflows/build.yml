@@ -43,3 +43,35 @@ jobs:
         run: cmake --build build/sanitizers --parallel
       - name: Test
         run: ctest --test-dir build/sanitizers --output-on-failure
+  presentation-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure local presentation experiment
+        run: cmake -S . -B build/presentation -A x64 -DCOOP_BUILD_PLUGIN=ON -DCOOP_BUILD_REPLAY=ON -DCOOP_EXPERIMENTAL_PLAYER_PRESENTATION=ON
+      - name: Build
+        run: cmake --build build/presentation --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build/presentation -C Release --output-on-failure
+  presentation-debian:
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - name: Toolchain
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build g++ lua5.4 python3
+      - uses: actions/checkout@v4
+      - name: Build and test local presentation experiment
+        run: |
+          cmake -S . -B build/presentation -G Ninja -DCMAKE_BUILD_TYPE=Release -DCOOP_BUILD_PLUGIN=OFF -DCOOP_BUILD_LEGACY_SERVER=OFF -DCOOP_BUILD_REPLAY=ON -DCOOP_EXPERIMENTAL_PLAYER_PRESENTATION=ON
+          cmake --build build/presentation --parallel
+          ctest --test-dir build/presentation --output-on-failure
+  presentation-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build/presentation -DCMAKE_BUILD_TYPE=Debug -DCOOP_BUILD_LEGACY_SERVER=OFF -DCOOP_SANITIZE=ON -DCOOP_BUILD_REPLAY=ON -DCOOP_EXPERIMENTAL_PLAYER_PRESENTATION=ON
+      - name: Build
+        run: cmake --build build/presentation --parallel
+      - name: Test
+        run: ctest --test-dir build/presentation --output-on-failure

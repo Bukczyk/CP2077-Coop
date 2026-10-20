@@ -8,16 +8,17 @@ end
 local recorder = Recorder.new(emit)
 local initialized = false
 local captures = 0
-local function startCapture(label)
+local function startCapture(label, rateHz)
     -- Explicit operator action only. Never silently loop around the recorder's
     -- byte/frame limits. Each capture remains bounded, as does this CET load.
     if not initialized or type(label) ~= "string" or #label == 0 or #label > 48
-        or label:find("[^%w_%-]") or captures >= 16 then return false end
+        or label:find("[^%w_%-]") or captures >= 16
+        or rateHz~=nil and rateHz~=5 and rateHz~=30 then return false end
     local clock = recorder.clock
-    recorder = Recorder.new(emit)
+    recorder = Recorder.new(emit,nil,rateHz)
     recorder.clock = clock
     captures = captures+1
-    emit("[CP2077Movement] CAPTURE label="..label.." ordinal="..captures.." max_bytes=8388608 max_frames=9000")
+    emit("[CP2077Movement] CAPTURE label="..label.." ordinal="..captures.." rate_hz="..recorder.rateHz.." max_bytes=8388608 max_frames=9000")
     return true
 end
 registerForEvent("onInit", function()
@@ -59,5 +60,5 @@ registerForEvent("onUpdate", function(delta)
 end)
 return {startCapture=startCapture, captureStatus=function()
     return {initialized=initialized, stopped=recorder.stopped == true,
-        frames=recorder.frames, bytes=recorder.bytes, captures=captures}
+        frames=recorder.frames, bytes=recorder.bytes, captures=captures, rateHz=recorder.rateHz}
 end}

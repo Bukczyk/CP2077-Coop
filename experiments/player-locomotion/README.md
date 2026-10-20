@@ -46,6 +46,26 @@ in the matched private test installs. Keep `experimentalNpcReplication=false`.
 Record exact installed hashes and the live `loadedPresentationVersion`; hashes
 of files changed after game launch do not prove those scripts were loaded.
 
+For the private action replay, prepare both observers and explicitly start fresh
+diagnostics first. `tools/run_player_action_capture.py` then starts both window
+recorders together, waits for both first frames and admits the92s action replay.
+Its `--mode` selects `actions`, `gaits`, `sprint-loop`, `directions`, `crouch-directions`,
+`unarmed-directions`, `crouch-sides`, `crouch-diagonals` or `jump-actions`.
+The bounded `sprint-loop` runs six radius3m laps at6m/s for18.85 seconds, then
+stops without a teleport. It exercises sustained rendering; the old `gaits`
+sprint lasts only about one second. Both are synthetic local state tests.
+See [recorded sustained sprint](../../docs/validation/SUSTAINED_SPRINT_2026-10-20.md).
+Admission now waits for stable encoded frames after recorder warmup. A replay
+frame gap over250 ms or changed capture tool fails completion. See the
+[recording gate evidence](../../docs/validation/RECORDER_WARMUP_2026-10-20.md).
+Supply `--replay`, the distinct `--host-root`/`--joiner-root`, `--session`, private
+`--key-file` and a new private `--output` folder. It neither launches games nor
+positions cameras. Require `recording_complete=true` and inspect both videos;
+`visual_pass=false` deliberately remains until a separate review. It copies only
+bounded diagnostic logs, never private session configuration or credential bytes.
+Do not publish the private output. See
+[timing and recording limits](../../docs/validation/ACTION_ROOT_TIMING_2026-10-20.md).
+
 Use the loopback production `SessionClient` replay and record the actual game
 window. Review jump frames, walking/sprint/reversals, stop-to-idle, facing and a
 second join after disconnect. A successful native call or green unit test is
@@ -57,6 +77,54 @@ Current inference derives cosmetic gait from horizontal movement and jumping
 from vertical displacement. It does not identify crouch, aim, weapon, climbing,
 falling or authoritative action changes. Stairs/terrain and network gaps need
 additional qualification. The projection has no collision, damage or PvP role.
+
+The private action renderer additionally supports the default-off
+`experimentalPlayerDirectionalWalk` candidate. It requires matching action AND
+weapon assets built with `--directional-walk`, the separate uniquely aliased
+private normalized-direction, backward-crouch and side-crouch caches, and experimental presentation. Fresh standing supported
+Igla walking selects four directions relative to unchanged body yaw. The current
+candidate also admits coherent fresh standing holstered state. Both directional
+layers copy only nine inspected hip/leg/foot/toe bones; relaxed spine/arms remain
+the base, so the combat bank's fists must not leak into unarmed movement.
+The matched M12 candidate also normalizes the hips to the relaxed forward basis
+while preserving both source foot paths. A lower-body mask alone left the torso
+sideways because pelvis rotation still affects descendants. The new cache has
+its own path and aliases; the old isolated direction fixture remains separate.
+See the [private regeneration recipe](NORMALIZED_DIRECTION_RECIPE.md).
+Unsupported/unknown and stale state retain the original walk path. Matched graph
+and Lua are required. See
+[unarmed candidate and validation](../../docs/validation/UNARMED_DIRECTION_2026-10-20.md).
+Fresh crouch additionally selects four body-relative directions. Forward/backward
+keep their measured stealth strides. Sideways uses the separately qualified low
+clips, a nine-bone mask and measured side strides, holding samples through stops
+and freezing the departing sample during real-clock direction blends. The
+[connected side candidate record](../../docs/validation/CONNECTED_SIDE_CROUCH_2026-10-20.md)
+separates isolated clip proof from connected and physical-input qualification. Direction
+retargeting blends over80 real milliseconds with hysteresis; short zero-motion
+samples retain the existing50ms walk hold and freeze progress. Real stops still
+select idle promptly. This is cosmetic inference, with no protocol/server or
+position/yaw authority change. See
+[recorded connected results](../../docs/validation/CONNECTED_ARMED_WALK_2026-10-20.md).
+The [diagonal regression](../../docs/validation/DIAGONAL_CROUCH_2026-10-20.md)
+crosses all four direction boundaries. [Actual control testing](../../docs/validation/ACTUAL_PLAYER_INPUTS_2026-10-20.md)
+separately verifies stationary draw/crouch/aim states and records the remaining
+camera-direction and automated-input limitations.
+The [late-crouch jump guard](../../docs/validation/CROUCH_JUMP_GUARD_2026-10-20.md)
+releases grounded crouch during inferred takeoff, flight and landing. Its before/
+after recordings preserve weapon visibility and explicitly retain jump-pose and
+terrain quality limits.
+Matched action graphs additionally support real presentation-clock80ms lower
+idle/walk/sprint transitions with a frozen departing sample. Crouch, jumps,
+stale state, teleports and long gaps clear that layer. The locomotion-only graph
+keeps its original inputs. The loopback replay's `--gaits` mode isolates walk,
+stop and sprint transitions before its existing repair/rejoin tail. See
+[qualification record](../../docs/validation/LOWER_GAIT_BLEND_2026-10-20.md).
+The direction builder's separate `--profile crouch` and private controller model
+`crouch-directions` qualify corrected forward/backward crouch clips. They require
+the existing corrected stealth cache and uniquely aliased backward cache; no
+generated animation bytes are distributable. Ordinary sideways crouch is not
+supported by this inspected bank. See
+[isolated crouch evidence](../../docs/validation/ISOLATED_BACKWARD_CROUCH_2026-10-20.md).
 The installed 2.31 relaxed walk/sprint clip motion distances are 3.795350313 m
 and 3.053292990 m per cycle, both along rig +Y. Preserve network/entity yaw.
 An earlier guessed 180-degree correction was rejected during calibration.
