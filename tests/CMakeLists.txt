@@ -108,6 +108,8 @@ add_test(NAME aim_direction COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/a
 set_tests_properties(aim_direction PROPERTIES TIMEOUT 15)
 add_test(NAME player_presentation_adapter COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_presentation_adapter_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(player_presentation_adapter PROPERTIES TIMEOUT 15)
+add_test(NAME player_presentation_timing COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_presentation_timing_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(player_presentation_timing PROPERTIES TIMEOUT 15)
 add_test(NAME movement_diagnostics COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/movement_diagnostics_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(movement_diagnostics PROPERTIES TIMEOUT 15)
 if(Python3_Interpreter_FOUND)

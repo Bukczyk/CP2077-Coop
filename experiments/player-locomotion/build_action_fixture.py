@@ -60,6 +60,9 @@ def sources(weapon_profile='rifle'):
     next_id=max(map(int,definitions))+1
     def data(h): return definitions[h.get('HandleId',h.get('HandleRefId'))]
     root=data(gr['rootNode']);output=data(root['nodes'][0]);standing=output['node']
+    # Engine switch timers slow with local world dilation. Gait selection already
+    # has hysteresis in Lua; this layer must not add seconds of pose catch-up.
+    data(standing['node'])['blendTime']=0
     proto={v.get('$type'):copy.deepcopy(v) for v in definitions.values()}
     new_nodes=[]
     def add(value,is_node=True):
@@ -80,23 +83,33 @@ def sources(weapon_profile='rifle'):
     moving=variable('cp_coop_crouch_motion',1)
     weapon=variable('cp_coop_weapon_pose',len(upper_clips)-1)
     weight=variable('cp_coop_weapon_weight',1)
+    previous_weapon=variable('cp_coop_weapon_previous_pose',len(upper_clips)-1)
+    weapon_blend=variable('cp_coop_weapon_blend',1)
+    previous_progress=variable('cp_coop_weapon_previous_progress',1)
     progress=next({'HandleRefId':k} for k,v in definitions.items()
         if v.get('$type')=='animAnimNode_FloatVariable' and v['variableName']==base.cname('cp_coop_loco_progress'))
-    def clip(name,sampled=False):
+    def clip(name,sampled=False,reader=None):
         value=copy.deepcopy(proto['animAnimNode_SkFrameAnim' if sampled else 'animAnimNode_SkAnim'])
         value['animation']=base.cname(name);value['isLooped']=int(not sampled)
         for key in ('applyMotion','collectEvents','fireAnimLoopEvent','resume'):value[key]=0
         if sampled:
-            value['progressLink']=link(progress,'animFloatLink')
+            value['progressLink']=link(reader or progress,'animFloatLink')
             for key in ('timeLink','frameLink'):value[key]={'$type':'animFloatLink','node':None}
         return link(add(value))
     def switch(inputs,reader):
         value=copy.deepcopy(proto['animAnimNode_Switch'])
-        value.update(inputNodes=inputs,numInputs=len(inputs),blendTime=0.08,weightNode=link(reader,'animFloatLink'))
+        value.update(inputNodes=inputs,numInputs=len(inputs),blendTime=0,weightNode=link(reader,'animFloatLink'))
         return link(add(value))
-    crouch=switch([clip('cp_coop_stealth_idle_low_unarmed'),clip('cp_coop_stealth_walk_0',True)],moving)
-    lower=switch([standing,crouch],stance)
-    upper=switch([clip(name) for name in upper_clips],weapon)
+    def blend(first,second,reader):
+        return link(add({'$type':'animAnimNode_Blend2','id':4294967295,
+            'minInputValue':0,'maxInputValue':1,'timeWarpingEnabled':0,'syncMethod':None,
+            'firstInputNode':first,'secondInputNode':second,'weightNode':link(reader,'animFloatLink')}))
+    crouch=blend(clip('cp_coop_stealth_idle_low_unarmed'),clip('cp_coop_stealth_walk_0',True),moving)
+    lower=blend(standing,crouch,stance)
+    def weapon_clips(reader):
+        return [clip(name,'walk' in name or 'sprint' in name,reader) for name in upper_clips]
+    upper=blend(switch(weapon_clips(previous_progress),previous_weapon),
+                switch(weapon_clips(progress),weapon),weapon_blend)
     override={'$type':'animAnimNode_BlendOverride','id':4294967295,
         'inputNode':lower,'overrideInputNode':upper,'weightNode':link(weight,'animFloatLink'),
         'bones':[{'$type':'animOverrideBlendBoneInfo','transformIndex':{'$type':'animTransformIndex','name':base.cname(name)},'weight':1}
@@ -155,7 +168,8 @@ def validate(entity,graph,weapon_profile='rifle'):
     if root['$type']!='animAnimNode_Root' or output['$type']!='animAnimNode_Output':raise ValueError('Wrong active root/output')
     variables=data(gr['variables'])['floatVariables']
     expected=[('cp_coop_loco_phase',5),('cp_coop_loco_progress',1),('cp_coop_stance',1),
-        ('cp_coop_crouch_motion',1),('cp_coop_weapon_pose',len(upper_clips)-1),('cp_coop_weapon_weight',1)]
+        ('cp_coop_crouch_motion',1),('cp_coop_weapon_pose',len(upper_clips)-1),('cp_coop_weapon_weight',1),
+        ('cp_coop_weapon_previous_pose',len(upper_clips)-1),('cp_coop_weapon_blend',1),('cp_coop_weapon_previous_progress',1)]
     if [(data(v)['name']['$value'],data(v)['max']) for v in variables]!=expected:
         raise ValueError('Wrong action variables')
     if any(data(v)[k]!=0 for v in variables for k in ('min','default','value')):
@@ -176,15 +190,35 @@ def validate(entity,graph,weapon_profile='rifle'):
     stance=data(overlay['inputNode']['node']);upper=data(overlay['overrideInputNode']['node'])
     def selector(value,name,count):
         if (value['$type']!='animAnimNode_Switch' or value['numInputs']!=count
-            or len(value['inputNodes'])!=count or abs(value['blendTime']-0.08)>0.000001
+            or len(value['inputNodes'])!=count or value['blendTime']!=0
             or data(value['weightNode']['node'])['variableName']!=base.cname(name)):
             raise ValueError('Wrong action selector')
-    selector(stance,'cp_coop_stance',2);selector(upper,'cp_coop_weapon_pose',len(upper_clips))
-    standing=data(stance['inputNodes'][0]['node']);crouch=data(stance['inputNodes'][1]['node'])
-    selector(standing,'cp_coop_loco_phase',len(base.CLIPS));selector(crouch,'cp_coop_crouch_motion',2)
-    for switch,names in [(standing,base.CLIPS),(crouch,('cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_walk_0')),(upper,upper_clips)]:
+    def blend(value,name):
+        if (value['$type']!='animAnimNode_Blend2' or value['minInputValue']!=0 or value['maxInputValue']!=1
+            or value['timeWarpingEnabled'] or value['syncMethod'] not in (None,{'HandleRefId':'-1'})
+            or data(value['weightNode']['node'])['variableName']!=base.cname(name)):
+            raise ValueError('Wrong real-time pose blend')
+    blend(stance,'cp_coop_stance');blend(upper,'cp_coop_weapon_blend')
+    standing=data(stance['firstInputNode']['node']);crouch=data(stance['secondInputNode']['node'])
+    selector(standing,'cp_coop_loco_phase',len(base.CLIPS));blend(crouch,'cp_coop_crouch_motion')
+    previous=data(upper['firstInputNode']['node']);current=data(upper['secondInputNode']['node'])
+    selector(previous,'cp_coop_weapon_previous_pose',len(upper_clips));selector(current,'cp_coop_weapon_pose',len(upper_clips))
+    if [data(crouch[k]['node'])['animation']['$value'] for k in ('firstInputNode','secondInputNode')]!=['cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_walk_0']:
+        raise ValueError('Wrong crouch animation names')
+    for switch,names in [(standing,base.CLIPS),(previous,upper_clips),(current,upper_clips)]:
         if [data(link['node'])['animation']['$value'] for link in switch['inputNodes']]!=list(names):
             raise ValueError('Wrong animation names')
+    for switch,reader in ((previous,'cp_coop_weapon_previous_progress'),(current,'cp_coop_loco_progress')):
+        for pose,name in zip(switch['inputNodes'],upper_clips):
+            node=data(pose['node']);sampled='walk' in name or 'sprint' in name
+            if node['$type']!=('animAnimNode_SkFrameAnim' if sampled else 'animAnimNode_SkAnim'):
+                raise ValueError('Weapon gait must follow distance sampling')
+            if sampled and data(node['progressLink']['node'])['variableName']!=base.cname(reader):
+                raise ValueError('Wrong weapon gait progress')
+            if sampled and (node['isLooped'] or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
+                raise ValueError('Weapon gait must not use engine-time playback')
+    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=3:
+        raise ValueError('Wrong real-time blend layer count')
     nodes={k for k,v in definitions.items() if v.get('$type','').startswith('animAnimNode_')}
     init=[v.get('HandleId',v.get('HandleRefId')) for v in gr['nodesToInit']]
     if set(init)!=nodes or len(init)!=len(nodes):raise ValueError('Incomplete graph initialization')

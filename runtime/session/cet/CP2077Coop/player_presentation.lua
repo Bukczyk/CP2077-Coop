@@ -2,6 +2,7 @@
 -- setters only on application. Never inventory, AI, damage or movement authority.
 local M={template="base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"}
 local recordKey="16ac119774"
+M.revision="20261020-realtime-actions-1"
 local sourceDue,sourceSignature,sourceSamples,sourceScope=0,nil,0,nil
 local required={
     ["base\\weapons\\firearms\\shotgun_dual\\rostovic_igla\\entities\\meshes\\w_shotgun_dual__rostovic_igla__base1_01.mesh"]={"Barrel","pimp1"},
@@ -110,6 +111,37 @@ local function input(actor,state,name,value)
     local event=assert(NewObject("entAnimInputSetterFloat"));event.key,event.value=CName.new(name),value
     actor:QueueEvent(event);state.inputs[name]=value
 end
+local function finite(value)return type(value)=="number" and value==value and math.abs(value)<math.huge end
+local function approach(value,target,amount)
+    if value<target then return math.min(target,value+amount) end
+    return math.max(target,value-amount)
+end
+local function transitions(state,stance,motion,pose,gait,reset)
+    -- CET's presentation update clock is independent of world-animation time.
+    -- Graph Blend2 weights consume these directly, with no engine blend timer.
+    local now=gait and gait.previous and gait.previous.time
+    local progress=gait and gait.progress
+    progress=finite(progress) and math.max(0,math.min(1,progress)) or 0
+    local dt=finite(now) and finite(state.renderTime) and now-state.renderTime or nil
+    if reset or not dt or dt<0 or dt>0.25 then
+        state.stanceWeight,state.motionWeight=stance,motion
+        state.poseFrom,state.poseTo,state.poseBlend=pose,pose,1
+        state.poseFromProgress=progress
+    else
+        local amount=dt/0.08
+        state.stanceWeight=approach(state.stanceWeight,stance,amount)
+        state.motionWeight=approach(state.motionWeight,motion,amount)
+        if state.poseTo~=pose then
+            -- Bound rapid retargeting to two poses, retaining the dominant one.
+            if state.poseBlend>=0.5 then
+                state.poseFrom=state.poseTo;state.poseFromProgress=state.lastProgress or progress
+            end
+            state.poseTo,state.poseBlend=pose,0
+        end
+        state.poseBlend=math.min(1,state.poseBlend+amount)
+    end
+    state.renderTime,state.lastProgress=finite(now) and now or nil,progress
+end
 function M.apply(actor,state,observed,gait)
     if not actor or actor:IsAttached()~=true then return "actor_unavailable" end
     local id=tostring(actor:GetEntityID().hash)
@@ -129,10 +161,14 @@ function M.apply(actor,state,observed,gait)
         state.visible=show
     end
     if state.visible~=show then return "visibility_unavailable" end
-    input(actor,state,"cp_coop_stance",stance)
-    input(actor,state,"cp_coop_crouch_motion",stance==1 and moving and 1 or 0)
+    transitions(state,stance,stance==1 and moving and 1 or 0,pose,gait,not fresh)
+    input(actor,state,"cp_coop_stance",state.stanceWeight)
+    input(actor,state,"cp_coop_crouch_motion",state.motionWeight)
     input(actor,state,"cp_coop_weapon_weight",show and 1 or 0)
-    input(actor,state,"cp_coop_weapon_pose",pose)
+    input(actor,state,"cp_coop_weapon_pose",state.poseTo)
+    input(actor,state,"cp_coop_weapon_previous_pose",state.poseFrom)
+    input(actor,state,"cp_coop_weapon_blend",state.poseBlend)
+    input(actor,state,"cp_coop_weapon_previous_progress",state.poseFromProgress)
     state.revision=observed and observed.revision
     if not fresh then return "owned_overrides_neutralized" end
     return (observed.stance==0 or observed.weapon==0 or observed.weapon==3 or observed.aim==0)

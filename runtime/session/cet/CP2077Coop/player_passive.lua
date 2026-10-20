@@ -261,6 +261,7 @@ function Controller:diagnostics()
             x=t and t.x,y=t and t.y,z=t and t.z,yaw=t and t.yaw,
             speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0}
         if self.actions then
+            p.actionLayerVersion=self.actions.revision
             p.actionStatus=entry.actionStatus
             p.actions=t and t.actions
             local a=p.actions
@@ -271,6 +272,10 @@ function Controller:diagnostics()
             local inputs=entry.actions and entry.actions.inputs or {}
             p.actionPose=inputs.cp_coop_weapon_pose
             p.actionCrouchMotion=inputs.cp_coop_crouch_motion
+            p.actionStanceWeight=inputs.cp_coop_stance
+            p.actionWeaponBlend=inputs.cp_coop_weapon_blend
+            p.actionPreviousPose=inputs.cp_coop_weapon_previous_pose
+            p.actionPreviousProgress=inputs.cp_coop_weapon_previous_progress
         end
         local ok, actual, heading = pcall(function()
             local o = observe(entry)

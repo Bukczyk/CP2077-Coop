@@ -100,6 +100,8 @@ registerForEvent("onUpdate",function(dt)
         actor:SetWorldTransform(world)
         input(actor,"cp_coop_stance",phase.stance);input(actor,"cp_coop_crouch_motion",phase.moving and 1 or 0)
         input(actor,"cp_coop_weapon_weight",phase.weight);input(actor,"cp_coop_weapon_pose",phase.pose)
+        input(actor,"cp_coop_weapon_previous_pose",phase.pose);input(actor,"cp_coop_weapon_blend",1)
+        input(actor,"cp_coop_weapon_previous_progress",0)
         input(actor,"cp_coop_loco_phase",0);input(actor,"cp_coop_loco_progress",(elapsed*0.6)%1)
         return
     end
