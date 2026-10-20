@@ -5,8 +5,11 @@ p=Path(__file__).resolve().parents[1]/'experiments/player-locomotion/build_direc
 s=importlib.util.spec_from_file_location('direction_fixture',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 e,g=m.sources();m.validate(e,g)
 ce,cg=m.sources('crouch');m.validate(ce,cg,'crouch')
+se,sg=m.sources('crouch-side');m.validate(se,sg,'crouch-side')
+assert m.recipe('crouch-side')[0]!=m.recipe('crouch')[0]
+assert m.recipe('crouch-side')[2]!=m.recipe('crouch')[2]
 assert len(set(m.recipe('crouch')[3]))==3 and m.recipe('crouch')[2]!=m.CACHE
-for entity,graph,profile in [(ce,cg,'standing'),(e,g,'crouch')]:
+for entity,graph,profile in [(ce,cg,'standing'),(e,g,'crouch'),(se,sg,'crouch'),(ce,cg,'crouch-side')]:
     try:m.validate(entity,graph,profile)
     except ValueError:pass
     else:raise AssertionError('Mixed standing/crouch recipe accepted')

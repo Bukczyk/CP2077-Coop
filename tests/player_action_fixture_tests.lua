@@ -34,6 +34,7 @@ local function fixture(stale)
             check(spec.templatePath==((f.request.model=="igla" or f.request.model=="igla-aim") and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
                 or f.request.model=="directions" and "base\\cp2077coop\\entities\\player_direction_fixture.ent"
                 or f.request.model=="crouch-directions" and "base\\cp2077coop\\entities\\player_crouch_direction_fixture.ent"
+                or f.request.model=="crouch-sides" and "base\\cp2077coop\\entities\\player_crouch_side_fixture.ent"
                 or "base\\cp2077coop\\entities\\player_actions_fixture.ent"),"fixed fixture only")
             f.spawns=f.spawns+1;f.managed=true;f.spawning=true;return {hash="100ULL"}
         end,GetEntity=function()return f.spawned and actor or nil end,
@@ -128,6 +129,21 @@ do
     end
     check(#f.visibility==0 and f.spawns==1 and f.despawns==1 and f.receipt.status=="removed",
         "crouch direction fixture preserves exact cleanup without weapon hooks")
+end
+
+do
+    local f=fixture();f:arm();f.request.model="crouch-sides";f:tick();f:attach();f:tick(650)
+    local seen={}
+    for _,event in ipairs(f.inputs)do
+        if event.key=="cp_coop_loco_phase" then seen[event.value]=true end
+        if event.key=="cp_coop_loco_progress" then check(event.value>=0 and event.value<1,"bounded side crouch phase")end
+    end
+    check(seen[0] and seen[1] and seen[2] and not seen[3],"side crouch fixture isolates both directions and idle")
+    for _,world in ipairs(f.transforms)do
+        check(world.position.x>=-813.00001 and world.position.x<=-810.49999 and world.position.y==821.5,"bounded sideways crouch route")
+        check(world.position.z==24.4042 and world.angles.yaw==0,"sideways legs cannot change body heading/height")
+    end
+    check(#f.visibility==0 and f.spawns==1 and f.despawns==1 and f.receipt.status=="removed","side crouch exact cleanup")
 end
 
 do

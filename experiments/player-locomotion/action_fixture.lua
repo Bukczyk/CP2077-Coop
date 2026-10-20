@@ -51,7 +51,14 @@ local crouchDirectionPhases={
     {name="crouch_direction_backward",gait=2,x=-813,y=824.5,vy=-.6,stride=3.992504835128784},
     {name="crouch_direction_backward_stop",gait=0,x=-813,y=821.5},
     {name="crouch_direction_forward_return",gait=1,x=-813,y=821.5,vy=.6,stride=6.249844074249268}}
-local function directionModel(model)return model=="directions" or model=="crouch-directions" end
+local crouchSidePhases={
+    {name="crouch_side_idle",gait=0,x=-813,y=821.5},
+    {name="crouch_side_right",gait=1,x=-813,y=821.5,vx=.5,stride=1.4817253351211548},
+    {name="crouch_side_right_stop",gait=0,x=-810.5,y=821.5},
+    {name="crouch_side_left",gait=2,x=-810.5,y=821.5,vx=-.5,stride=1.4952208995819092},
+    {name="crouch_side_left_stop",gait=0,x=-813,y=821.5},
+    {name="crouch_side_right_return",gait=1,x=-813,y=821.5,vx=.5,stride=1.4817253351211548}}
+local function directionModel(model)return model=="directions" or model=="crouch-directions" or model=="crouch-sides" end
 local function key(v)return tostring(v):gsub("[uUlL]+$","") end
 local function read()
     local f=io.open("action-request.json","r");if not f then return end
@@ -111,7 +118,8 @@ registerForEvent("onUpdate",function(dt)
         if key(actor:GetEntityID().hash)~=key(active.id.hash) then error("fixture identity changed") end
         active.actor,active.seenReady=actor,true;active.started=active.started or clock
         local elapsed=clock-active.started;local index=math.floor(elapsed/5)+1
-        local sequence=active.model=="crouch-directions" and crouchDirectionPhases
+        local sequence=active.model=="crouch-sides" and crouchSidePhases
+            or active.model=="crouch-directions" and crouchDirectionPhases
             or active.model=="directions" and directionPhases or active.model=="igla-aim" and aimPhases
             or active.model=="igla" and weaponPhases or phases
         if index>#sequence then active.finishing=true;report("poses_submitted","visual review required");cleanup();return end
@@ -159,6 +167,7 @@ registerForEvent("onUpdate",function(dt)
     spec.templatePath=ResRef.FromName(weaponModel(active.model) and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
         or active.model=="directions" and "base\\cp2077coop\\entities\\player_direction_fixture.ent"
         or active.model=="crouch-directions" and "base\\cp2077coop\\entities\\player_crouch_direction_fixture.ent"
+        or active.model=="crouch-sides" and "base\\cp2077coop\\entities\\player_crouch_side_fixture.ent"
         or "base\\cp2077coop\\entities\\player_actions_fixture.ent")
     spec.position=Vector4.new(-813,821.5,24.4042,1);spec.orientation=Quaternion.new(0,0,1,0)
     spec.attached=true;spec.tags={CName.new("CP2077Coop.PrivateActionFixture"),CName.new(r.request)}

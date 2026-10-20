@@ -19,6 +19,13 @@ DISTANCES=(0,5.960565090179443,5.90962028503418,1.6499662399291992,1.70751810073
 
 def recipe(profile):
     if profile=='standing':return ENTITY,GRAPH,CACHE,CLIPS,DISTANCES,'CP2077Coop_DirectionFixture'
+    if profile=='crouch-side':
+        idle='cp_coop_stealth_idle_low_unarmed'
+        return (r'base\cp2077coop\entities\player_crouch_side_fixture.ent',
+            r'base\cp2077coop\animations\player_crouch_side_fixture.animgraph',
+            (r'base\cp2077coop\private\player_stealth.anims',r'base\cp2077coop\private\player_crouch_side.anims'),
+            (idle,'cp_coop_crouch_side_walk_090','cp_coop_crouch_side_walk_270',idle,idle,idle),
+            (0,1.4817253351211548,1.4952208995819092,0,0,0),'CP2077Coop_CrouchSideFixture')
     if profile!='crouch':raise ValueError('Unknown isolated direction profile')
     idle='cp_coop_stealth_idle_low_unarmed'
     return (r'base\cp2077coop\entities\player_crouch_direction_fixture.ent',
@@ -104,5 +111,5 @@ def build(wolvenkit,output,profile='standing'):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--wolvenkit',required=True,type=Path)
-    p.add_argument('--output',required=True,type=Path);p.add_argument('--profile',choices=('standing','crouch'),default='standing')
+    p.add_argument('--output',required=True,type=Path);p.add_argument('--profile',choices=('standing','crouch','crouch-side'),default='standing')
     a=p.parse_args();build(a.wolvenkit,a.output,a.profile)

@@ -20,7 +20,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--game-root',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
-    parser.add_argument('--model',choices=('poses','igla','igla-aim','directions'),default='poses')
+    parser.add_argument('--model',choices=('poses','igla','igla-aim','directions','crouch-directions','crouch-sides'),default='poses')
     args=parser.parse_args()
     if args.output.exists():parser.error('Choose a new private output folder')
     mods=args.game_root/'bin/x64/plugins/cyber_engine_tweaks/mods'
@@ -44,6 +44,10 @@ def main():
     if args.model=='directions':
         files['authored_archive']=args.game_root/'archive/pc/mod/CP2077Coop_DirectionFixture.archive'
         files['private_cache']=args.game_root/'archive/pc/mod/PRIVATE_DO_NOT_DISTRIBUTE_DirectionClips.archive'
+    if args.model in ('crouch-directions','crouch-sides'):
+        sides=args.model=='crouch-sides'
+        files['authored_archive']=args.game_root/'archive/pc/mod'/('CP2077Coop_CrouchSideFixture.archive' if sides else 'CP2077Coop_CrouchDirectionFixture.archive')
+        files['additional_private_cache']=args.game_root/'archive/pc/mod'/('PRIVATE_DO_NOT_DISTRIBUTE_CrouchSideClips.archive' if sides else 'PRIVATE_DO_NOT_DISTRIBUTE_CrouchBackwardClips.archive')
     if args.model in ('igla','igla-aim'):
         files['weapon_archive']=args.game_root/'archive/pc/mod/CP2077Coop_WeaponFixture.archive'
         files['weapon_hook']=args.game_root/'r6/scripts/CP2077ActionCapture/weapon_fixture.reds'
@@ -61,7 +65,7 @@ def main():
             # Imports/capture initialization can outlast a fixed one-second
             # sleep. Do not start the action sequence before a real frame.
             until=time.monotonic()+15
-            first_log=args.output/'video/frames.jsonl'
+            first_log=args.output/'video/first.png'
             while time.monotonic()<until:
                 if process.poll() is not None:raise RuntimeError('Recorder exited before first frame')
                 if first_log.is_file() and first_log.stat().st_size:
@@ -71,7 +75,7 @@ def main():
             else:raise RuntimeError('No real frame before fixture start')
             observer_nonce=str(uuid.uuid4())
             request(observer,'observer-request.json',{'version':1,
-                'mode':'place-direction-observer' if args.model=='directions' else 'place-observer',
+                'mode':'place-direction-observer' if args.model in ('directions','crouch-directions','crouch-sides') else 'place-observer',
                 'session':session,'request':observer_nonce})
             until=time.monotonic()+5
             while time.monotonic()<until:
