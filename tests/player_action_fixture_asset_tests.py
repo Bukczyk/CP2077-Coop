@@ -55,4 +55,13 @@ reject(lambda e,g:find(g,'animAnimNode_Blend2').update(maxInputValue=2))
 reject(lambda e,g:find(g,'animAnimVariableFloat').update(default=1))
 reject(lambda e,g:find(g,'animAnimNode_BlendOverride')['weightNode']['node'].update(HandleRefId='99999'))
 reject(lambda e,g:e['Data']['RootChunk']['entity']['Data'].update({'$type':'gameNPCPuppet'}))
+def departing_progress_change(e,g):
+    nodes={v['HandleId']:v['Data'] for v in m.base.walk(g) if 'HandleId' in v}
+    for node in nodes.values():
+        if node.get('$type')=='animAnimNode_SkFrameAnim':
+            link=node['progressLink']['node'];reader=nodes[link.get('HandleId',link.get('HandleRefId'))]
+            if reader['variableName']==m.base.cname('cp_coop_loco_previous_progress'):
+                reader['variableName']=m.base.cname('cp_coop_loco_progress');return
+    raise AssertionError('Missing departing gait sample')
+reject(departing_progress_change)
 print('action fixture asset: neutral defaults, active graph, no root motion/events, upper-body mask passed')

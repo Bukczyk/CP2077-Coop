@@ -81,3 +81,18 @@ hashes and current saves. The private configuration gained only the new opt-in
 flag. Stablev0.0.37/latest and the v5 VPS are unchanged; this is not a release.
 Both games currently remain open for the next bounded validation. Controlled
 clock-dilation qualification of this new direction layer is still pending.
+
+## Controlled clock and next gait task, UTC 2026-10-20T09:58:07.493693+00:00
+
+23518bb hosted CI all six jobs passed (run39402832144). connected-direction03
+recorded both real renderers while a synthetic JOINER used the loopback session.
+HOST160s/3468 frames/21.81 callbacks Hz; JOINER160s/3516/22.14Hz. No capture errors.
+Reviewed four-direction contacts have no sustained T-pose in sampled frames.
+JOINER410 diagnostic rows cover players5/6, all four walk directions, root error
+<=0.000002m,19 stale and67 crouch samples with direction weight0, no actor faults.
+JOINER clock0.03 verified throughout those rows; scannerOFF. HOST recorder expired
+before this run, so no fresh HOST numerical claim. HOST video ends before the
+final seconds of replay; full92s replay and JOINER recording complete. Previous
+normal connected-direction02 remains the two-endpoint numerical qualification.
+Private clock explicitly cleared at09:52:00Z: active=false, scale1; consoleclosed.
+Controls/settings/saves retained. Source-only23518 remains published; no release.

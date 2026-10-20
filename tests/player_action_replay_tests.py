@@ -15,6 +15,13 @@ assert direction.returncode==0 and 'HELLO' not in direction.stdout
 assert direction.stdout.count('PHASE ')==15 and 'duration=92' in direction.stdout
 for name in ['armed_walk_forward','armed_walk_right_aim','armed_walk_backward_aim','armed_walk_left']:
     assert 'name='+name+' ' in direction.stdout
+gaits=run('--validate-only','--gaits','--origin','0,0,0,0')
+assert gaits.returncode==0 and 'HELLO' not in gaits.stdout and gaits.stdout.count('PHASE ')==15
+for name in ['gait_walk_forward','gait_walk_stop','gait_sprint_then_stop','gait_walk_again','gait_second_stop']:
+    assert 'name='+name+' ' in gaits.stdout
+for t,y in [(6,0),(12,6),(18,6),(18.5,3),(19,0),(24,0),(30,6),(35,6)]:
+    assert f'GAIT_POINT t={t} x=0 y={y} ' in gaits.stdout
+assert run('--validate-only','--gaits','--directions').returncode!=0
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)

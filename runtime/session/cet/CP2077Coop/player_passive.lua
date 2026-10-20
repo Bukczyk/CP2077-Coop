@@ -175,7 +175,8 @@ function Controller:place(entry, pose, now)
         actor:SetWorldTransform(world)
         entry.target = pose
         if self.locomotion then
-            entry.presentation = entry.presentation or self.locomotion.new(self.directionalWalk)
+            entry.presentation = entry.presentation or self.locomotion.new(self.directionalWalk,
+                self.actions and self.actions.available())
             self.locomotion.step(entry.presentation, pose, now)
             self.locomotion.apply(actor, entry.presentation)
         end
@@ -261,6 +262,9 @@ function Controller:diagnostics()
             lifecycle=entry.retiring and "retiring" or "static",
             x=t and t.x,y=t and t.y,z=t and t.z,yaw=t and t.yaw,
             speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0,
+            gaitBlendEnabled=m and m.smooth,gaitBlendWeight=m and m.phaseWeight,
+            gaitBlendPreviousPhase=m and m.previousPhase,gaitBlendPreviousProgress=m and m.previousProgress,
+            gaitBlendPreviousDirection=m and m.phaseDirection,gaitBlendPreviousDirectionWeight=m and m.phaseDirectionWeight,
             gaitDirectionEnabled=self.directionalWalk,gaitDirection=m and m.direction,
             gaitPreviousDirection=m and m.previousDirection,gaitDirectionBlend=m and m.directionBlend,
             gaitDirectionWeight=m and m.directionWeight,gaitPreviousProgress=m and m.directionPreviousProgress}

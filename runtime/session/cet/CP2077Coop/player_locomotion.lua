@@ -1,13 +1,14 @@
 -- Local cosmetic inference from interpolated XYZ, not an authoritative action.
 -- This experimental renderer has no AI, navigation, root motion or gameplay.
 local M = {}
-M.revision = "20261020-locomotion-8"
+M.revision = "20261020-locomotion-9"
 -- Installed walk/sprint clips travel along rig +Y. Preserve network/entity
 -- heading; the earlier guessed 180-degree correction made movement face back.
 M.yawOffset = 0
 M.template = "base\\cp2077coop\\entities\\cp2077coop_player_locomotion.ent"
-function M.new(directional)
-    return {phase=0,progress=0,cycles=0,directional=directional==true,
+function M.new(directional,smooth)
+    return {phase=0,progress=0,cycles=0,directional=directional==true,smooth=smooth==true,
+        previousPhase=0,previousProgress=0,phaseWeight=0,phaseDirection=0,phaseDirectionWeight=0,
         direction=0,previousDirection=0,directionBlend=1,directionWeight=0,directionPreviousProgress=0}
 end
 local strides={5.960565090179443,5.90962028503418,1.6499662399291992,1.7075181007385254}
@@ -53,6 +54,10 @@ function M.step(state, pose, now)
     local dt = previous and now-previous.time or 0
     local speed, vertical,dx,dy = 0,0,0,0
     local oldProgress=state.cycles
+    local oldPhase,oldSample=state.phase,state.progress
+    local oldDirection=state.directionBlend<.5 and state.previousDirection or state.direction
+    local oldDirectionProgress=state.directionBlend<.5 and state.directionPreviousProgress or oldSample
+    local oldDirectionWeight=state.directionWeight
     if previous and dt > 0 and dt <= 0.25 then
         dx,dy=pose.x-previous.x,pose.y-previous.y
         speed = math.sqrt(dx*dx+dy*dy)/dt
@@ -128,6 +133,29 @@ function M.step(state, pose, now)
             state.progress=state.cycles
         end
     end
+    if state.smooth then
+        local a=pose.actions
+        local eligible=previous and dt>0 and dt<=.25 and not discontinuity
+            and a and a.fresh==true and a.stance==1 and state.phase<=2 and oldPhase<=2
+        if not eligible then
+            -- Jump phases, stale state, crouch and discontinuities never retain
+            -- a departing standing pose. Old assets ignore these extra inputs.
+            state.previousPhase,state.previousProgress,state.phaseWeight=state.phase,state.progress,0
+            state.phaseDirection,state.phaseDirectionWeight=state.direction,0
+        else
+            if oldPhase~=state.phase then
+                -- Bound retargeting to two poses. Keep the dominant departing
+                -- pose and freeze its exact sample, including walk direction.
+                if state.phaseWeight<=.5 then
+                    state.previousPhase=oldPhase
+                    state.previousProgress=oldPhase==1 and oldDirectionWeight>0 and oldDirectionProgress or oldSample
+                    state.phaseDirection,state.phaseDirectionWeight=oldDirection,oldDirectionWeight
+                end
+                state.phaseWeight=1
+            end
+            state.phaseWeight=math.max(0,state.phaseWeight-dt/.08)
+        end
+    end
     state.speed, state.vertical = speed, vertical
     state.previous = {x=pose.x,y=pose.y,z=pose.z,time=now}
     return state.phase, state.progress
@@ -136,6 +164,15 @@ function M.apply(actor, state)
     -- Queue admission is not an animation receipt. Live video must verify the
     -- actual selected pose and the next-frame world/root readback separately.
     local inputs={{"cp_coop_loco_progress",state.progress}}
+    if state.smooth then
+        for _,v in ipairs({{"cp_coop_loco_previous_phase",state.previousPhase},
+            {"cp_coop_loco_previous_progress",state.previousProgress},
+            {"cp_coop_loco_blend_weight",state.phaseWeight}})do inputs[#inputs+1]=v end
+        if state.directional then
+            inputs[#inputs+1]={"cp_coop_loco_previous_direction",state.phaseDirection}
+            inputs[#inputs+1]={"cp_coop_loco_previous_direction_weight",state.phaseDirectionWeight}
+        end
+    end
     if state.directional then
         for _,v in ipairs({{"cp_coop_walk_direction",state.direction},
             {"cp_coop_walk_previous_direction",state.previousDirection},

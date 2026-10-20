@@ -69,6 +69,12 @@ samples retain the existing50ms walk hold and freeze progress. Real stops still
 select idle promptly. This is cosmetic inference, with no protocol/server or
 position/yaw authority change. See
 [recorded connected results](../../docs/validation/CONNECTED_ARMED_WALK_2026-10-20.md).
+Matched action graphs additionally support real presentation-clock80ms lower
+idle/walk/sprint transitions with a frozen departing sample. Crouch, jumps,
+stale state, teleports and long gaps clear that layer. The locomotion-only graph
+keeps its original inputs. The loopback replay's `--gaits` mode isolates walk,
+stop and sprint transitions before its existing repair/rejoin tail. See
+[qualification record](../../docs/validation/LOWER_GAIT_BLEND_2026-10-20.md).
 The installed 2.31 relaxed walk/sprint clip motion distances are 3.795350313 m
 and 3.053292990 m per cycle, both along rig +Y. Preserve network/entity yaw.
 An earlier guessed 180-degree correction was rejected during calibration.

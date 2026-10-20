@@ -87,12 +87,17 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
     previous_weapon=variable('cp_coop_weapon_previous_pose',len(upper_clips)-1)
     weapon_blend=variable('cp_coop_weapon_blend',1)
     previous_progress=variable('cp_coop_weapon_previous_progress',1)
+    previous_phase=variable('cp_coop_loco_previous_phase',5)
+    gait_progress=variable('cp_coop_loco_previous_progress',1)
+    gait_weight=variable('cp_coop_loco_blend_weight',1)
     if directional_walk:
         direction=variable('cp_coop_walk_direction',3)
         previous_direction=variable('cp_coop_walk_previous_direction',3)
         direction_blend=variable('cp_coop_walk_direction_blend',1)
         direction_progress=variable('cp_coop_walk_previous_progress',1)
         direction_weight=variable('cp_coop_walk_direction_weight',1)
+        gait_direction=variable('cp_coop_loco_previous_direction',3)
+        gait_direction_weight=variable('cp_coop_loco_previous_direction_weight',1)
     progress=next({'HandleRefId':k} for k,v in definitions.items()
         if v.get('$type')=='animAnimNode_FloatVariable' and v['variableName']==base.cname('cp_coop_loco_progress'))
     def clip(name,sampled=False,reader=None):
@@ -117,6 +122,13 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
                        switch([clip(n,True) for n in names],direction),direction_blend)
         lower_selector=data(standing['node'])
         lower_selector['inputNodes'][1]=blend(lower_selector['inputNodes'][1],selected,direction_weight)
+    # Explicit real-clock weights replace instant lower phase changes. Freeze
+    # the departing gait rather than running its engine clock after a stop.
+    previous_clips=[clip(name,i!=0,gait_progress) for i,name in enumerate(base.CLIPS)]
+    if directional_walk:
+        previous_clips[1]=blend(previous_clips[1],
+            switch([clip(n,True,gait_progress) for n in names],gait_direction),gait_direction_weight)
+    standing=blend(standing,switch(previous_clips,previous_phase),gait_weight)
     crouch=blend(clip('cp_coop_stealth_idle_low_unarmed'),clip('cp_coop_stealth_walk_0',True),moving)
     lower=blend(standing,crouch,stance)
     def weapon_clips(reader):
@@ -196,9 +208,11 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
     variables=data(gr['variables'])['floatVariables']
     expected=[('cp_coop_loco_phase',5),('cp_coop_loco_progress',1),('cp_coop_stance',1),
         ('cp_coop_crouch_motion',1),('cp_coop_weapon_pose',len(upper_clips)-1),('cp_coop_weapon_weight',1),
-        ('cp_coop_weapon_previous_pose',len(upper_clips)-1),('cp_coop_weapon_blend',1),('cp_coop_weapon_previous_progress',1)]
+        ('cp_coop_weapon_previous_pose',len(upper_clips)-1),('cp_coop_weapon_blend',1),('cp_coop_weapon_previous_progress',1),
+        ('cp_coop_loco_previous_phase',5),('cp_coop_loco_previous_progress',1),('cp_coop_loco_blend_weight',1)]
     if directional_walk:expected += [('cp_coop_walk_direction',3),('cp_coop_walk_previous_direction',3),
-        ('cp_coop_walk_direction_blend',1),('cp_coop_walk_previous_progress',1),('cp_coop_walk_direction_weight',1)]
+        ('cp_coop_walk_direction_blend',1),('cp_coop_walk_previous_progress',1),('cp_coop_walk_direction_weight',1),
+        ('cp_coop_loco_previous_direction',3),('cp_coop_loco_previous_direction_weight',1)]
     if aim_fixture:expected += [('cp_coop_aim_pitch',40),('cp_coop_aim_yaw',45)]
     if [(data(v)['name']['$value'],data(v)['max']) for v in variables]!=expected:
         raise ValueError('Wrong action variables')
@@ -246,13 +260,17 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
             or data(value['weightNode']['node'])['variableName']!=base.cname(name)):
             raise ValueError('Wrong real-time pose blend')
     blend(stance,'cp_coop_stance');blend(upper,'cp_coop_weapon_blend')
-    standing=data(stance['firstInputNode']['node']);crouch=data(stance['secondInputNode']['node'])
+    gait=data(stance['firstInputNode']['node']);blend(gait,'cp_coop_loco_blend_weight')
+    standing=data(gait['firstInputNode']['node']);departing=data(gait['secondInputNode']['node'])
+    crouch=data(stance['secondInputNode']['node'])
     selector(standing,'cp_coop_loco_phase',len(base.CLIPS));blend(crouch,'cp_coop_crouch_motion')
+    selector(departing,'cp_coop_loco_previous_phase',len(base.CLIPS))
     previous=data(upper['firstInputNode']['node']);current=data(upper['secondInputNode']['node'])
     selector(previous,'cp_coop_weapon_previous_pose',len(upper_clips));selector(current,'cp_coop_weapon_pose',len(upper_clips))
     if [data(crouch[k]['node'])['animation']['$value'] for k in ('firstInputNode','secondInputNode')]!=['cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_walk_0']:
         raise ValueError('Wrong crouch animation names')
     standing_clips=list(standing['inputNodes'])
+    departing_clips=list(departing['inputNodes'])
     if directional_walk:
         walking=data(standing_clips[1]['node']);blend(walking,'cp_coop_walk_direction_weight')
         standing_clips[1]=walking['firstInputNode']
@@ -269,9 +287,28 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
                     or data(node['progressLink']['node'])['variableName']!=base.cname(reader)
                     or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                     raise ValueError('Directional walk must use distance samples')
-    for inputs,names in [(standing_clips,base.CLIPS),(previous['inputNodes'],upper_clips),(current['inputNodes'],upper_clips)]:
+        walking=data(departing_clips[1]['node']);blend(walking,'cp_coop_loco_previous_direction_weight')
+        departing_clips[1]=walking['firstInputNode']
+        selected=data(walking['secondInputNode']['node']);selector(selected,'cp_coop_loco_previous_direction',4)
+        if [data(v['node'])['animation']['$value'] for v in selected['inputNodes']]!=list(names):
+            raise ValueError('Wrong departing direction clips')
+        for pose in selected['inputNodes']:
+            node=data(pose['node'])
+            if (node['$type']!='animAnimNode_SkFrameAnim' or node['isLooped']
+                or data(node['progressLink']['node'])['variableName']!=base.cname('cp_coop_loco_previous_progress')
+                or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
+                raise ValueError('Departing direction must freeze the previous gait sample')
+    for inputs,names in [(standing_clips,base.CLIPS),(departing_clips,base.CLIPS),
+                         (previous['inputNodes'],upper_clips),(current['inputNodes'],upper_clips)]:
         if [data(link['node'])['animation']['$value'] for link in inputs]!=list(names):
             raise ValueError('Wrong animation names')
+    for i,pose in enumerate(departing_clips):
+        node=data(pose['node'])
+        if (node['$type']!=('animAnimNode_SkAnim' if i==0 else 'animAnimNode_SkFrameAnim')
+            or node['isLooped']!=int(i==0) or i and data(node['progressLink']['node'])['variableName']!=base.cname('cp_coop_loco_previous_progress')):
+            raise ValueError('Departing gait must freeze its sample')
+        if i and any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink')):
+            raise ValueError('Departing gait cannot use engine-time playback')
     for switch,reader in ((previous,'cp_coop_weapon_previous_progress'),(current,'cp_coop_loco_progress')):
         for pose,name in zip(switch['inputNodes'],upper_clips):
             node=data(pose['node']);sampled='walk' in name or 'sprint' in name
@@ -281,7 +318,7 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
                 raise ValueError('Wrong weapon gait progress')
             if sampled and (node['isLooped'] or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                 raise ValueError('Weapon gait must not use engine-time playback')
-    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(5 if directional_walk else 3):
+    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(7 if directional_walk else 4):
         raise ValueError('Wrong real-time blend layer count')
     nodes={k for k,v in definitions.items() if v.get('$type','').startswith('animAnimNode_')}
     init=[v.get('HandleId',v.get('HandleRefId')) for v in gr['nodesToInit']]
