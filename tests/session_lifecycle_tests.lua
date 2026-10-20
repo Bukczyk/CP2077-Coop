@@ -877,6 +877,36 @@ do
     Game.GetPlayer=getPlayer
     state.shutdown()
 end
+-- The real entrypoint forwards an admitted baseline without mutating health,
+-- and remains usable with a previous DLL that has no life getter.
+do
+    local state=fixture("JOINER",true,false,false,false)
+    state.init();state.tick()
+    local observed
+    state.npcProjection.step=function(_,_,_,npcs)observed=npcs;return true end
+    local entity=uint64(1)
+    Game.CP2077Session_NpcCount=function()return 1 end
+    Game.CP2077Session_NpcSelect=function(index)return index==0 end
+    Game.CP2077Session_NpcEntity=function()return entity end
+    Game.CP2077Session_NpcRecord=function()return "123" end
+    Game.CP2077Session_NpcX=function()return 1 end
+    Game.CP2077Session_NpcY=function()return 2 end
+    Game.CP2077Session_NpcZ=function()return 3 end
+    Game.CP2077Session_NpcYaw=function()return 0 end
+    Game.CP2077Session_NpcLifeKnown=function()return true end
+    Game.CP2077Session_NpcLifeHealth=function()return 0 end
+    Game.CP2077Session_NpcLifeMaxHealth=function()return 100 end
+    Game.CP2077Session_NpcLifeStatus=function()return 3 end
+    Game.CP2077Session_NpcLifeRevision=function()return 77 end
+    state.tick()
+    assert(#observed==1 and observed[1].entity==entity and observed[1].lifeState.status==3
+        and observed[1].lifeState.revision==77 and observed[1].lifeState.health==0)
+    Game.CP2077Session_NpcLifeKnown=nil
+    state.tick()
+    assert(#observed==1 and observed[1].x==1 and observed[1].lifeState==nil,
+        "old DLL keeps existing movement and unknown life state")
+    state.shutdown()
+end
 print=report
 report("session_lifecycle: PASS (startup, stable Uint64 identity, replacement, unload, reconnect, NPC opt-in; " ..
     (hasFfi and "LuaJIT Uint64 cdata" or "opaque Uint64 mock") .. ")")

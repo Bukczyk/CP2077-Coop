@@ -33,6 +33,8 @@ set_tests_properties(vehicle_fixture vehicle_engine_adapter vehicle_movement veh
 add_test(NAME npc_appearance_observation COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_appearance_observation_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(npc_appearance_observation PROPERTIES TIMEOUT 15)
 add_test(NAME npc_population COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_population_tests.lua" "${PROJECT_SOURCE_DIR}")
+add_test(NAME npc_life_frame COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_life_frame_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(npc_life_frame PROPERTIES TIMEOUT 15)
 add_test(NAME npc_dynamic_identity COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_dynamic_identity_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(npc_dynamic_identity PROPERTIES TIMEOUT 15)
 add_test(NAME npc_static_population COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/npc_static_population_tests.lua" "${PROJECT_SOURCE_DIR}")

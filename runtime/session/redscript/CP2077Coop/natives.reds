@@ -32,6 +32,12 @@ public native func CP2077Session_NpcX() -> Float;
 public native func CP2077Session_NpcY() -> Float;
 public native func CP2077Session_NpcZ() -> Float;
 public native func CP2077Session_NpcYaw() -> Float;
+// Read-only accepted baseline. Known=false means unknown; zero health alone is not death.
+public native func CP2077Session_NpcLifeKnown() -> Bool;
+public native func CP2077Session_NpcLifeHealth() -> Float;
+public native func CP2077Session_NpcLifeMaxHealth() -> Float;
+public native func CP2077Session_NpcLifeStatus() -> Uint32;
+public native func CP2077Session_NpcLifeRevision() -> Uint32;
 // Generic reliable values only. u64 identities are canonical decimal strings;
 // bodies are at most 1024 bytes encoded as 2048 hex characters. A queued ticket
 // is local admission, not a wire ID or confirmed gameplay success.

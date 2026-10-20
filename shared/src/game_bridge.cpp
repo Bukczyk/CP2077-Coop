@@ -311,7 +311,7 @@ Frame SessionBridge::ReadFrame(std::uint64_t now) const {
         (void)id;
         if(auto pose=npc.snapshots.Sample(static_cast<double>(now))) {
             auto local=npcLocals_.find(npc.descriptor.adoption);
-            result.npcs.push_back({npc.descriptor,local==npcLocals_.end()?0:local->second,*pose});
+            result.npcs.push_back({npc.descriptor,local==npcLocals_.end()?0:local->second,*pose,npc.lifeState});
         }
     }
     std::sort(result.npcs.begin(),result.npcs.end(),[](const auto& a,const auto& b){return a.descriptor.entity<b.descriptor.entity;});

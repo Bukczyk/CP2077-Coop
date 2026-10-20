@@ -84,7 +84,13 @@ struct RenderPlayer {
     std::optional<RenderPresentation> presentation={};
 #endif
 };
-struct RenderNpc { NpcSpawn descriptor{}; LocalEntityId hostLocal=0; Transform transform{}; };
+struct RenderNpc {
+    NpcSpawn descriptor{};
+    LocalEntityId hostLocal=0;
+    Transform transform{};
+    // Already admitted authoritative baseline. Absence is unknown, not Alive.
+    std::optional<coop::NpcLifeState> lifeState;
+};
 struct Frame {
     ClientPhase phase=ClientPhase::Disconnected;
     Membership member{};

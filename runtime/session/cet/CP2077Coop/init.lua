@@ -5,6 +5,7 @@ local function log(message)
     if spdlog then spdlog.info(tostring(message)) end
 end
 local NpcRuntime = require("npc_runtime")
+local NpcLifeFrame = require("npc_life_frame")
 local PlayerPose = assert(require("player_pose"), "player_pose module missing")
 local PlayerLifetime = assert(require("player_lifetime"), "player_lifetime module missing")
 local population = require("npc_population")
@@ -383,10 +384,12 @@ local function update(delta)
             local npcs = {}
             for index = 0, Game.CP2077Session_NpcCount()-1 do
                 if Game.CP2077Session_NpcSelect(index) then
-                    npcs[#npcs+1] = {
+                    local npc = {
                         entity = Game.CP2077Session_NpcEntity(), record = Game.CP2077Session_NpcRecord(),
                         x = Game.CP2077Session_NpcX(), y = Game.CP2077Session_NpcY(), z = Game.CP2077Session_NpcZ(), yaw = Game.CP2077Session_NpcYaw()
                     }
+                    npc.lifeState = NpcLifeFrame.read(npc.entity)
+                    npcs[#npcs+1] = npc
                 end
             end
             if #npcs > 0 and not npcWarning then
