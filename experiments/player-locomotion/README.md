@@ -50,7 +50,7 @@ For the private action replay, prepare both observers and explicitly start fresh
 diagnostics first. `tools/run_player_action_capture.py` then starts both window
 recorders together, waits for both first frames and admits the92s action replay.
 Its `--mode` selects `actions`, `gaits`, `directions`, `crouch-directions`,
-`unarmed-directions`, `crouch-sides` or `crouch-diagonals`.
+`unarmed-directions`, `crouch-sides`, `crouch-diagonals` or `jump-actions`.
 Supply `--replay`, the distinct `--host-root`/`--joiner-root`, `--session`, private
 `--key-file` and a new private `--output` folder. It neither launches games nor
 positions cameras. Require `recording_complete=true` and inspect both videos;
@@ -102,6 +102,10 @@ The [diagonal regression](../../docs/validation/DIAGONAL_CROUCH_2026-10-20.md)
 crosses all four direction boundaries. [Actual control testing](../../docs/validation/ACTUAL_PLAYER_INPUTS_2026-10-20.md)
 separately verifies stationary draw/crouch/aim states and records the remaining
 camera-direction and automated-input limitations.
+The [late-crouch jump guard](../../docs/validation/CROUCH_JUMP_GUARD_2026-10-20.md)
+releases grounded crouch during inferred takeoff, flight and landing. Its before/
+after recordings preserve weapon visibility and explicitly retain jump-pose and
+terrain quality limits.
 Matched action graphs additionally support real presentation-clock80ms lower
 idle/walk/sprint transitions with a frozen departing sample. Crouch, jumps,
 stale state, teleports and long gaps clear that layer. The locomotion-only graph

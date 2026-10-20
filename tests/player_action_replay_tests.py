@@ -64,6 +64,18 @@ for t in range(9,31,3):
 assert math.hypot(*points[30][:2])<.0001 and points[30]==points[36],'closed route must stop without teleporting'
 for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions','--crouch-sides'):
     assert run('--validate-only','--crouch-diagonals',flag).returncode!=0
+jumps=run('--validate-only','--jump-actions','--origin','0,0,10,0')
+assert jumps.returncode==0 and 'HELLO' not in jumps.stdout and jumps.stdout.count('PHASE ')==15
+for name in ('jump_armed_standing','jump_crouch_settle','jump_late_crouch_unarmed','jump_late_crouch_aim','jump_standing_aim'):
+    assert 'name='+name+' ' in jumps.stdout
+jump_points={float(t):(float(x),float(y),float(z),float(yaw)) for t,x,y,z,yaw in re.findall(
+    r'JUMP_POINT t=(\S+) x=(\S+) y=(\S+) z=(\S+) yaw=(\S+)',jumps.stdout)}
+for t in (8.6,20.6,26.6,32.6):
+    assert abs(jump_points[t][2]-10.9)<.00001 and jump_points[t][3]==0
+for t in (6,8,9.2,12,18,20,21.2,24,30,36):assert abs(jump_points[t][2]-10)<.00001
+assert jump_points[6]==jump_points[12]==jump_points[18]==jump_points[24]==jump_points[30]==jump_points[36]
+for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions','--crouch-sides','--crouch-diagonals'):
+    assert run('--validate-only','--jump-actions',flag).returncode!=0
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)

@@ -2,7 +2,7 @@
 -- setters only on application. Never inventory, AI, damage or movement authority.
 local M={template="base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"}
 local recordKey="16ac119774"
-M.revision="20261020-realtime-actions-1"
+M.revision="20261020-realtime-actions-2"
 local sourceDue,sourceSignature,sourceSamples,sourceScope=0,nil,0,nil
 local required={
     ["base\\weapons\\firearms\\shotgun_dual\\rostovic_igla\\entities\\meshes\\w_shotgun_dual__rostovic_igla__base1_01.mesh"]={"Barrel","pimp1"},
@@ -148,9 +148,12 @@ function M.apply(actor,state,observed,gait)
     if state.actorKey and state.actorKey~=id then return "actor_changed" end
     state.actorKey=id
     local fresh=observed and observed.fresh==true
-    local stance=fresh and observed.stance==2 and 1 or 0
     local show=fresh and observed.weapon==2 and observed.record==recordKey and (observed.aim==1 or observed.aim==2) or false
     local phase=gait and gait.phase or 0
+    -- Action and interpolated movement arrive independently. A late crouch must
+    -- not cover takeoff, flight or landing with a grounded crouch pose.
+    local grounded=phase==0 or phase==1 or phase==2
+    local stance=fresh and observed.stance==2 and grounded and 1 or 0
     local moving=phase==1 or phase==2
     local pose=show and (observed.aim==2 and (moving and 4 or 3) or (phase==2 and 2 or moving and 1 or 0)) or 0
     local attemptKey=tostring(show)..":"..tostring(observed and observed.revision or 0)..":"..tostring(fresh)

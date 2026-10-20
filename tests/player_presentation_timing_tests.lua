@@ -1,4 +1,4 @@
-local root=assert(arg[1]);local M=assert(loadfile(root..'/runtime/session/cet/CP2077Coop/player_presentation.lua'))()
+local root=assert(arg[1]);local M=assert(loadfile(arg[2] or root..'/runtime/session/cet/CP2077Coop/player_presentation.lua'))()
 CName={new=function(v)return v end};NewObject=function()return {}end
 local function fixture(scale)
     local events={};local actor={IsAttached=function()return true end,GetEntityID=function()return {hash='9007199254740993ULL'}end,
@@ -39,4 +39,18 @@ local function fixture(scale)
 end
 local normal,slow=fixture(1),fixture(.03)
 for frame=1,6 do for index=1,3 do assert(normal[frame][index]==slow[frame][index],'world dilation changed pose timing')end end
+for _,weapon in ipairs({1,2})do
+    local actor={IsAttached=function()return true end,GetEntityID=function()return {hash='9007199254740993ULL'}end,
+        CP2077Fixture_SetWeaponVisible=function()return true end,QueueEvent=function()end}
+    local state={};local observed={fresh=true,revision=1,stance=2,weapon=weapon,
+        record=weapon==2 and '16ac119774' or '0000000000',aim=weapon==2 and 2 or 1}
+    local function tick(t,phase)M.apply(actor,state,observed,{phase=phase,progress=.25,previous={time=t}})end
+    tick(0,0);assert(state.stanceWeight==1,'grounded crouch must remain admitted')
+    tick(.02,5);assert(state.stanceWeight<1,'late crouch cannot fully override takeoff')
+    tick(.1,3);assert(state.stanceWeight==0 and state.motionWeight==0,'airborne jump must release the crouch layer within80ms')
+    assert(state.visible==(weapon==2),'releasing lower crouch must preserve guarded weapon visibility')
+    tick(.12,4);assert(state.stanceWeight==0,'late crouch cannot cover the landing animation')
+    tick(.14,0);assert(state.stanceWeight>0 and state.stanceWeight<1,'grounded crouch resumes with a real-clock blend')
+    tick(.22,0);assert(state.stanceWeight==1,'grounded crouch must recover after landing')
+end
 print('Presentation timing: real-time crouch/motion/weapon blend, frozen departing gait, repair stability, stale release and bounded retargeting passed')
