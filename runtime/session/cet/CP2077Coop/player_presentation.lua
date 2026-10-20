@@ -2,7 +2,7 @@
 -- setters only on application. Never inventory, AI, damage or movement authority.
 local M={template="base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"}
 local recordKey="16ac119774"
-M.revision="20261020-realtime-actions-2"
+M.revision="20261020-realtime-actions-3"
 local sourceDue,sourceSignature,sourceSamples,sourceScope=0,nil,0,nil
 local required={
     ["base\\weapons\\firearms\\shotgun_dual\\rostovic_igla\\entities\\meshes\\w_shotgun_dual__rostovic_igla__base1_01.mesh"]={"Barrel","pimp1"},
@@ -142,6 +142,35 @@ local function transitions(state,stance,motion,pose,gait,reset)
     end
     state.renderTime,state.lastProgress=finite(now) and now or nil,progress
 end
+local function visibility(actor,state,show,key,now)
+    if state.lastAttempt~=key then
+        state.lastAttempt,state.visibilityFailures,state.visibilityRetryAt=key,0,nil
+    end
+    local clock=finite(now)
+    if state.visibilityFailures>0 and clock then
+        local delay=.25*2^(state.visibilityFailures-1)
+        if not state.visibilityRetryAt or state.visibilityClock and now<state.visibilityClock then
+            state.visibilityRetryAt=now+delay
+        end
+    end
+    state.visibilityClock=clock and now or nil
+    if state.visible==show then return true end
+    if state.visibilityFailures>0 and (not clock or now<state.visibilityRetryAt) then
+        return false,"visibility_unavailable"
+    end
+    local ok,accepted=pcall(function()return actor:CP2077Fixture_SetWeaponVisible(show)end)
+    if not ok or accepted~=true then
+        -- Components can be unavailable during attachment/streaming. A failed
+        -- submission must not permanently latch the same valid player state.
+        -- Retry on the real presentation clock, at .25/.5/1/2 seconds, then
+        -- at most once every 2 seconds. No clock means no repeated attempts.
+        state.visibilityFailures=math.min(4,state.visibilityFailures+1)
+        state.visibilityRetryAt=clock and now+.25*2^(state.visibilityFailures-1) or nil
+        return false,"visibility_rejected"
+    end
+    state.visible,state.visibilityFailures,state.visibilityRetryAt=show,0,nil
+    return true
+end
 function M.apply(actor,state,observed,gait)
     if not actor or actor:IsAttached()~=true then return "actor_unavailable" end
     local id=tostring(actor:GetEntityID().hash)
@@ -157,13 +186,8 @@ function M.apply(actor,state,observed,gait)
     local moving=phase==1 or phase==2
     local pose=show and (observed.aim==2 and (moving and 4 or 3) or (phase==2 and 2 or moving and 1 or 0)) or 0
     local attemptKey=tostring(show)..":"..tostring(observed and observed.revision or 0)..":"..tostring(fresh)
-    if state.visible~=show and state.lastAttempt~=attemptKey then
-        state.lastAttempt=attemptKey
-        local ok,accepted=pcall(function()return actor:CP2077Fixture_SetWeaponVisible(show)end)
-        if not ok or accepted~=true then return "visibility_rejected" end
-        state.visible=show
-    end
-    if state.visible~=show then return "visibility_unavailable" end
+    local visible,status=visibility(actor,state,show,attemptKey,gait and gait.previous and gait.previous.time)
+    if not visible then return status end
     transitions(state,stance,stance==1 and moving and 1 or 0,pose,gait,not fresh)
     input(actor,state,"cp_coop_stance",state.stanceWeight)
     input(actor,state,"cp_coop_crouch_motion",state.motionWeight)

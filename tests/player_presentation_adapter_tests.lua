@@ -1,5 +1,5 @@
 local root=assert(arg[1]);package.path=root.."/runtime/session/cet/CP2077Coop/?.lua;"..package.path
-local M=require("player_presentation")
+local M=arg[2] and assert(loadfile(arg[2]))() or require("player_presentation")
 local valid="1|123|456|12|2|2|16ac119774|2"
 local value=assert(M.decode(valid));assert(value.record=="16ac119774" and value.revision==123)
 for _,raw in ipairs({"|"..valid,valid.."|",valid:gsub("123","-1"),valid:gsub("16ac119774","16ac119775"),
@@ -27,6 +27,46 @@ assert(M.apply(foreign,state,value,{phase=0})=="actor_changed" and #calls==3)
 local failed={};actor.CP2077Fixture_SetWeaponVisible=function()calls[#calls+1]="rejected";return false end
 before=#events;M.apply(actor,failed,value,{phase=0});M.apply(actor,failed,value,{phase=0})
 assert(#events==before and #calls==4,"failed visibility mutated actor or retried every frame")
+
+-- A transient engine rejection must not require the player to change stance,
+-- weapon or aim. Same revision/repair state recovers on a bounded real clock.
+local function recoveryFixture()
+    local attempts,accept,throws=0,false,false
+    local a={GetEntityID=actor.GetEntityID,IsAttached=actor.IsAttached,QueueEvent=function()end,
+        CP2077Fixture_SetWeaponVisible=function()
+            attempts=attempts+1;if throws then error("temporary_component_observation") end;return accept
+        end}
+    local s={};local v={fresh=true,revision=1,sequence=1,stance=2,weapon=2,record="16ac119774",aim=2}
+    local function tick(t)
+        return M.apply(a,s,v,{phase=1,progress=.2,previous={time=t}})
+    end
+    return s,v,tick,function()return attempts end,function(ok,exception)accept,throws=ok,exception end
+end
+local s,v,tick,count,set=recoveryFixture()
+assert(tick(10)=="visibility_rejected" and count()==1)
+set(true,false)
+for i=1,14 do tick(10+i/60) end
+assert(count()==1,"visibility retry ran every render frame")
+assert(tick(10.25)=="presentation_submitted" and count()==2 and s.visible==true,
+    "same-state visibility must recover after a transient engine rejection")
+for i=1,60 do tick(10.25+i/60) end
+assert(count()==2,"successful recovery must stop retrying")
+
+s,v,tick,count,set=recoveryFixture()
+set(false,true);assert(tick(0)=="visibility_rejected")
+for i=1,240 do tick(i/60) end
+assert(count()==5,"persistent visibility failure must back off, not spam the engine")
+-- A clock rewind rebases the retry deadline; repeated rewinds do not admit work.
+tick(-1);tick(-2);assert(count()==5)
+set(true,false);tick(-1.8);assert(count()==5);tick(.1)
+assert(count()==6 and s.visible==true,"retry clock did not recover after a rewind")
+
+s,v,tick,count,set=recoveryFixture()
+tick(0);v.fresh=false;set(true,false)
+assert(tick(.01)=="owned_overrides_neutralized" and s.visible==false and count()==2,
+    "stale state must immediately replace a pending show attempt with a hide")
+tick(.5);assert(count()==2 and s.visible==false,"retry resurrected a stale weapon")
+v.fresh=true;tick(.51);assert(count()==3 and s.visible==true)
 
 -- Independent synthetic resource observation, matching the fixed local recipe.
 local prefix="base\\weapons\\firearms\\shotgun_dual\\"
