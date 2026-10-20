@@ -74,7 +74,7 @@ additional qualification. The projection has no collision, damage or PvP role.
 The private action renderer additionally supports the default-off
 `experimentalPlayerDirectionalWalk` candidate. It requires matching action AND
 weapon assets built with `--directional-walk`, the separate uniquely aliased
-private normalized-direction and backward-crouch caches, and experimental presentation. Fresh standing supported
+private normalized-direction, backward-crouch and side-crouch caches, and experimental presentation. Fresh standing supported
 Igla walking selects four directions relative to unchanged body yaw. The current
 candidate also admits coherent fresh standing holstered state. Both directional
 layers copy only nine inspected hip/leg/foot/toe bones; relaxed spine/arms remain
@@ -87,9 +87,12 @@ See the [private regeneration recipe](NORMALIZED_DIRECTION_RECIPE.md).
 Unsupported/unknown and stale state retain the original walk path. Matched graph
 and Lua are required. See
 [unarmed candidate and validation](../../docs/validation/UNARMED_DIRECTION_2026-10-20.md).
-Fresh crouch additionally selects the separately qualified backward clip and
-measured stealth stride, holding its last sample through stop fades. Sideways
-crouch retains the original forward fallback and is not qualified. Direction
+Fresh crouch additionally selects four body-relative directions. Forward/backward
+keep their measured stealth strides. Sideways uses the separately qualified low
+clips, a nine-bone mask and measured side strides, holding samples through stops
+and freezing the departing sample during real-clock direction blends. The
+[connected side candidate record](../../docs/validation/CONNECTED_SIDE_CROUCH_2026-10-20.md)
+separates isolated clip proof from connected and physical-input qualification. Direction
 retargeting blends over80 real milliseconds with hysteresis; short zero-motion
 samples retain the existing50ms walk hold and freeze progress. Real stops still
 select idle promptly. This is cosmetic inference, with no protocol/server or

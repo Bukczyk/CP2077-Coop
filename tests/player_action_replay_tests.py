@@ -36,6 +36,14 @@ for t,y in [(6,0),(12,3),(18,3),(21,1.5),(24,0),(30,0),(35,.5)]:
     assert f'CROUCH_POINT t={t} x=0 y={y} yaw=0' in crouches.stdout
 for flag in ('--directions','--gaits'):
     assert run('--validate-only','--crouch-directions',flag).returncode!=0
+sides=run('--validate-only','--crouch-sides','--origin','0,0,0,0')
+assert sides.returncode==0 and 'HELLO' not in sides.stdout and sides.stdout.count('PHASE ')==15
+for name in ('crouch_side_unarmed_idle','crouch_side_unarmed_right','crouch_side_unarmed_stop','crouch_side_aim_left','crouch_side_aim_stop','crouch_side_armed_out_and_back'):
+    assert 'name='+name+' ' in sides.stdout
+for t,x in [(6,0),(12,3),(18,3),(21,1.5),(24,0),(30,0),(33,1.5),(35,.5)]:
+    assert f'CROUCH_SIDE_POINT t={t} x={x} y=0 yaw=0' in sides.stdout
+for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions'):
+    assert run('--validate-only','--crouch-sides',flag).returncode!=0
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)

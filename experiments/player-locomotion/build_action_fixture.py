@@ -38,7 +38,8 @@ def profile_values(weapon_profile,directional_walk=False):
     profiles=('stealth','rifle','handgunboth') if weapon_profile=='rifle' else ('stealth','shotgundual','rifle','handgunboth')
     cache=tuple(r'base\cp2077coop\private\player_'+name+'.anims' for name in profiles)
     if directional_walk:cache += (r'base\cp2077coop\private\player_directional_neutral.anims',
-                                  r'base\cp2077coop\private\player_crouch_backward.anims')
+                                  r'base\cp2077coop\private\player_crouch_backward.anims',
+                                  r'base\cp2077coop\private\player_crouch_side.anims')
     clips=tuple('cp_coop_'+weapon_profile+'_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint'))+tuple(
         'cp_coop_rifle_'+clip for clip in ('aim_ovr_idle','aim_ovr_walk'))+tuple(
         'cp_coop_handgunboth_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint','aim_ovr_idle','aim_ovr_walk'))
@@ -103,6 +104,11 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
         gait_direction_weight=variable('cp_coop_loco_previous_direction_weight',1)
         crouch_progress=variable('cp_coop_crouch_progress',1)
         crouch_backward=variable('cp_coop_crouch_backward',1)
+        crouch_side=variable('cp_coop_crouch_side',1)
+        crouch_previous_side=variable('cp_coop_crouch_previous_side',1)
+        crouch_side_blend=variable('cp_coop_crouch_side_blend',1)
+        crouch_side_weight=variable('cp_coop_crouch_side_weight',1)
+        crouch_previous_progress=variable('cp_coop_crouch_previous_progress',1)
     progress=next({'HandleRefId':k} for k,v in definitions.items()
         if v.get('$type')=='animAnimNode_FloatVariable' and v['variableName']==base.cname('cp_coop_loco_progress'))
     def clip(name,sampled=False,reader=None):
@@ -147,6 +153,10 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
     crouch_walk=clip('cp_coop_stealth_walk_0',True,crouch_progress if directional_walk else progress)
     if directional_walk:
         crouch_walk=blend(crouch_walk,clip('cp_coop_crouch_backward_walk_180',True,crouch_progress),crouch_backward)
+        side_names=('cp_coop_crouch_side_walk_090','cp_coop_crouch_side_walk_270')
+        side=blend(switch([clip(n,True,crouch_previous_progress) for n in side_names],crouch_previous_side),
+                   switch([clip(n,True,crouch_progress) for n in side_names],crouch_side),crouch_side_blend)
+        crouch_walk=lower_override(crouch_walk,side,crouch_side_weight)
     crouch=blend(clip('cp_coop_stealth_idle_low_unarmed'),crouch_walk,moving)
     lower=blend(standing,crouch,stance)
     def weapon_clips(reader):
@@ -231,7 +241,9 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
     if directional_walk:expected += [('cp_coop_walk_direction',3),('cp_coop_walk_previous_direction',3),
         ('cp_coop_walk_direction_blend',1),('cp_coop_walk_previous_progress',1),('cp_coop_walk_direction_weight',1),
         ('cp_coop_loco_previous_direction',3),('cp_coop_loco_previous_direction_weight',1),
-        ('cp_coop_crouch_progress',1),('cp_coop_crouch_backward',1)]
+        ('cp_coop_crouch_progress',1),('cp_coop_crouch_backward',1),
+        ('cp_coop_crouch_side',1),('cp_coop_crouch_previous_side',1),('cp_coop_crouch_side_blend',1),
+        ('cp_coop_crouch_side_weight',1),('cp_coop_crouch_previous_progress',1)]
     if aim_fixture:expected += [('cp_coop_aim_pitch',40),('cp_coop_aim_yaw',45)]
     if [(data(v)['name']['$value'],data(v)['max']) for v in variables]!=expected:
         raise ValueError('Wrong action variables')
@@ -245,7 +257,7 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
             if any(value[k] for k in ('applyMotion','collectEvents','fireAnimLoopEvent','resume')):
                 raise ValueError('Gameplay/root motion forbidden')
     overrides=[v for v in definitions.values() if v.get('$type')=='animAnimNode_BlendOverride']
-    if len(overrides)!=(3 if directional_walk else 1):raise ValueError('Wrong masked overlay count')
+    if len(overrides)!=(4 if directional_walk else 1):raise ValueError('Wrong masked overlay count')
     upper_overlays=[v for v in overrides if [b['transformIndex']['name']['$value'] for b in v['bones']]==list(UPPER_BONES)]
     if len(upper_overlays)!=1:raise ValueError('One upper-body overlay required')
     overlay=upper_overlays[0]
@@ -302,6 +314,20 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
     crouch_clips=[crouch_walk]
     names=['cp_coop_stealth_walk_0']
     if directional_walk:
+        lower_mask(crouch_walk,'cp_coop_crouch_side_weight')
+        side=data(crouch_walk['overrideInputNode']['node']);blend(side,'cp_coop_crouch_side_blend')
+        for field,name,reader in (('firstInputNode','cp_coop_crouch_previous_side','cp_coop_crouch_previous_progress'),
+                                  ('secondInputNode','cp_coop_crouch_side','cp_coop_crouch_progress')):
+            switch=data(side[field]['node']);selector(switch,name,2)
+            if [data(v['node'])['animation']['$value'] for v in switch['inputNodes']]!=['cp_coop_crouch_side_walk_090','cp_coop_crouch_side_walk_270']:
+                raise ValueError('Wrong side crouch aliases')
+            for link in switch['inputNodes']:
+                node=data(link['node'])
+                if (node['$type']!='animAnimNode_SkFrameAnim' or node['isLooped']
+                    or data(node['progressLink']['node'])['variableName']!=base.cname(reader)
+                    or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
+                    raise ValueError('Side crouch must use held distance samples')
+        crouch_walk=data(crouch_walk['inputNode']['node'])
         blend(crouch_walk,'cp_coop_crouch_backward')
         crouch_clips=[data(crouch_walk[k]['node']) for k in ('firstInputNode','secondInputNode')]
         names+=['cp_coop_crouch_backward_walk_180']
@@ -360,7 +386,7 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
                 raise ValueError('Wrong weapon gait progress')
             if sampled and (node['isLooped'] or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                 raise ValueError('Weapon gait must not use engine-time playback')
-    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(6 if directional_walk else 4):
+    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(7 if directional_walk else 4):
         raise ValueError('Wrong real-time blend layer count')
     nodes={k for k,v in definitions.items() if v.get('$type','').startswith('animAnimNode_')}
     init=[v.get('HandleId',v.get('HandleRefId')) for v in gr['nodesToInit']]

@@ -1,7 +1,7 @@
 -- Local cosmetic inference from interpolated XYZ, not an authoritative action.
 -- This experimental renderer has no AI, navigation, root motion or gameplay.
 local M = {}
-M.revision = "20261020-locomotion-12"
+M.revision = "20261020-locomotion-13"
 -- Installed walk/sprint clips travel along rig +Y. Preserve network/entity
 -- heading; the earlier guessed 180-degree correction made movement face back.
 M.yawOffset = 0
@@ -10,6 +10,7 @@ function M.new(directional,smooth)
     return {phase=0,progress=0,cycles=0,directional=directional==true,smooth=smooth==true,
         previousPhase=0,previousProgress=0,phaseWeight=0,phaseDirection=0,phaseDirectionWeight=0,
         crouchBackward=0,crouchTarget=0,crouchProgress=0,
+        crouchDirection=0,crouchSide=0,crouchPreviousSide=0,crouchSideBlend=1,crouchSideWeight=0,crouchPreviousProgress=0,
         direction=0,previousDirection=0,directionBlend=1,directionWeight=0,directionPreviousProgress=0}
 end
 -- Corrected rifle locomotion derivatives retain these original motion distances.
@@ -53,26 +54,46 @@ local function direction_step(state,pose,dt,dx,dy,speed,oldProgress)
     state.directionWeight=math.min(1,state.directionWeight+amount)
     return strides[state.direction+1]
 end
-local function crouch_step(state,pose,dt,dx,dy,speed,discontinuity)
+local function crouch_step(state,pose,dt,dx,dy,speed,discontinuity,oldProgress)
     local a=pose.actions
     local eligible=a and a.fresh==true and a.stance==2 and finite(pose.yaw)
         and dt>0 and dt<=.25 and not discontinuity and state.phase<=2
     if not eligible then
         state.crouchBackward,state.crouchTarget=0,0
+        state.crouchDirection,state.crouchSideWeight,state.crouchSideBlend=0,0,1
+        state.crouchPreviousSide=state.crouchSide
+        state.crouchPreviousProgress=state.cycles
         return nil,false
     end
     if speed>.15 then
         local forward=(-math.sin(pose.yaw)*dx+math.cos(pose.yaw)*dy)/(speed*dt)
-        if state.crouchTarget==0 and forward<-.35 then state.crouchTarget=1
-        elseif state.crouchTarget==1 and forward>-.1 then state.crouchTarget=0 end
+        local right=(math.cos(pose.yaw)*dx+math.sin(pose.yaw)*dy)/(speed*dt)
+        local scores={forward,right,-forward,-right}
+        local target=state.crouchDirection
+        for i=0,3 do if scores[i+1]>scores[target+1]+.15 then target=i end end
+        state.crouchDirection=target
     end
     local amount=dt/.08
+    local sideways=state.crouchDirection==1 or state.crouchDirection==3
+    if sideways then
+        local side=state.crouchDirection==3 and 1 or 0
+        if side~=state.crouchSide then
+            if state.crouchSideBlend>=.5 then
+                state.crouchPreviousSide,state.crouchPreviousProgress=state.crouchSide,oldProgress
+            end
+            state.crouchSide,state.crouchSideBlend=side,0
+        end
+        state.crouchSideWeight=math.min(1,state.crouchSideWeight+amount)
+    else state.crouchSideWeight=math.max(0,state.crouchSideWeight-amount) end
+    state.crouchSideBlend=math.min(1,state.crouchSideBlend+amount)
+    state.crouchTarget=state.crouchDirection==2 and 1 or 0
     if state.crouchTarget==1 then state.crouchBackward=math.min(1,state.crouchBackward+amount)
     else state.crouchBackward=math.max(0,state.crouchBackward-amount) end
     -- Installed stealth clips span a different travel distance from standing
     -- walking. Retain the last distance sample during a stop's motion fade.
     return (state.phase==1 or state.phase==2) and
-        (state.crouchTarget==1 and 3.992504835128784 or 6.249844074249268) or nil,true
+        (sideways and (state.crouchSide==0 and strides[2] or strides[4]) or
+        state.crouchTarget==1 and 3.992504835128784 or 6.249844074249268) or nil,true
 end
 function M.step(state, pose, now)
     local previous = state.previous
@@ -153,7 +174,7 @@ function M.step(state, pose, now)
     end
     if state.directional then
         local stride=direction_step(state,pose,dt,dx,dy,speed,oldProgress)
-        local crouchStride,crouched=crouch_step(state,pose,dt,dx,dy,speed,discontinuity)
+        local crouchStride,crouched=crouch_step(state,pose,dt,dx,dy,speed,discontinuity,oldProgress)
         stride=crouchStride or stride
         if stride then
             state.cycles=(oldProgress+speed*dt/stride)%1
@@ -208,7 +229,12 @@ function M.apply(actor, state)
             {"cp_coop_walk_previous_progress",state.directionPreviousProgress},
             {"cp_coop_walk_direction_weight",state.directionWeight},
             {"cp_coop_crouch_progress",state.crouchProgress},
-            {"cp_coop_crouch_backward",state.crouchBackward}})do inputs[#inputs+1]=v end
+            {"cp_coop_crouch_backward",state.crouchBackward},
+            {"cp_coop_crouch_side",state.crouchSide},
+            {"cp_coop_crouch_previous_side",state.crouchPreviousSide},
+            {"cp_coop_crouch_side_blend",state.crouchSideBlend},
+            {"cp_coop_crouch_side_weight",state.crouchSideWeight},
+            {"cp_coop_crouch_previous_progress",state.crouchPreviousProgress}})do inputs[#inputs+1]=v end
     end
     inputs[#inputs+1]={"cp_coop_loco_phase",state.phase}
     for _, input in ipairs(inputs) do

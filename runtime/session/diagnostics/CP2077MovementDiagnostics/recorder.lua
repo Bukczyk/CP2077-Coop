@@ -24,6 +24,7 @@ local fields = {"entity", "actor", "mode", "loadedPresentationVersion", "lifecyc
     "gaitDirectionEnabled", "gaitDirection", "gaitPreviousDirection", "gaitDirectionBlend", "gaitDirectionWeight", "gaitPreviousProgress",
     "gaitBlendEnabled", "gaitBlendWeight", "gaitBlendPreviousPhase", "gaitBlendPreviousProgress",
     "gaitBlendPreviousDirection", "gaitBlendPreviousDirectionWeight", "gaitCrouchBackward", "gaitCrouchProgress",
+    "gaitCrouchDirection", "gaitCrouchSide", "gaitCrouchPreviousSide", "gaitCrouchSideBlend", "gaitCrouchSideWeight", "gaitCrouchPreviousProgress",
     "presentationTime"}
 function Recorder.new(emit, maxBytes, rateHz)
     -- Explicit bounded timing investigation only. Normal captures remain5Hz.

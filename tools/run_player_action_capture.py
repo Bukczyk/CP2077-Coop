@@ -113,7 +113,7 @@ def main():
     parser.add_argument('--session',required=True)
     parser.add_argument('--key-file',type=Path,required=True)
     parser.add_argument('--origin',default='-813,821.5,24.4042,0')
-    parser.add_argument('--mode',choices=('actions','gaits','directions','crouch-directions','unarmed-directions'),default='actions')
+    parser.add_argument('--mode',choices=('actions','gaits','directions','crouch-directions','unarmed-directions','crouch-sides'),default='actions')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     if args.output.exists():parser.error('Output must be a new folder')

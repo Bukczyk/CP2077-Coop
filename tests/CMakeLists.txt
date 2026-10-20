@@ -128,6 +128,8 @@ add_test(NAME player_gait_blend COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DI
 set_tests_properties(player_gait_blend PROPERTIES TIMEOUT 15)
 add_test(NAME player_crouch_direction COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_crouch_direction_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(player_crouch_direction PROPERTIES TIMEOUT 15)
+add_test(NAME player_crouch_side COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/player_crouch_side_tests.lua" "${PROJECT_SOURCE_DIR}")
+set_tests_properties(player_crouch_side PROPERTIES TIMEOUT 15)
 add_test(NAME movement_diagnostics COMMAND coop_lua_test "${CMAKE_CURRENT_SOURCE_DIR}/movement_diagnostics_tests.lua" "${PROJECT_SOURCE_DIR}")
 set_tests_properties(movement_diagnostics PROPERTIES TIMEOUT 15)
 if(Python3_Interpreter_FOUND)

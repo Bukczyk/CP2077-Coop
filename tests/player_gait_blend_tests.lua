@@ -50,6 +50,6 @@ local jump=L.new(true,true);L.step(jump,pose(0,0),0);jump.phaseWeight=.8
 L.step(jump,pose(0,0,a,10.5),.1);assert(jump.phase==5 and jump.phaseWeight==0,"takeoff cannot retain ground pose")
 local events={};NewObject=function()return {}end;CName={new=function(v)return v end}
 L.apply({QueueEvent=function(_,e)events[#events+1]=e end},s)
-assert(#events==14 and events[1].key=="cp_coop_loco_progress" and events[14].key=="cp_coop_loco_phase")
+assert(#events==19 and events[1].key=="cp_coop_loco_progress" and events[19].key=="cp_coop_loco_phase")
 for _,e in ipairs(events)do assert(e.value==e.value and e.value>=0 and e.value<=5,"all queued values bounded")end
 print("Gait blend: real-clock walk/sprint/stop, frozen direction, per-actor state, bounded retarget and fail-neutral passed")

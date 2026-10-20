@@ -68,6 +68,17 @@ constexpr auto CrouchDirectionPhases=[] {
     phases[5]={"crouch_unarmed_out_and_back",36,crouchHolstered};
     return phases;
 }();
+constexpr auto CrouchSidePhases=[] {
+    auto phases=Phases;
+    const coop::PresentationValues unarmed{S::Crouching,W::Holstered,0,A::NotAiming};
+    phases[0]={"crouch_side_unarmed_idle",6,unarmed};
+    phases[1]={"crouch_side_unarmed_right",12,unarmed};
+    phases[2]={"crouch_side_unarmed_stop",18,unarmed};
+    phases[3]={"crouch_side_aim_left",24,CrouchAim};
+    phases[4]={"crouch_side_aim_stop",30,CrouchAim};
+    phases[5]={"crouch_side_armed_out_and_back",36,Crouch};
+    return phases;
+}();
 coop::Transform CrouchPose(coop::Transform origin,double t) {
     double distance=0;
     if(t>=6&&t<12)distance=(t-6)*.5;
@@ -91,6 +102,17 @@ coop::Transform GaitPose(coop::Transform origin,double t) {
     origin.position.x-=static_cast<float>(std::sin(yaw)*distance);
     origin.position.y+=static_cast<float>(std::cos(yaw)*distance);
     origin.rotation.z+=static_cast<float>(heading);
+    return origin;
+}
+coop::Transform CrouchSidePose(coop::Transform origin,double t) {
+    double distance=0;
+    if(t>=6&&t<12)distance=(t-6)*.5;
+    else if(t>=12&&t<18)distance=3;
+    else if(t>=18&&t<24)distance=3-(t-18)*.5;
+    else if(t>=30&&t<36)distance=(t<33?t-30:36-t)*.5;
+    const double yaw=origin.rotation.z;
+    origin.position.x+=static_cast<float>(std::cos(yaw)*distance);
+    origin.position.y+=static_cast<float>(std::sin(yaw)*distance);
     return origin;
 }
 coop::Transform ParseOrigin(std::string value) {
@@ -123,7 +145,7 @@ void Admit(coop::SessionClient& client,coop::Transform origin) {
 int main(int argc,char** argv) {
     try {
         std::string keyPath,session,originText="-818,821.5,24.393097,-3.141592653589793";
-        bool validate=false,directions=false,gaits=false,crouches=false,unarmed=false;
+        bool validate=false,directions=false,gaits=false,crouches=false,unarmed=false,sides=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--validate-only"){validate=true;continue;}
@@ -131,6 +153,7 @@ int main(int argc,char** argv) {
             if(arg=="--gaits"){gaits=true;continue;}
             if(arg=="--crouch-directions"){crouches=true;continue;}
             if(arg=="--unarmed-directions"){unarmed=true;continue;}
+            if(arg=="--crouch-sides"){sides=true;continue;}
             if(i+1>=argc)throw std::runtime_error("Missing option value");
             const std::string value=argv[++i];
             if(arg=="--key-file")keyPath=value;
@@ -140,10 +163,10 @@ int main(int argc,char** argv) {
         }
         if(session.empty()||session.size()>64||session.find_first_of("\r\n\0",0,3)!=std::string::npos)
             throw std::runtime_error("Invalid session name");
-        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)+static_cast<int>(unarmed)>1)
+        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)+static_cast<int>(unarmed)+static_cast<int>(sides)>1)
             throw std::runtime_error("Choose one fixture trajectory");
         const auto origin=ParseOrigin(originText);
-        const auto& phases=unarmed?UnarmedDirectionPhases:crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
+        const auto& phases=sides?CrouchSidePhases:unarmed?UnarmedDirectionPhases:crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
         for(const auto& p:phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
         if(validate) {
             std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
@@ -155,6 +178,10 @@ int main(int argc,char** argv) {
             if(crouches)for(const auto t:{6.0,12.0,18.0,21.0,24.0,30.0,35.0}) {
                 const auto p=CrouchPose(origin,t);
                 std::cout<<"CROUCH_POINT t="<<t<<" x="<<p.position.x<<" y="<<p.position.y<<" yaw="<<p.rotation.z<<'\n';
+            }
+            if(sides)for(const auto t:{6.0,12.0,18.0,21.0,24.0,30.0,33.0,35.0}) {
+                const auto p=CrouchSidePose(origin,t);
+                std::cout<<"CROUCH_SIDE_POINT t="<<t<<" x="<<p.position.x<<" y="<<p.position.y<<" yaw="<<p.rotation.z<<'\n';
             }
             return 0;
         }
@@ -182,7 +209,8 @@ int main(int argc,char** argv) {
             }
             if(index!=12) {
                 auto pose=origin;
-                if(crouches&&index<=5)pose=CrouchPose(origin,t);
+                if(sides&&index<=5)pose=CrouchSidePose(origin,t);
+                else if(crouches&&index<=5)pose=CrouchPose(origin,t);
                 else if(gaits&&index>=1&&index<=5)pose=GaitPose(origin,t);
                 else if((directions||unarmed)&&index>=2&&index<=5) {
                     double x=0,y=0;

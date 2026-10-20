@@ -51,12 +51,12 @@ L.step(ordinary,pose(0,0,0,c),0);L.step(crouched,pose(0,0,0,c),0)
 for i=1,60 do
     L.step(ordinary,pose(i/60,0,0,c),i/60);L.step(crouched,pose(i/60,0,0,c),i/60)
     near(ordinary.cycles,(i/60/3.7953503131866455)%1)
-    near(crouched.cycles,(i/60/6.249844074249268)%1)
+    near(crouched.cycles,(i/60/1.4817253351211548)%1)
     assert(crouched.directionWeight==0,'crouch must never expose standing combat feet')
 end
 L.step(back,pose(50,50,0,a),3);assert(back.phase==0 and back.directionWeight==0,'teleport/gap resets direction eligibility')
 local events={};CName={new=function(v)return v end};NewObject=function()return {}end
 L.apply({QueueEvent=function(_,e)events[#events+1]=e end},s)
-assert(#events==9 and events[1].key=='cp_coop_loco_progress' and events[9].key=='cp_coop_loco_phase')
+assert(#events==14 and events[1].key=='cp_coop_loco_progress' and events[14].key=='cp_coop_loco_phase')
 for _,e in ipairs(events)do assert(e.value==e.value and e.value>=0 and e.value<=3,'all cosmetic graph values finite/bounded')end
 print('Armed walk direction: four-way/yaw axes, measured stride, hysteresis, fixed pose, real-time blend and guarded fallback passed')

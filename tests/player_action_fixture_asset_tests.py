@@ -44,7 +44,7 @@ for profile in ['rifle','shotgundual']:
 de,dg=m.sources('shotgundual',True,True)
 lower=[v for v in m.base.walk(dg) if v.get('$type')=='animAnimNode_BlendOverride'
        and v['bones'][0]['transformIndex']['name']['$value']=='Hips']
-assert len(lower)==2 and all([b['transformIndex']['name']['$value'] for b in v['bones']]==list(m.LOWER_BONES) for v in lower)
+assert len(lower)==3 and all([b['transformIndex']['name']['$value'] for b in v['bones']]==list(m.LOWER_BONES) for v in lower)
 for change in (lambda n:n['bones'][0]['transformIndex'].update(name=m.base.cname('Spine')),
                lambda n:n.update(blendAllTracks=1),lambda n:n.update(getDeltaMotionFromOverride=1)):
     bad=copy.deepcopy(dg)
@@ -54,6 +54,14 @@ for change in (lambda n:n['bones'][0]['transformIndex'].update(name=m.base.cname
     try:m.validate(de,bad,'shotgundual',True,True)
     except ValueError:pass
     else:raise AssertionError('Directional legs may not replace the relaxed upper body or root motion')
+
+for alias in ('cp_coop_crouch_side_walk_090','cp_coop_crouch_side_walk_270'):
+    bad=copy.deepcopy(dg)
+    node=next(v for v in m.base.walk(bad) if v.get('$type')=='animAnimNode_SkFrameAnim' and v['animation']['$value']==alias)
+    node['animation']=m.base.cname('walk_090')
+    try:m.validate(de,bad,'shotgundual',True,True)
+    except ValueError:pass
+    else:raise AssertionError('Unqualified sideways crouch clip accepted')
 
 
 def find(doc,kind):return next(v for v in m.base.walk(doc) if v.get('$type')==kind)
