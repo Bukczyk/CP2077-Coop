@@ -20,7 +20,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--game-root',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
-    parser.add_argument('--model',choices=('poses','igla','igla-aim'),default='poses')
+    parser.add_argument('--model',choices=('poses','igla','igla-aim','directions'),default='poses')
     args=parser.parse_args()
     if args.output.exists():parser.error('Choose a new private output folder')
     mods=args.game_root/'bin/x64/plugins/cyber_engine_tweaks/mods'
@@ -41,6 +41,9 @@ def main():
         'capture_hooks':args.game_root/'r6/scripts/CP2077ActionCapture/player_capture.reds',
         'authored_archive':args.game_root/'archive/pc/mod/CP2077Coop_ActionFixture.archive',
         'private_cache':args.game_root/'archive/pc/mod/PRIVATE_DO_NOT_DISTRIBUTE_ActionClips.archive'}
+    if args.model=='directions':
+        files['authored_archive']=args.game_root/'archive/pc/mod/CP2077Coop_DirectionFixture.archive'
+        files['private_cache']=args.game_root/'archive/pc/mod/PRIVATE_DO_NOT_DISTRIBUTE_DirectionClips.archive'
     if args.model in ('igla','igla-aim'):
         files['weapon_archive']=args.game_root/'archive/pc/mod/CP2077Coop_WeaponFixture.archive'
         files['weapon_hook']=args.game_root/'r6/scripts/CP2077ActionCapture/weapon_fixture.reds'
@@ -67,7 +70,9 @@ def main():
                 time.sleep(.1)
             else:raise RuntimeError('No real frame before fixture start')
             observer_nonce=str(uuid.uuid4())
-            request(observer,'observer-request.json',{'version':1,'mode':'place-observer','session':session,'request':observer_nonce})
+            request(observer,'observer-request.json',{'version':1,
+                'mode':'place-direction-observer' if args.model=='directions' else 'place-observer',
+                'session':session,'request':observer_nonce})
             until=time.monotonic()+5
             while time.monotonic()<until:
                 try:

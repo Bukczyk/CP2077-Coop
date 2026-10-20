@@ -39,6 +39,12 @@ selected=m.prepare(shotgun,'shotgundual')
 assert [m.animation(e)['name']['$value'] for e in selected['Data']['RootChunk']['animations']]==[
     'cp_coop_shotgundual_'+n for n in m.PROFILES['shotgundual'][1]]
 assert m.buffer_hashes(selected)==m.buffer_hashes(shotgun)
+directional=copy.deepcopy(doc)
+directional['Data']['RootChunk']['animations']=[entry(n,i) for i,n in enumerate(m.PROFILES['directional'][1])]
+selected=m.prepare(directional,'directional')
+assert [m.animation(e)['name']['$value'] for e in selected['Data']['RootChunk']['animations']]==[
+    'cp_coop_directional_'+n for n in m.PROFILES['directional'][1]]
+assert m.buffer_hashes(selected)==m.buffer_hashes(directional)
 
 
 def reject(change):

@@ -24,6 +24,8 @@ PROFILES = {
                     ('ovr_idle', 'ovr_walk', 'ovr_sprint', 'aim_ovr_idle', 'aim_ovr_walk')),
     'shotgundual': ('wa_gang_shotgun_dual_rostovic_palica_action_combat.anims',
                     ('ovr_idle', 'ovr_walk', 'ovr_sprint', 'aim_ovr_idle', 'aim_ovr_walk')),
+    'directional': ('wa_gang_unarmed_locomotion_combat.anims',
+                    ('idle_stand','walk_0','walk_090','walk_180','walk_270','sprint_0')),
 }
 
 

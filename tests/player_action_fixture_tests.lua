@@ -19,18 +19,20 @@ local function fixture(stale)
     spdlog={info=function()end}
     CName={new=function(v)return v end};ResRef={FromName=function(v)return v end}
     Vector4={new=function(x,y,z,w)return {x=x,y=y,z=z,w=w}end}
-    Quaternion={new=function()return {}end};EulerAngles={new=function()return {}end}
-    WorldTransform={new=function()return {}end,SetPosition=function()end,SetOrientationEuler=function()end}
+    Quaternion={new=function()return {}end};EulerAngles={new=function(_,_,yaw)return {yaw=yaw}end}
+    WorldTransform={new=function()return {}end,SetPosition=function(w,p)w.position=p end,SetOrientationEuler=function(w,a)w.angles=a end}
     NewObject=function()return {}end;IsDefined=function(v)return v~=nil end
     StaticEntitySpec={new=function()return {}end}
     local actor={IsAttached=function()return f.actorAttached end,GetEntityID=function()return {hash=f.actorKey}end,
-        SetWorldTransform=function()end,QueueEvent=function(_,event)f.inputs[#f.inputs+1]=event end,
+        SetWorldTransform=function(_,world)f.transforms=f.transforms or {};f.transforms[#f.transforms+1]=world end,
+        QueueEvent=function(_,event)f.inputs[#f.inputs+1]=event end,
         CP2077Fixture_SetWeaponVisible=function(_,visible)
             f.visibility[#f.visibility+1]=visible;return f.visibilityAccepted
         end}
     local system={IsReady=function()return f.ready end,
         SpawnEntity=function(_,spec)
             check(spec.templatePath==((f.request.model=="igla" or f.request.model=="igla-aim") and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
+                or f.request.model=="directions" and "base\\cp2077coop\\entities\\player_direction_fixture.ent"
                 or "base\\cp2077coop\\entities\\player_actions_fixture.ent"),"fixed fixture only")
             f.spawns=f.spawns+1;f.managed=true;f.spawning=true;return {hash="100ULL"}
         end,GetEntity=function()return f.spawned and actor or nil end,
@@ -92,6 +94,23 @@ do
     check(pitchLow and pitchHigh and yawLow and yawHigh,"both axes exercised in both directions")
     check(#f.visibility==10 and f.spawns==1 and f.despawns==1 and f.receipt.status=="removed",
         "bounded isolated aim fixture keeps exact cleanup")
+end
+do
+    local f=fixture();f:arm();f.request.model="directions";f:tick();f:attach();f:tick(650)
+    local seen={}
+    for _,event in ipairs(f.inputs)do
+        if event.key=="cp_coop_loco_phase" then seen[event.value]=true end
+        if event.key=="cp_coop_loco_progress" then check(event.value>=0 and event.value<1,"bounded distance samples")end
+    end
+    for direction=0,4 do check(seen[direction],"idle and all four directions exercised")end
+    for _,world in ipairs(f.transforms)do
+        local p=world.position
+        check(p.x>=-813.00001 and p.x<=-806.99999 and p.y>=821.49999 and p.y<=827.50001,
+            "fixed route stays inside the six-metre square")
+        check(p.z==24.4042 and world.angles.yaw==0,"direction change cannot alter body heading or height")
+    end
+    check(#f.visibility==0 and f.spawns==1 and f.despawns==1 and f.receipt.status=="removed",
+        "direction fixture never uses weapon hooks and removes its exact actor")
 end
 do
     local f=fixture();f:arm();f.request.model="igla";f:tick();f:attach();f.visibilityAccepted=false;f:tick()
