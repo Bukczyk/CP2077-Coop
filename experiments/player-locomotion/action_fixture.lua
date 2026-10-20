@@ -44,6 +44,14 @@ local directionPhases={
     {name="direction_backward",gait=3,x=-807,y=827.5,vy=-1.2,stride=1.6499662399291992},
     {name="direction_left",gait=4,x=-807,y=821.5,vx=-1.2,stride=1.7075181007385254},
     {name="direction_idle_return",gait=0,x=-813,y=821.5}}
+local crouchDirectionPhases={
+    {name="crouch_direction_idle",gait=0,x=-813,y=821.5},
+    {name="crouch_direction_forward",gait=1,x=-813,y=821.5,vy=.6,stride=6.249844074249268},
+    {name="crouch_direction_forward_stop",gait=0,x=-813,y=824.5},
+    {name="crouch_direction_backward",gait=2,x=-813,y=824.5,vy=-.6,stride=3.992504835128784},
+    {name="crouch_direction_backward_stop",gait=0,x=-813,y=821.5},
+    {name="crouch_direction_forward_return",gait=1,x=-813,y=821.5,vy=.6,stride=6.249844074249268}}
+local function directionModel(model)return model=="directions" or model=="crouch-directions" end
 local function key(v)return tostring(v):gsub("[uUlL]+$","") end
 local function read()
     local f=io.open("action-request.json","r");if not f then return end
@@ -103,7 +111,8 @@ registerForEvent("onUpdate",function(dt)
         if key(actor:GetEntityID().hash)~=key(active.id.hash) then error("fixture identity changed") end
         active.actor,active.seenReady=actor,true;active.started=active.started or clock
         local elapsed=clock-active.started;local index=math.floor(elapsed/5)+1
-        local sequence=active.model=="directions" and directionPhases or active.model=="igla-aim" and aimPhases
+        local sequence=active.model=="crouch-directions" and crouchDirectionPhases
+            or active.model=="directions" and directionPhases or active.model=="igla-aim" and aimPhases
             or active.model=="igla" and weaponPhases or phases
         if index>#sequence then active.finishing=true;report("poses_submitted","visual review required");cleanup();return end
         local phase=sequence[index]
@@ -117,12 +126,13 @@ registerForEvent("onUpdate",function(dt)
             active.phase=index;report("phase_submitted",phase.name)
         end
         local world=WorldTransform.new()
-        if active.model=="directions" then
+        if directionModel(active.model) then
             local age=elapsed%5
             WorldTransform.SetPosition(world,Vector4.new(phase.x+(phase.vx or 0)*age,phase.y+(phase.vy or 0)*age,24.4042,1))
             WorldTransform.SetOrientationEuler(world,EulerAngles.new(0,0,0));actor:SetWorldTransform(world)
             input(actor,"cp_coop_loco_phase",phase.gait)
-            input(actor,"cp_coop_loco_progress",phase.stride and (age*1.2/phase.stride)%1 or 0)
+            local speed=math.sqrt((phase.vx or 0)^2+(phase.vy or 0)^2)
+            input(actor,"cp_coop_loco_progress",phase.stride and (age*speed/phase.stride)%1 or 0)
             return
         end
         WorldTransform.SetPosition(world,Vector4.new(-813+(phase.moving and math.sin(elapsed*1.5) or 0),821.5,24.4042,1))
@@ -141,13 +151,14 @@ registerForEvent("onUpdate",function(dt)
     if clock>=1800 or count>=3 or clock<due then return end
     due=clock+0.2;local r=read();if not r or seen[r.request] then return end
     seen[r.request]=true;count=count+1
-    if r.model~=nil and r.model~="poses" and r.model~="directions" and not weaponModel(r.model) then spdlog.info("[ActionFixture] rejected model");return end
+    if r.model~=nil and r.model~="poses" and not directionModel(r.model) and not weaponModel(r.model) then spdlog.info("[ActionFixture] rejected model");return end
     if not context(r) then spdlog.info("[ActionFixture] rejected context");return end
     local system=Game.GetStaticEntitySystem();if not system or system:IsReady()~=true then return end
     active={version=r.version,mode=r.mode,request=r.request,session=r.session,system=system,admitted=clock,model=r.model or "poses"}
     local spec=StaticEntitySpec.new()
     spec.templatePath=ResRef.FromName(weaponModel(active.model) and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
         or active.model=="directions" and "base\\cp2077coop\\entities\\player_direction_fixture.ent"
+        or active.model=="crouch-directions" and "base\\cp2077coop\\entities\\player_crouch_direction_fixture.ent"
         or "base\\cp2077coop\\entities\\player_actions_fixture.ent")
     spec.position=Vector4.new(-813,821.5,24.4042,1);spec.orientation=Quaternion.new(0,0,1,0)
     spec.attached=true;spec.tags={CName.new("CP2077Coop.PrivateActionFixture"),CName.new(r.request)}

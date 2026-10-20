@@ -4,6 +4,15 @@ from pathlib import Path
 p=Path(__file__).resolve().parents[1]/'experiments/player-locomotion/build_direction_fixture.py'
 s=importlib.util.spec_from_file_location('direction_fixture',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 e,g=m.sources();m.validate(e,g)
+ce,cg=m.sources('crouch');m.validate(ce,cg,'crouch')
+assert len(set(m.recipe('crouch')[3]))==3 and m.recipe('crouch')[2]!=m.CACHE
+for entity,graph,profile in [(ce,cg,'standing'),(e,g,'crouch')]:
+    try:m.validate(entity,graph,profile)
+    except ValueError:pass
+    else:raise AssertionError('Mixed standing/crouch recipe accepted')
+try:m.sources('arbitrary')
+except ValueError:pass
+else:raise AssertionError('Unknown direction profile accepted')
 assert m.GRAPH!=m.base.GRAPH and m.ENTITY!=m.base.ENTITY
 assert len(m.CLIPS)==6 and len(set(m.CLIPS))==6
 assert all(0<d<7 for d in m.DISTANCES[1:])

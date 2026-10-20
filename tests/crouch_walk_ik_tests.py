@@ -41,4 +41,12 @@ for before,after in zip(entries,clean['Data']['RootChunk']['animations']):
 wrong=copy.deepcopy(native);wrong['Data']['RootChunk']['animations'][1]['Data']['animation']['Data']['animBuffer']['Data']['numJoints']=72
 reject(lambda:m.sanitize_native(wrong))
 wrong=copy.deepcopy(native);wrong['Data']['RootChunk']['animations'].reverse();reject(lambda:m.sanitize_native(wrong))
+back=copy.deepcopy(native);back['Data']['RootChunk']['animations'][1]['Data']['animation']['Data']['name']['$value']='cp_coop_stealth_walk_180'
+reject(lambda:m.sanitize_native(back))
+clean_back=m.sanitize_native(back,'walk_180')
+assert clean_back['Data']['RootChunk']['animations'][1]['Data']['events']=={'HandleRefId':'-1'}
+assert back['Data']['RootChunk']['animations'][1]['Data']['events']=={'HandleId':'events'}
+reject(lambda:m.sanitize_native(native,'walk_180'))
+reject(lambda:m.sanitize_native(native,'walk_090'))
+reject(lambda:m.build(Path('nonexistent'),Path('nonexistent-output'),'bad','walk_090'))
 print('Crouch IK: pelvis lowering, exact foot paths/orientations, bone lengths, heading invariance and rejection passed')

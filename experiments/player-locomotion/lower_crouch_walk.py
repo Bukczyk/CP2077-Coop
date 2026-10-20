@@ -82,17 +82,21 @@ def lower_pose(translations,rotations,parents,hips,legs,drop):
     return t,q,max(errors)
 
 
-def sanitize_native(doc):
+WALK_CLIPS=('walk_0','walk_180')
+
+
+def sanitize_native(doc,walk_clip='walk_0'):
     """WolvenKit import preserves original events/root extraction by default.
 
     Remove these from its JSON roundtrip as well as disabling them in our graph.
     Compressed pose buffers are unchanged. Only the two inspected aliases pass.
     """
+    if walk_clip not in WALK_CLIPS:raise ValueError('Unqualified stealth walk clip')
     result=copy.deepcopy(doc);root=result['Data']['RootChunk']
     if root['$type']!='animAnimSet' or root['rig']['DepotPath']['$value']!=r'base\characters\base_entities\woman_base\woman_base.rig':
         raise ValueError('Wrong native animation skeleton')
     entries=root['animations'];names=[e['Data']['animation']['Data']['name']['$value'] for e in entries]
-    if names!=['cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_walk_0']:raise ValueError('Wrong native animation aliases')
+    if names!=['cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_'+walk_clip]:raise ValueError('Wrong native animation aliases')
     for entry in entries:
         animation=entry['Data']['animation']['Data']
         if animation['animBuffer']['Data']['numJoints']!=71 or not 0<animation['duration']<=20:
@@ -102,7 +106,8 @@ def sanitize_native(doc):
     return result
 
 
-def build(source:Path,output:Path,drop=0.25):
+def build(source:Path,output:Path,drop=0.25,walk_clip='walk_0'):
+    if walk_clip not in WALK_CLIPS:raise ValueError('Unqualified stealth walk clip')
     if output.exists():raise ValueError('Choose a new private output file')
     repo=Path(__file__).resolve().parents[2]
     if repo in output.resolve().parents or any((p/'.git').exists() for p in output.resolve().parents):
@@ -127,9 +132,9 @@ def build(source:Path,output:Path,drop=0.25):
             if parents[child]>=0:raise ValueError('Multiple skeleton parents')
             parents[child]=i
     hips=names['Hips'];legs=[tuple(names[side+x] for x in ('UpLeg','Leg','Foot')) for side in ('Left','Right')]
-    selected={a['name']:a for a in doc['animations'] if a['name'] in ('idle_low_unarmed','walk_0')}
+    selected={a['name']:a for a in doc['animations'] if a['name'] in ('idle_low_unarmed',walk_clip)}
     if len(selected)!=2:raise ValueError('Expected inspected stealth animations')
-    walking=selected['walk_0'];channels={}
+    walking=selected[walk_clip];channels={}
     def accessor(index):
         a=doc['accessors'][index];v=doc['bufferViews'][a['bufferView']]
         count={'SCALAR':1,'VEC3':3,'VEC4':4}[a['type']]
@@ -191,11 +196,12 @@ def build(source:Path,output:Path,drop=0.25):
     binary.extend(b'\0'*((-len(binary))%4))
     output.parent.mkdir(parents=True,exist_ok=True)
     output.write_bytes(struct.pack('<III',0x46546c67,2,28+len(encoded)+len(binary))+struct.pack('<II',len(encoded),0x4e4f534a)+encoded+struct.pack('<II',len(binary),0x004e4942)+binary)
-    print(json.dumps({'scope':'PRIVATE owned-game derivative; never distribute','pelvis_drop_m':drop,'frames':len(times),'max_foot_error_m':max_error,'output':str(output),'visual_validation':'pending'}))
+    print(json.dumps({'scope':'PRIVATE owned-game derivative; never distribute','walk_clip':walk_clip,'pelvis_drop_m':drop,'frames':len(times),'max_foot_error_m':max_error,'output':str(output),'visual_validation':'pending'}))
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source',required=True,type=Path);parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--drop',type=float,default=0.25)
-    args=parser.parse_args();build(args.source,args.output,args.drop)
+    parser.add_argument('--walk-clip',choices=WALK_CLIPS,default='walk_0',help='PRIVATE backward clip is unqualified until separately tested')
+    args=parser.parse_args();build(args.source,args.output,args.drop,args.walk_clip)

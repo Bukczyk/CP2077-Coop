@@ -75,6 +75,12 @@ stale state, teleports and long gaps clear that layer. The locomotion-only graph
 keeps its original inputs. The loopback replay's `--gaits` mode isolates walk,
 stop and sprint transitions before its existing repair/rejoin tail. See
 [qualification record](../../docs/validation/LOWER_GAIT_BLEND_2026-10-20.md).
+The direction builder's separate `--profile crouch` and private controller model
+`crouch-directions` qualify corrected forward/backward crouch clips. They require
+the existing corrected stealth cache and uniquely aliased backward cache; no
+generated animation bytes are distributable. Ordinary sideways crouch is not
+supported by this inspected bank. See
+[isolated crouch evidence](../../docs/validation/ISOLATED_BACKWARD_CROUCH_2026-10-20.md).
 The installed 2.31 relaxed walk/sprint clip motion distances are 3.795350313 m
 and 3.053292990 m per cycle, both along rig +Y. Preserve network/entity yaw.
 An earlier guessed 180-degree correction was rejected during calibration.
