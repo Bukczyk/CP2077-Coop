@@ -90,3 +90,43 @@ replication. Longer visible dwell and a recovered paired-game run remain next.
 Raw video/logs and the derived private prerequisite stay local. The existing
 validated player runtime and stable v0.0.37 package are preserved. No in-game
 damage, AI, matching cars, physical movement or WAN success is claimed here.
+
+## Extended HOST and JOINER checks
+
+The next normal matched restart succeeded in both games without another code,
+asset, save or configuration change to address the startup crash. That does not
+identify or resolve its cause. The core cleanup patch was installed while both
+games and the local server were stopped; all 13 protected config hashes match.
+
+The isolated fixture holds each actor for ten seconds. A diagnostic-only +1 m
+vertical offset clears the walkway for inspection; it is not a production
+placement fix. Both instances stay in their existing connected local session.
+Their three-body comparisons run independently, not as replicated shared NPCs.
+
+| Game | Original blocked local ID | Fixed first local ID | Fixed replacement local ID | Trace rows |
+| --- | --- | --- | --- | --- |
+| HOST | 10850923 | 10850934 | 10850937 | 183 |
+| JOINER | 10850417 | 10850426 | 10850570 | 184 |
+
+The old cleanup remains blocked at the six-second observation limit in both.
+Both fixed cycles release ownership after original creator removal and exact
+global/retained detachment. Same-label replacement has a distinct ID. All logged
+holding samples remain creator-managed/spawned/attached; 146 HOST and 148 JOINER
+samples verify the exact native entEntity class and template hash
+`4410265881089470268ULL`. No NPCPuppet, AI or invented network binding is used.
+
+Two paired 90-second recordings passed warmup, frame cadence, completion and
+unchanged-tool checks. JOINER's comparison is in the first pair; HOST's comparison
+is in the second. Original frame counts H/J are 2,017/2,039 and 1,954/1,935.
+Eight original frames per tested view were reviewed. Both fixed replacements
+are visible in their selected holding frames and absent after disposal. The
+initial baseline is partly obscured by the console; its lifetime is confirmed
+by engine readback. This qualifies the scoped local lifecycle/recreation fix,
+not full NPC appearance, ground placement or shared-world replication.
+
+At code commit `2f9ce9c8da0a6e0368a9ddcaba70259f554a2308`, all hosted Windows,
+Debian and sanitizer jobs pass, run 39482523123. The current complete PRIVATE
+recovery payload has 86 files, explicit player fd3d100 / NPC 2f9ce9c / native
+9f27bd4 provenance and verified reproducible ZIP hash. Only the two NPC Lua
+copies and two authored idle archives differ from the preceding 84-file player
+checkpoint. No derived asset, raw video, key or save is published.
