@@ -72,3 +72,31 @@ Private evidence root:
 `G:\Projects\CP2077-Coop\bench-artifacts\20261020-crouch-mask`.
 Use hybrid01/shotgun01 captures, contacts, replay logs, native build manifests,
 `before-hybrid01/install.json`, `camera-rtti-probe.txt`, and local test logs.
+## Enabled own-camera guard, 2026-10-20
+
+The private read-only `aim_direction.fromPlayer` now requires an attached player,
+an explicitly enabled FPP component and an attached component owner with the
+exact same opaque native entity identity. Numeric identity adapters, zero/missing
+IDs, disabled/unknown components and foreign owners fail closed. IDs are never
+converted through Lua numbers, including values above2^53. Optional camera failure
+continues to leave essential stance/weapon capture running.
+
+Actual2.31 `gameFPPCameraComponent` RTTI and live calls verify `IsEnabled()` and
+`GetEntity()`; the enabled component's owner matches the current player. A guessed
+`entCameraComponent` type returned Unknown and was rejected, with the failed query
+retained privately. No camera/scene setter was invoked. Fresh matched private
+module5e0e4397 capture observed320 HOST and31 JOINER samples through the new guard,
+players1/2, sourceplayer_fpp_component, at10:26:14..10:27:21Z. JOINER gameplay was
+visually observed after its loading screen. These checks do not prove current-view
+eligibility in every loading/menu, vehicle, scene or photo-mode situation.
+
+Windows experimental71/71 pass, including disabled/foreign-owner and adjacent
+large-ID regressions, and continued essential capture. Default-v5 control69/69 also pass. No protocol/asset/animation/network change.
+
+Both games/server were stopped before the two private module copies changed.
+Old modules and bounded capture journals were backed up. The first restart exited
+with a null-read access violation before a new source log; cause is unresolved.
+The one bounded retry loaded both games and captured the new module successfully.
+Both attempts remain in the private evidence. Launcher reserialization changed
+the settings file hash, but comparison found zero changed JSON scalar values;
+current settings were preserved, with no old-save or settings restore.

@@ -24,14 +24,28 @@ function M.fromPlayer(player)
     -- Verified in the actual2.31 runtime. Never fall back to an unrelated active
     -- scene camera when the player's own component is absent or invalid.
     local ok,result=pcall(function()
+        if not player or player:IsAttached()~=true then return end
         local camera=player:GetFPPCameraComponent()
-        if not camera then return end
+        if not camera or camera:IsEnabled()~=true then return end
+        local owner=camera:GetEntity()
+        if not owner or owner:IsAttached()~=true then return end
+        -- Compare opaque native identities as decimal strings, never through a
+        -- Lua number. Missing/zero IDs and lossy numeric adapters fail closed.
+        local function identity(entity)
+            local hash=entity:GetEntityID().hash
+            if type(hash)=="number" then return end
+            local id=tostring(hash):match("^(%d+)[uUlL]*$")
+            if not id or #id>20 or not id:find("[1-9]") then return end
+            return id
+        end
+        local id=identity(player)
+        if not id or id~=identity(owner) then return end
         local matrix=camera:GetLocalToWorld()
         if Matrix.IsOk(matrix)~=true then return end
         local angles=M.fromVectors(Matrix.GetDirectionVector(matrix),player:GetWorldForward())
         if angles then
             angles.source="player_fpp_component"
-            angles.scope="read-only player-owned FPP direction; current-view eligibility not qualified"
+            angles.scope="read-only enabled own FPP direction; current-view eligibility not qualified"
         end
         return angles
     end)

@@ -19,14 +19,19 @@ assert(M.fromVectors(vector(0),nil)==nil)
 local scaled=vector(30,20);scaled.x,scaled.y,scaled.z=scaled.x*.9,scaled.y*.9,scaled.z*.9
 local result=assert(M.fromVectors(scaled,vector(0)));near(result.yawDegrees,30);near(result.pitchDegrees,20)
 do
-    local f={ok=true,camera=vector(30,20)}
+    local f={ok=true,camera=vector(30,20),enabled=true,attached=true,id="9007199254740993ULL"}
     Matrix={IsOk=function()return f.ok end,GetDirectionVector=function()return f.camera end}
     Game={GetCameraSystem=function()error('unrelated scene camera must never be read')end}
-    local player={GetWorldForward=function()return vector(10)end,
+    local player
+    player={GetWorldForward=function()return vector(10)end,
+        IsAttached=function()return f.attached end,
+        GetEntityID=function()return {hash=f.id}end,
         GetFPPCameraComponent=function()
             if f.throw then error('camera unavailable')end
             if f.missing then return nil end
-            return {GetLocalToWorld=function()return {}end}
+            return {GetLocalToWorld=function()return {}end,
+                IsEnabled=function()return f.enabled end,
+                GetEntity=function()if f.ownerMissing then return nil end;return f.owner or player end}
         end}
     local angles=assert(M.fromPlayer(player));near(angles.yawDegrees,20);near(angles.pitchDegrees,20)
     assert(angles.source=='player_fpp_component')
@@ -34,5 +39,16 @@ do
     f.camera=vector(0,90);assert(M.fromPlayer(player)==nil)
     f.camera=vector(30,20);f.missing=true;assert(M.fromPlayer(player)==nil);f.missing=false
     f.throw=true;assert(M.fromPlayer(player)==nil);assert(M.fromPlayer(nil)==nil)
+    f.throw=false;f.enabled=false;assert(M.fromPlayer(player)==nil)
+    f.enabled=nil;assert(M.fromPlayer(player)==nil);f.enabled=true
+    f.attached=false;assert(M.fromPlayer(player)==nil);f.attached=true
+    f.ownerMissing=true;assert(M.fromPlayer(player)==nil);f.ownerMissing=false
+    f.owner={IsAttached=function()return true end,GetEntityID=function()return {hash="9007199254740992ULL"}end}
+    assert(M.fromPlayer(player)==nil,"adjacent IDs above2^53 must remain distinct")
+    f.owner=nil
+    for _,id in ipairs({0,9007199254740992,"0ULL","invalid",string.rep("9",21)})do
+        f.id=id;assert(M.fromPlayer(player)==nil,"unsafe/missing identity cannot admit an own camera")
+    end
+    f.id="9007199254740993ULL";assert(M.fromPlayer(player))
 end
 print('Aim direction: axes, pitch, wraparound, normalization and unavailable/nonfinite rejection passed')

@@ -13,11 +13,17 @@ local function fixture()
         return {seek=function()return f.fileSize end,close=function()end,
             write=function(_,line)f.fileSize=f.fileSize+#line;f.writes=f.writes+1;f.outputs[#f.outputs+1]=f.sample end}
     end}
-    local player={CP2077Capture_Ready=function()return true end,
+    local player
+    player={CP2077Capture_Ready=function()return true end,
+        IsAttached=function()return true end,
+        GetEntityID=function()return {hash='9007199254740993ULL'}end,
         GetWorldForward=function()return {x=0,y=1,z=0}end,
         GetFPPCameraComponent=function()
             if f.failCamera then error('unavailable')end
-            return {GetLocalToWorld=function()return {}end}
+            return {GetLocalToWorld=function()return {}end,
+                IsEnabled=function()return not f.disabledCamera end,
+                GetEntity=function()return f.foreignCamera and
+                    {IsAttached=function()return true end,GetEntityID=function()return {hash='9007199254740992ULL'}end} or player end}
         end,
         CP2077Capture_HeldTemplate=function()return 'base/weapon_root.ent' end,
         CP2077Capture_HeldAppearance=function()return 'variant' end,
@@ -49,6 +55,11 @@ end
 do
     local f=fixture();f.failCamera=true;f:tick(3)
     check(f.writes==3 and f.outputs[1].cameraAim==nil and not f.error,'camera failure cannot stop essential action capture')
+end
+for _,field in ipairs({'disabledCamera','foreignCamera'})do
+    local f=fixture();f[field]=true;f:tick(3)
+    check(f.writes==3 and f.outputs[1].cameraAim==nil and not f.error,
+        'disabled/foreign camera rejected while essential action state continues')
 end
 do
     local f=fixture();f.failVisuals=true;f:tick(25)
