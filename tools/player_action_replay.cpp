@@ -33,6 +33,14 @@ constexpr std::array<Phase,15> Phases{{
     {"unavailable",72,{}},{"disconnected",78,{}},{"reconnected_crouch_aim",86,CrouchAim},
     {"crouch_walk_unarmed",92,{S::Crouching,W::Holstered,0,A::NotAiming}}
 }};
+constexpr auto DirectionPhases=[] {
+    auto phases=Phases;
+    phases[2]={"armed_walk_forward",18,Ready};
+    phases[3]={"armed_walk_right_aim",24,Aim};
+    phases[4]={"armed_walk_backward_aim",30,Aim};
+    phases[5]={"armed_walk_left",36,Ready};
+    return phases;
+}();
 coop::Transform ParseOrigin(std::string value) {
     if(std::count(value.begin(),value.end(),',')!=3)throw std::runtime_error("Origin needs x,y,z,yaw");
     std::replace(value.begin(),value.end(),',',' ');
@@ -63,10 +71,11 @@ void Admit(coop::SessionClient& client,coop::Transform origin) {
 int main(int argc,char** argv) {
     try {
         std::string keyPath,session,originText="-818,821.5,24.393097,-3.141592653589793";
-        bool validate=false;
+        bool validate=false,directions=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--validate-only"){validate=true;continue;}
+            if(arg=="--directions"){directions=true;continue;}
             if(i+1>=argc)throw std::runtime_error("Missing option value");
             const std::string value=argv[++i];
             if(arg=="--key-file")keyPath=value;
@@ -77,10 +86,11 @@ int main(int argc,char** argv) {
         if(session.empty()||session.size()>64||session.find_first_of("\r\n\0",0,3)!=std::string::npos)
             throw std::runtime_error("Invalid session name");
         const auto origin=ParseOrigin(originText);
-        for(const auto& p:Phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
+        const auto& phases=directions?DirectionPhases:Phases;
+        for(const auto& p:phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
         if(validate) {
-            std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<Phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
-            double start=0;for(const auto& p:Phases){std::cout<<"PHASE start="<<start<<" until="<<p.until<<" name="<<p.name<<" tick_gap="<<p.gap<<'\n';start=p.until;}
+            std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
+            double start=0;for(const auto& p:phases){std::cout<<"PHASE start="<<start<<" until="<<p.until<<" name="<<p.name<<" tick_gap="<<p.gap<<'\n';start=p.until;}
             return 0;
         }
         std::ifstream keyFile(keyPath);std::string key;
@@ -92,12 +102,12 @@ int main(int argc,char** argv) {
         coop::SessionClient client(config,[](const std::string& line){std::cout<<line<<std::endl;});
         Admit(client,origin);
         std::uint32_t sequence=0;std::uint64_t nextSnapshot=0;
-        const auto started=coop::net::NowMs();std::size_t prior=Phases.size();double nextReport=0;
+        const auto started=coop::net::NowMs();std::size_t prior=phases.size();double nextReport=0;
         while(true) {
             auto now=coop::net::NowMs();double t=static_cast<double>(now-started)/1000.0;
-            if(t>=Phases.back().until)break;
-            const auto it=std::find_if(Phases.begin(),Phases.end(),[&](const auto& p){return t<p.until;});
-            const auto index=static_cast<std::size_t>(it-Phases.begin());
+            if(t>=phases.back().until)break;
+            const auto it=std::find_if(phases.begin(),phases.end(),[&](const auto& p){return t<p.until;});
+            const auto index=static_cast<std::size_t>(it-phases.begin());
             const auto& phase=*it;
             if(index!=prior) {
                 if(index==12)client.Disconnect();
@@ -107,8 +117,19 @@ int main(int argc,char** argv) {
             }
             if(index!=12) {
                 auto pose=origin;
-                if(index==4)pose.position.x+=static_cast<float>(Triangle(t-24,1));
-                if(index==5)pose.position.x+=static_cast<float>(Triangle(t-30,6));
+                if(directions&&index>=2&&index<=5) {
+                    double x=0,y=0;
+                    if(index==2)y=t-12;
+                    if(index==3){x=t-18;y=6;}
+                    if(index==4){x=6;y=6-(t-24);}
+                    if(index==5)x=6-(t-30);
+                    const auto yaw=static_cast<double>(origin.rotation.z);
+                    pose.position.x+=static_cast<float>(std::cos(yaw)*x-std::sin(yaw)*y);
+                    pose.position.y+=static_cast<float>(std::sin(yaw)*x+std::cos(yaw)*y);
+                } else {
+                    if(index==4)pose.position.x+=static_cast<float>(Triangle(t-24,1));
+                    if(index==5)pose.position.x+=static_cast<float>(Triangle(t-30,6));
+                }
                 if(index==7)pose.position.x+=static_cast<float>(Triangle(t-42,1));
                 if(index==14)pose.position.x+=static_cast<float>(Triangle(t-86,1));
                 if(!phase.gap) {
@@ -131,7 +152,7 @@ int main(int argc,char** argv) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
-        client.Disconnect();std::cout<<"ACTION_FIXTURE_DONE duration="<<Phases.back().until<<" synthetic_only=true"<<std::endl;
+        client.Disconnect();std::cout<<"ACTION_FIXTURE_DONE duration="<<phases.back().until<<" synthetic_only=true"<<std::endl;
         return 0;
     }catch(const std::exception& e){std::cerr<<"ACTION_FIXTURE_ERROR "<<e.what()<<'\n';return 1;}
 }

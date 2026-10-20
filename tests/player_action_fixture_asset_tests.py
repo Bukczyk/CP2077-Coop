@@ -16,6 +16,19 @@ else:raise AssertionError('Mismatched weapon cache/graph profile accepted')
 try:m.sources('unknown')
 except ValueError:pass
 else:raise AssertionError('Unknown pose profile accepted')
+for profile in ['rifle','shotgundual']:
+    for aim in [False,True]:
+        de,dg=m.sources(profile,aim,True);m.validate(de,dg,profile,aim,True)
+        try:m.validate(de,dg,profile,aim)
+        except ValueError:pass
+        else:raise AssertionError('Directional cache/graph silently accepted without opt-in')
+        bad=copy.deepcopy(dg)
+        node=next(v for v in m.base.walk(bad) if v.get('$type')=='animAnimNode_SkFrameAnim'
+                  and v['animation']['$value']=='cp_coop_directional_walk_090')
+        node['animation']=m.base.cname('walk_090')
+        try:m.validate(de,bad,profile,aim,True)
+        except ValueError:pass
+        else:raise AssertionError('Non-aliased wrong directional clip accepted')
 
 
 def find(doc,kind):return next(v for v in m.base.walk(doc) if v.get('$type')==kind)

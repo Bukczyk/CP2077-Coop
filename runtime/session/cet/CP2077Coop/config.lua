@@ -11,6 +11,9 @@ return {
     -- Private incompatible protocol0x8005, authored weapon/body assets and
     -- local game-derived clips required. Does not work with the v5 VPS.
     experimentalPlayerPresentation = false,
+    -- PRIVATE matched directional action/weapon graphs and unique clip cache.
+    -- Standing supported-weapon walk only; ordinary unarmed/crouch unchanged.
+    experimentalPlayerDirectionalWalk = false,
     -- Optional locomotion experiment; keep the latest main pose path by default.
     experimentalPlayerMovement = false,
     -- Independent per-player map markers; visual qualification still pending.

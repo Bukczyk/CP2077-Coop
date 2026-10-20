@@ -57,6 +57,18 @@ Current inference derives cosmetic gait from horizontal movement and jumping
 from vertical displacement. It does not identify crouch, aim, weapon, climbing,
 falling or authoritative action changes. Stairs/terrain and network gaps need
 additional qualification. The projection has no collision, damage or PvP role.
+
+The private action renderer additionally supports the default-off
+`experimentalPlayerDirectionalWalk` candidate. It requires matching action AND
+weapon assets built with `--directional-walk`, the separate uniquely aliased
+private direction cache, and experimental presentation. Fresh standing supported
+Igla walking selects four directions relative to unchanged body yaw. Crouch,
+unarmed, unsupported and stale state retain the original walk path. Direction
+retargeting blends over80 real milliseconds with hysteresis; short zero-motion
+samples retain the existing50ms walk hold and freeze progress. Real stops still
+select idle promptly. This is cosmetic inference, with no protocol/server or
+position/yaw authority change. See
+[recorded connected results](../../docs/validation/CONNECTED_ARMED_WALK_2026-10-20.md).
 The installed 2.31 relaxed walk/sprint clip motion distances are 3.795350313 m
 and 3.053292990 m per cycle, both along rig +Y. Preserve network/entity yaw.
 An earlier guessed 180-degree correction was rejected during calibration.

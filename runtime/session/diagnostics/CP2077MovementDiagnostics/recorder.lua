@@ -20,7 +20,8 @@ local fields = {"entity", "actor", "mode", "loadedPresentationVersion", "lifecyc
     "destinationX", "destinationY", "destinationZ", "policyMovementType", "collisionPaused",
     "actionStatus", "actionRevision", "actionSequence", "actionFresh", "actionAgeMs",
     "actionStance", "actionWeapon", "actionRecord", "actionAim", "actionPose", "actionCrouchMotion",
-    "actionLayerVersion", "actionStanceWeight", "actionWeaponBlend", "actionPreviousPose", "actionPreviousProgress"}
+    "actionLayerVersion", "actionStanceWeight", "actionWeaponBlend", "actionPreviousPose", "actionPreviousProgress",
+    "gaitDirectionEnabled", "gaitDirection", "gaitPreviousDirection", "gaitDirectionBlend", "gaitDirectionWeight", "gaitPreviousProgress"}
 function Recorder.new(emit, maxBytes)
     return setmetatable({emit=emit, maxBytes=maxBytes or 8*1024*1024,
         bytes=0, clock=0, due=0, frames=0}, Recorder)

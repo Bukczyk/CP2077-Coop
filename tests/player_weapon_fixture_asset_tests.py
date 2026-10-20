@@ -16,6 +16,10 @@ se,sg=m.sources(sample,'shotgundual');m.validate(se,sg,sample,'shotgundual')
 try:m.validate(se,sg,sample,'rifle')
 except ValueError:pass
 else:raise AssertionError('Weapon entity accepted with mismatched pose cache')
+de,dg=m.sources(sample,'shotgundual',True);m.validate(de,dg,sample,'shotgundual',True)
+try:m.validate(de,dg,sample,'shotgundual')
+except ValueError:pass
+else:raise AssertionError('Weapon entity accepted without matching directional body cache')
 
 
 def rejects_sample(change):

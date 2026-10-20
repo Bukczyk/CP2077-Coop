@@ -89,9 +89,10 @@ def reference_graph(name):
     return actions.inline_first_use(graph)
 
 
-def sources(sample,weapon_profile='rifle'):
+def sources(sample,weapon_profile='rifle',directional_walk=False):
     selected=recipe(sample)
-    entity,body_graph=actions.sources(weapon_profile);actions.validate(entity,body_graph,weapon_profile)
+    entity,body_graph=actions.sources(weapon_profile,directional_walk=directional_walk)
+    actions.validate(entity,body_graph,weapon_profile,directional_walk=directional_walk)
     er=entity['Data']['RootChunk'];components=er['components']
     animated=components[0];mesh=components[1+len(base.DETAIL_RIGS)];controller=components[-1]
     prototypes={v.get('$type'):copy.deepcopy(v) for v in base.walk(er)}
@@ -132,7 +133,7 @@ def sources(sample,weapon_profile='rifle'):
     return entity,{name:reference_graph(name) for name in RIGS}
 
 
-def validate(entity,graphs,sample,weapon_profile='rifle'):
+def validate(entity,graphs,sample,weapon_profile='rifle',directional_walk=False):
     selected=recipe(sample);er=entity['Data']['RootChunk'];components=er['components']
     if er['entity']['Data']['$type']!='entEntity' or len(components)!=27:raise ValueError('Pure expected component set required')
     allowed={'entAnimatedComponent','entSkinnedMeshComponent','entAnimationControllerComponent','entSlotComponent'}
@@ -141,7 +142,8 @@ def validate(entity,graphs,sample,weapon_profile='rifle'):
     if len(set(ids))!=len(ids) or len(set(names))!=len(names):raise ValueError('Duplicate component identity')
     normalized=copy.deepcopy(entity);nr=normalized['Data']['RootChunk']
     nr['components']=nr['components'][:17];nr['compiledData']['Data']['Chunks']=nr['compiledData']['Data']['Chunks'][:18]
-    actions.validate(normalized,actions.sources(weapon_profile)[1],weapon_profile)
+    actions.validate(normalized,actions.sources(weapon_profile,directional_walk=directional_walk)[1],
+                     weapon_profile,directional_walk=directional_walk)
     chunks=er['compiledData']['Data']['Chunks']
     if er['compiledData']['Data']['CruidDict']!={str(i):str(c.get('id','0')) for i,c in enumerate(chunks)}:
         raise ValueError('Wrong compiled component identity catalog')
@@ -199,13 +201,13 @@ def validate(entity,graphs,sample,weapon_profile='rifle'):
             raise ValueError('Weapon graph gameplay behavior forbidden')
 
 
-def build(wolvenkit,snapshot,output,weapon_profile='rifle'):
+def build(wolvenkit,snapshot,output,weapon_profile='rifle',directional_walk=False):
     if output.exists() or base.ROOT in output.resolve().parents:raise ValueError('Choose a new private output folder outside source')
     if hashlib.sha256(wolvenkit.read_bytes()).hexdigest()!='7ae9c308da2fe003220b55ce4ca9c122b51f0701a67db1618cca3ff4f7ff6738':raise ValueError('Pinned WolvenKit required')
     if snapshot.stat().st_size>2*1024*1024:raise ValueError('Unbounded private snapshot input')
     samples=json.loads(snapshot.read_text());sample=next((s for s in samples if record(s['record'])==(22<<32)|0xAC119774),None)
     if sample is None:raise ValueError('No verified Igla snapshot')
-    entity,graphs=sources(sample,weapon_profile);validate(entity,graphs,sample,weapon_profile)
+    entity,graphs=sources(sample,weapon_profile,directional_walk);validate(entity,graphs,sample,weapon_profile,directional_walk)
     output.mkdir(parents=True);stage=output/'CP2077Coop_WeaponFixture';roundtrip=output/'roundtrip';roundtrip.mkdir()
     logs=[];hashes={}
     def run(*args):
@@ -219,7 +221,7 @@ def build(wolvenkit,snapshot,output,weapon_profile='rifle'):
         run('convert','deserialize',raw,'-o',dest.parent);hashes[path]=hashlib.sha256(dest.read_bytes()).hexdigest()
         run('convert','serialize',dest,'-o',roundtrip)
     validate(json.loads((roundtrip/'player_weapon_igla_fixture.ent.json').read_text()),
-             {name:json.loads((roundtrip/(GRAPHS[name].rsplit('\\',1)[-1]+'.json')).read_text()) for name in RIGS},sample,weapon_profile)
+             {name:json.loads((roundtrip/(GRAPHS[name].rsplit('\\',1)[-1]+'.json')).read_text()) for name in RIGS},sample,weapon_profile,directional_walk)
     packed=output/'out';packed.mkdir();run('pack',stage,'-o',packed);archive=packed/(stage.name+'.archive')
     if sorted(run('archive',archive,'--list').strip().splitlines())!=sorted((ENTITY,*GRAPHS.values())):raise ValueError('Unexpected packed resource')
     unpacked=output/'unpacked';unpacked.mkdir();run('unbundle',archive,'-o',unpacked)
@@ -227,7 +229,8 @@ def build(wolvenkit,snapshot,output,weapon_profile='rifle'):
     manifest={'scope':'isolated passive Igla fixture, not synchronized weapons; visual validation pending',
         'archive':str(archive),'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),
         'resources':hashes,'snapshot_sha256':hashlib.sha256(snapshot.read_bytes()).hexdigest(),
-        'required_body_graph':actions.GRAPH,'weapon_pose_profile':weapon_profile,'bundled_vanilla_resources':[],'builder_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+        'required_body_graph':actions.GRAPH,'weapon_pose_profile':weapon_profile,'directional_walk':directional_walk,
+        'bundled_vanilla_resources':[],'builder_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8');print(json.dumps(manifest))
 
 
@@ -236,4 +239,5 @@ if __name__=='__main__':
     parser.add_argument('--wolvenkit',required=True,type=Path);parser.add_argument('--snapshot',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--weapon-profile',choices=('rifle','shotgundual'),default='rifle')
-    args=parser.parse_args();build(args.wolvenkit,args.snapshot,args.output,args.weapon_profile)
+    parser.add_argument('--directional-walk',action='store_true',help='PRIVATE matched armed-walk direction candidate')
+    args=parser.parse_args();build(args.wolvenkit,args.snapshot,args.output,args.weapon_profile,args.directional_walk)

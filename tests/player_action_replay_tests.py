@@ -10,6 +10,11 @@ assert result.stdout.count('PHASE ')==15
 assert 'start=42 until=48 name=action_gap_movement_continues tick_gap=1' in result.stdout
 assert 'start=78 until=86 name=reconnected_crouch_aim tick_gap=0' in result.stdout
 assert 'start=86 until=92 name=crouch_walk_unarmed tick_gap=0' in result.stdout
+direction=run('--validate-only','--directions','--origin','-813,821.5,24.4042,0')
+assert direction.returncode==0 and 'HELLO' not in direction.stdout
+assert direction.stdout.count('PHASE ')==15 and 'duration=92' in direction.stdout
+for name in ['armed_walk_forward','armed_walk_right_aim','armed_walk_backward_aim','armed_walk_left']:
+    assert 'name='+name+' ' in direction.stdout
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)

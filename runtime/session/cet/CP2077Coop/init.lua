@@ -28,7 +28,8 @@ if config.experimentalPassivePlayers == true or config.experimentalPlayerLocomot
     local PassivePlayers = assert(require("player_passive"), "player_passive module missing")
     passivePlayers = PassivePlayers.new(function(status)
         log("[CP2077Session] PASSIVE_PLAYER " .. status)
-    end, config.experimentalPlayerLocomotion == true, playerPresentation)
+    end, config.experimentalPlayerLocomotion == true, playerPresentation,
+        config.experimentalPlayerDirectionalWalk == true)
 end
 local staticPopulation = require("npc_static_population")
 local npcProjection = nil

@@ -69,9 +69,10 @@ local function observe(entry)
 end
 local Controller = {}
 Controller.__index = Controller
-function M.new(log, locomotion, actions)
+function M.new(log, locomotion, actions, directionalWalk)
     return setmetatable({owned = {}, retryAfter = {}, scope = nil, resetting = false, log = log,
-        locomotion = locomotion and require("player_locomotion") or nil, actions=actions}, Controller)
+        locomotion = locomotion and require("player_locomotion") or nil, actions=actions,
+        directionalWalk=directionalWalk==true and actions~=nil}, Controller)
 end
 function Controller:status(reason)
     if self.lastStatus ~= reason then
@@ -174,7 +175,7 @@ function Controller:place(entry, pose, now)
         actor:SetWorldTransform(world)
         entry.target = pose
         if self.locomotion then
-            entry.presentation = entry.presentation or self.locomotion.new()
+            entry.presentation = entry.presentation or self.locomotion.new(self.directionalWalk)
             self.locomotion.step(entry.presentation, pose, now)
             self.locomotion.apply(actor, entry.presentation)
         end
@@ -259,7 +260,10 @@ function Controller:diagnostics()
             retirementSubmitted=entry.removing == true, seenReady=entry.seenReady == true,
             lifecycle=entry.retiring and "retiring" or "static",
             x=t and t.x,y=t and t.y,z=t and t.z,yaw=t and t.yaw,
-            speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0}
+            speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0,
+            gaitDirectionEnabled=self.directionalWalk,gaitDirection=m and m.direction,
+            gaitPreviousDirection=m and m.previousDirection,gaitDirectionBlend=m and m.directionBlend,
+            gaitDirectionWeight=m and m.directionWeight,gaitPreviousProgress=m and m.directionPreviousProgress}
         if self.actions then
             p.actionLayerVersion=self.actions.revision
             p.actionStatus=entry.actionStatus

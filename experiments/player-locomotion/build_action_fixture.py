@@ -29,20 +29,21 @@ UPPER_CLIPS = tuple('cp_coop_'+profile+'_'+clip for profile in ('rifle','handgun
     for clip in ('ovr_idle','ovr_walk','ovr_sprint','aim_ovr_idle','aim_ovr_walk'))
 
 
-def profile_values(weapon_profile):
+def profile_values(weapon_profile,directional_walk=False):
     if weapon_profile not in ('rifle','shotgundual'):raise ValueError('Unsupported weapon pose profile')
     # The Palica bank's aim is a smart-shotgun hip-fire hold. Keep the inspected
     # shoulder-aim clips for the iron-sight Igla while comparing shotgun ready.
     profiles=('stealth','rifle','handgunboth') if weapon_profile=='rifle' else ('stealth','shotgundual','rifle','handgunboth')
     cache=tuple(r'base\cp2077coop\private\player_'+name+'.anims' for name in profiles)
+    if directional_walk:cache += (r'base\cp2077coop\private\player_directional.anims',)
     clips=tuple('cp_coop_'+weapon_profile+'_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint'))+tuple(
         'cp_coop_rifle_'+clip for clip in ('aim_ovr_idle','aim_ovr_walk'))+tuple(
         'cp_coop_handgunboth_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint','aim_ovr_idle','aim_ovr_walk'))
     return cache,clips
 
 
-def sources(weapon_profile='rifle',aim_fixture=False):
-    cache,upper_clips=profile_values(weapon_profile)
+def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
+    cache,upper_clips=profile_values(weapon_profile,directional_walk)
     entity,graph=base.sources('full')
     base.validate(entity,graph,'full')
     er=entity['Data']['RootChunk']
@@ -86,6 +87,12 @@ def sources(weapon_profile='rifle',aim_fixture=False):
     previous_weapon=variable('cp_coop_weapon_previous_pose',len(upper_clips)-1)
     weapon_blend=variable('cp_coop_weapon_blend',1)
     previous_progress=variable('cp_coop_weapon_previous_progress',1)
+    if directional_walk:
+        direction=variable('cp_coop_walk_direction',3)
+        previous_direction=variable('cp_coop_walk_previous_direction',3)
+        direction_blend=variable('cp_coop_walk_direction_blend',1)
+        direction_progress=variable('cp_coop_walk_previous_progress',1)
+        direction_weight=variable('cp_coop_walk_direction_weight',1)
     progress=next({'HandleRefId':k} for k,v in definitions.items()
         if v.get('$type')=='animAnimNode_FloatVariable' and v['variableName']==base.cname('cp_coop_loco_progress'))
     def clip(name,sampled=False,reader=None):
@@ -104,6 +111,12 @@ def sources(weapon_profile='rifle',aim_fixture=False):
         return link(add({'$type':'animAnimNode_Blend2','id':4294967295,
             'minInputValue':0,'maxInputValue':1,'timeWarpingEnabled':0,'syncMethod':None,
             'firstInputNode':first,'secondInputNode':second,'weightNode':link(reader,'animFloatLink')}))
+    if directional_walk:
+        names=tuple('cp_coop_directional_'+n for n in ('walk_0','walk_090','walk_180','walk_270'))
+        selected=blend(switch([clip(n,True,direction_progress) for n in names],previous_direction),
+                       switch([clip(n,True) for n in names],direction),direction_blend)
+        lower_selector=data(standing['node'])
+        lower_selector['inputNodes'][1]=blend(lower_selector['inputNodes'][1],selected,direction_weight)
     crouch=blend(clip('cp_coop_stealth_idle_low_unarmed'),clip('cp_coop_stealth_walk_0',True),moving)
     lower=blend(standing,crouch,stance)
     def weapon_clips(reader):
@@ -154,8 +167,8 @@ def inline_first_use(doc):
     return visit(doc)
 
 
-def validate(entity,graph,weapon_profile='rifle',aim_fixture=False):
-    cache,upper_clips=profile_values(weapon_profile)
+def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_walk=False):
+    cache,upper_clips=profile_values(weapon_profile,directional_walk)
     er=entity['Data']['RootChunk'];gr=graph['Data']['RootChunk']
     # Reuse the base profile's binding/LOD/no-AI checks without weakening them.
     normalized=copy.deepcopy(entity)
@@ -184,6 +197,8 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False):
     expected=[('cp_coop_loco_phase',5),('cp_coop_loco_progress',1),('cp_coop_stance',1),
         ('cp_coop_crouch_motion',1),('cp_coop_weapon_pose',len(upper_clips)-1),('cp_coop_weapon_weight',1),
         ('cp_coop_weapon_previous_pose',len(upper_clips)-1),('cp_coop_weapon_blend',1),('cp_coop_weapon_previous_progress',1)]
+    if directional_walk:expected += [('cp_coop_walk_direction',3),('cp_coop_walk_previous_direction',3),
+        ('cp_coop_walk_direction_blend',1),('cp_coop_walk_previous_progress',1),('cp_coop_walk_direction_weight',1)]
     if aim_fixture:expected += [('cp_coop_aim_pitch',40),('cp_coop_aim_yaw',45)]
     if [(data(v)['name']['$value'],data(v)['max']) for v in variables]!=expected:
         raise ValueError('Wrong action variables')
@@ -237,8 +252,25 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False):
     selector(previous,'cp_coop_weapon_previous_pose',len(upper_clips));selector(current,'cp_coop_weapon_pose',len(upper_clips))
     if [data(crouch[k]['node'])['animation']['$value'] for k in ('firstInputNode','secondInputNode')]!=['cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_walk_0']:
         raise ValueError('Wrong crouch animation names')
-    for switch,names in [(standing,base.CLIPS),(previous,upper_clips),(current,upper_clips)]:
-        if [data(link['node'])['animation']['$value'] for link in switch['inputNodes']]!=list(names):
+    standing_clips=list(standing['inputNodes'])
+    if directional_walk:
+        walking=data(standing_clips[1]['node']);blend(walking,'cp_coop_walk_direction_weight')
+        standing_clips[1]=walking['firstInputNode']
+        selected=data(walking['secondInputNode']['node']);blend(selected,'cp_coop_walk_direction_blend')
+        names=tuple('cp_coop_directional_'+n for n in ('walk_0','walk_090','walk_180','walk_270'))
+        for field,name,reader in (('firstInputNode','cp_coop_walk_previous_direction','cp_coop_walk_previous_progress'),
+                                  ('secondInputNode','cp_coop_walk_direction','cp_coop_loco_progress')):
+            switch=data(selected[field]['node']);selector(switch,name,4)
+            if [data(v['node'])['animation']['$value'] for v in switch['inputNodes']]!=list(names):
+                raise ValueError('Wrong directional clips')
+            for value in switch['inputNodes']:
+                node=data(value['node'])
+                if (node['$type']!='animAnimNode_SkFrameAnim' or node['isLooped']
+                    or data(node['progressLink']['node'])['variableName']!=base.cname(reader)
+                    or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
+                    raise ValueError('Directional walk must use distance samples')
+    for inputs,names in [(standing_clips,base.CLIPS),(previous['inputNodes'],upper_clips),(current['inputNodes'],upper_clips)]:
+        if [data(link['node'])['animation']['$value'] for link in inputs]!=list(names):
             raise ValueError('Wrong animation names')
     for switch,reader in ((previous,'cp_coop_weapon_previous_progress'),(current,'cp_coop_loco_progress')):
         for pose,name in zip(switch['inputNodes'],upper_clips):
@@ -249,7 +281,7 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False):
                 raise ValueError('Wrong weapon gait progress')
             if sampled and (node['isLooped'] or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                 raise ValueError('Weapon gait must not use engine-time playback')
-    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=3:
+    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(5 if directional_walk else 3):
         raise ValueError('Wrong real-time blend layer count')
     nodes={k for k,v in definitions.items() if v.get('$type','').startswith('animAnimNode_')}
     init=[v.get('HandleId',v.get('HandleRefId')) for v in gr['nodesToInit']]
@@ -261,11 +293,11 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False):
         raise ValueError('Gameplay graph command execution forbidden')
 
 
-def build(wolvenkit,output,weapon_profile='rifle',aim_fixture=False):
+def build(wolvenkit,output,weapon_profile='rifle',aim_fixture=False,directional_walk=False):
     if output.exists():raise ValueError('Choose a new output folder')
     if hashlib.sha256(wolvenkit.read_bytes()).hexdigest()!='7ae9c308da2fe003220b55ce4ca9c122b51f0701a67db1618cca3ff4f7ff6738':
         raise ValueError('Pinned WolvenKit required')
-    entity,graph=sources(weapon_profile,aim_fixture);validate(entity,graph,weapon_profile,aim_fixture)
+    entity,graph=sources(weapon_profile,aim_fixture,directional_walk);validate(entity,graph,weapon_profile,aim_fixture,directional_walk)
     output.mkdir(parents=True);stage=output/'CP2077Coop_ActionFixture';records={};logs=[]
     def run(*args):
         result=subprocess.run([str(wolvenkit),*map(str,args)],capture_output=True,text=True,encoding='utf-8',errors='replace')
@@ -280,7 +312,7 @@ def build(wolvenkit,output,weapon_profile='rifle',aim_fixture=False):
         records[path]=hashlib.sha256(dest.read_bytes()).hexdigest()
         run('convert','serialize',dest,'-o',roundtrip)
     validate(json.loads((roundtrip/'player_actions_fixture.ent.json').read_text()),
-             json.loads((roundtrip/'player_actions_fixture.animgraph.json').read_text()),weapon_profile,aim_fixture)
+             json.loads((roundtrip/'player_actions_fixture.animgraph.json').read_text()),weapon_profile,aim_fixture,directional_walk)
     packed=output/'out';packed.mkdir();run('pack',stage,'-o',packed)
     archive=packed/(stage.name+'.archive')
     if sorted(run('archive',archive,'--list').strip().splitlines())!=sorted((ENTITY,GRAPH)):
@@ -290,9 +322,10 @@ def build(wolvenkit,output,weapon_profile='rifle',aim_fixture=False):
         raise ValueError('Extracted fixture payload mismatch')
     manifest={'scope':'local render-only pose fixture, not synchronized actions',
         'archive':str(archive),'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),
-        'resources':records,'required_private_cache':list(profile_values(weapon_profile)[0]),'bundled_vanilla_resources':[],
+        'resources':records,'required_private_cache':list(profile_values(weapon_profile,directional_walk)[0]),'bundled_vanilla_resources':[],
         'weapon_pose_profile':weapon_profile,
         'isolated_aim_fixture':aim_fixture,
+        'directional_walk':directional_walk,
         'builder_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'visual_validation':'pending'}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8');print(json.dumps(manifest))
@@ -304,4 +337,5 @@ if __name__=='__main__':
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--weapon-profile',choices=('rifle','shotgundual'),default='rifle')
     parser.add_argument('--aim-fixture',action='store_true',help='PRIVATE isolated upper-body aim qualification only')
-    args=parser.parse_args();build(args.wolvenkit,args.output,args.weapon_profile,args.aim_fixture)
+    parser.add_argument('--directional-walk',action='store_true',help='PRIVATE qualified armed-walk direction candidate')
+    args=parser.parse_args();build(args.wolvenkit,args.output,args.weapon_profile,args.aim_fixture,args.directional_walk)
