@@ -8,7 +8,7 @@ local function capture()
     return {session="9007199254740993ULL", generation="2ULL", self=3, host=2,
         paused=false,ready=true,retiring=1,localLocomotion="Sprint",players={
         ["2"]={actor="100ULL",x=10,actualX=9,error=1,mode="motor",fault="test\nforged",
-            gaitChangeRequests=2,gaitInputSubmissions=19,locomotionAction="Move",policyIdle=false,pathFailed=true}}}
+            gaitChangeRequests=2,gaitInputSubmissions=19,actionInputSubmissions=7,locomotionAction="Move",policyIdle=false,pathFailed=true}}}
 end
 r:step(0,capture); r:step(0/0,capture); r:step(math.huge,capture)
 assert(calls==0)
@@ -18,6 +18,7 @@ assert(lines[1]:find("session=9007199254740993ULL",1,true))
 assert(lines[2]:find("actualX=9.000000",1,true))
 assert(lines[1]:find("localLocomotion=Sprint",1,true))
 assert(lines[2]:find("gaitInputSubmissions=19.000000",1,true))
+assert(lines[2]:find("actionInputSubmissions=7.000000",1,true))
 assert(lines[2]:find("gaitChangeRequests=2.000000",1,true) and lines[2]:find("policyIdle=false",1,true)
     and lines[2]:find("pathFailed=true",1,true) and lines[2]:find("locomotionAction=Move",1,true))
 assert(not lines[2]:find("\n",1,true))

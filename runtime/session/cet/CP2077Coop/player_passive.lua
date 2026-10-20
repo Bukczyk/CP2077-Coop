@@ -290,6 +290,7 @@ function Controller:diagnostics()
             p.actionWeaponBlend=inputs.cp_coop_weapon_blend
             p.actionPreviousPose=inputs.cp_coop_weapon_previous_pose
             p.actionPreviousProgress=inputs.cp_coop_weapon_previous_progress
+            p.actionInputSubmissions=entry.actions and entry.actions.inputSubmissions
         end
         local ok, actual, heading = pcall(function()
             local o = observe(entry)

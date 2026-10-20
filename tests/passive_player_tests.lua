@@ -418,6 +418,17 @@ do
     print=log
 end
 local defaults=assert(loadfile(root.."/runtime/session/cet/CP2077Coop/config.lua"))()
+
+do
+    local f=fixture();NewObject=function()return {}end
+    local actions={revision='diagnostic-fixture',template='owned-actions.ent',available=function()return true end,
+        apply=function(_,state)state.inputSubmissions=7;state.inputs={};return 'presentation_submitted'end}
+    f.controller=Passive.new(nil,true,actions,true)
+    check(f.controller:step('action-diagnostics',{pose(2)},0),'action fixture admitted')
+    local d=f.controller:diagnostics()['2']
+    check(d.actionInputSubmissions==7 and d.actionLayerVersion=='diagnostic-fixture',
+        'action submission count follows the exact owned entry into diagnostics')
+end
 do
     local f=fixture()
     NewObject=function()return {}end

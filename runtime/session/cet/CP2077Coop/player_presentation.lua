@@ -2,7 +2,7 @@
 -- setters only on application. Never inventory, AI, damage or movement authority.
 local M={template="base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"}
 local recordKey="16ac119774"
-M.revision="20261020-realtime-actions-3"
+M.revision="20261020-realtime-actions-4"
 local sourceDue,sourceSignature,sourceSamples,sourceScope=0,nil,0,nil
 local required={
     ["base\\weapons\\firearms\\shotgun_dual\\rostovic_igla\\entities\\meshes\\w_shotgun_dual__rostovic_igla__base1_01.mesh"]={"Barrel","pimp1"},
@@ -110,8 +110,18 @@ local function input(actor,state,name,value)
     if state.inputs[name]==value then return end
     local event=assert(NewObject("entAnimInputSetterFloat"));event.key,event.value=CName.new(name),value
     actor:QueueEvent(event);state.inputs[name]=value
+    state.inputSubmissions=(state.inputSubmissions or 0)+1
 end
 local function finite(value)return type(value)=="number" and value==value and math.abs(value)<math.huge end
+local function repairInputs(state,now)
+    if not finite(now) then return end
+    if state.inputClock and (now<state.inputClock or now-state.inputClock>.25)
+        or state.inputRepairAt and now>=state.inputRepairAt then
+        state.inputs={};state.inputRepairAt=nil
+    end
+    state.inputClock=now
+    state.inputRepairAt=state.inputRepairAt or now+1
+end
 local function approach(value,target,amount)
     if value<target then return math.min(target,value+amount) end
     return math.max(target,value-amount)
@@ -173,7 +183,12 @@ local function visibility(actor,state,show,key,now)
 end
 function M.apply(actor,state,observed,gait)
     if not actor or actor:IsAttached()~=true then return "actor_unavailable" end
-    local id=tostring(actor:GetEntityID().hash)
+    local hash=actor:GetEntityID().hash
+    if type(hash)=="number" then return "actor_identity_unavailable" end
+    local id=tostring(hash):gsub("[uUlL]+$","")
+    if not id:match("^[1-9][0-9]*$") or #id>20 or #id==20 and id>"18446744073709551615" then
+        return "actor_identity_unavailable"
+    end
     if state.actorKey and state.actorKey~=id then return "actor_changed" end
     state.actorKey=id
     local fresh=observed and observed.fresh==true
@@ -188,6 +203,11 @@ function M.apply(actor,state,observed,gait)
     local attemptKey=tostring(show)..":"..tostring(observed and observed.revision or 0)..":"..tostring(fresh)
     local visible,status=visibility(actor,state,show,attemptKey,gait and gait.previous and gait.previous.time)
     if not visible then return status end
+    -- Float setters can be lost in an engine graph reset without an action
+    -- revision change. Repair once per real second, or after a clock gap/rewind.
+    -- Do not reset crossfades or toggle cosmetic visibility. input() caches only
+    -- returned submissions, so a partial queue exception retries missing values.
+    repairInputs(state,gait and gait.previous and gait.previous.time)
     transitions(state,stance,stance==1 and moving and 1 or 0,pose,gait,not fresh)
     input(actor,state,"cp_coop_stance",state.stanceWeight)
     input(actor,state,"cp_coop_crouch_motion",state.motionWeight)

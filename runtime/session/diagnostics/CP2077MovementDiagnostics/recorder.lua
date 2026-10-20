@@ -20,7 +20,7 @@ local fields = {"entity", "actor", "mode", "loadedPresentationVersion", "lifecyc
     "destinationX", "destinationY", "destinationZ", "policyMovementType", "collisionPaused",
     "actionStatus", "actionRevision", "actionSequence", "actionFresh", "actionAgeMs",
     "actionStance", "actionWeapon", "actionRecord", "actionAim", "actionPose", "actionCrouchMotion",
-    "actionLayerVersion", "actionStanceWeight", "actionWeaponBlend", "actionPreviousPose", "actionPreviousProgress",
+    "actionLayerVersion", "actionStanceWeight", "actionWeaponBlend", "actionPreviousPose", "actionPreviousProgress", "actionInputSubmissions",
     "gaitDirectionEnabled", "gaitDirection", "gaitPreviousDirection", "gaitDirectionBlend", "gaitDirectionWeight", "gaitPreviousProgress",
     "gaitBlendEnabled", "gaitBlendWeight", "gaitBlendPreviousPhase", "gaitBlendPreviousProgress",
     "gaitBlendPreviousDirection", "gaitBlendPreviousDirectionWeight", "gaitCrouchBackward", "gaitCrouchProgress",
