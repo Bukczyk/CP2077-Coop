@@ -19,6 +19,17 @@ local function system()
     if not ok or result == nil then return nil end
     return result
 end
+local function liveReference(entity)
+    if entity == nil then return nil end
+    -- An expired CET weak wrapper is still non-nil. Only a positive native
+    -- expiry observation establishes absence; errors/unknown remain pending.
+    if type(IsDefined) == "function" then
+        local defined = IsDefined(entity)
+        if type(defined) ~= "boolean" then error("invalid static reference observation") end
+        if not defined then return nil end
+    end
+    return entity
+end
 local function observe(entry)
     -- Retain the creator itself. A replacement returned by Game cannot prove
     -- absence, and CET is not required to return the same Lua wrapper each time.
@@ -35,13 +46,13 @@ local function observe(entry)
             if type(attached) ~= "boolean" then error("invalid static attachment observation") end
             return attached
         end
-        local entity = s:GetEntity(entry.id)
+        local entity = liveReference(s:GetEntity(entry.id))
         local attached = attachment(entity)
         -- Never overwrite the first exact handle with a detached replacement.
         -- Both it and the global registry can outlive creator-map visibility.
         if entry.retained == nil and entity ~= nil then entry.retained = entity end
-        local retainedAttached = attachment(entry.retained)
-        local globalEntity = Game.FindEntityByID(entry.id)
+        local retainedAttached = attachment(liveReference(entry.retained))
+        local globalEntity = liveReference(Game.FindEntityByID(entry.id))
         local globalAttached = attachment(globalEntity)
         if entity ~= nil and attached and managed and spawned and not spawning then
             entry.completed = true
@@ -124,7 +135,7 @@ function M.remove(localId)
     entry.retiring = true
     local function isGone(o)
         return o ~= nil and entry.completed and not o.managed and not o.spawning
-            and not o.spawned and o.entity == nil and o.globalEntity == nil and not o.retainedAttached
+            and not o.spawned and not o.attached and not o.globalAttached and not o.retainedAttached
     end
     local o = observe(entry)
     if o == nil then return false end
