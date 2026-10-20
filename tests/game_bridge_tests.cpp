@@ -3,6 +3,7 @@
 #include <chrono>
 #include <limits>
 #include <thread>
+#include <stdexcept>
 using namespace coop;
 namespace g=coop::game;
 void Registry() {
@@ -73,4 +74,64 @@ void WorkerSockets() {
     host.SetActive(false);
     until([&]{return joiner.ReadFrame(net::NowMs()).phase==ClientPhase::Failed;});
 }
-int main() { return Run([]{Registry(); Events(); WorkerSockets();}); }
+void NpcLifeFrameSockets() {
+    ServerConfig sc; sc.port=0; sc.accessKey=std::string(64,'a'); SessionServer server(sc);
+    ClientConfig hc; hc.host=true; hc.accessKey=sc.accessKey; hc.server.port=server.Port();
+    ClientConfig jc=hc; jc.host=false;
+    SessionClient host(hc);
+    g::SessionBridge joiner(jc);
+    const char* waitingFor="HOST/JOINER session and NPC setup";
+    auto until=[&](auto predicate) {
+        const auto deadline=net::NowMs()+5000;
+        while(!predicate()) {
+            if(net::NowMs()>=deadline) throw std::runtime_error(waitingFor);
+            const auto now=net::NowMs(); server.Tick(now); host.Tick(now);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    };
+    host.SetLocal({{10,20,30},{}}); host.Connect();
+    until([&]{return host.Phase()==ClientPhase::Active;});
+    CHECK(host.AdoptNpc(1,123,{{12,20,30},{}}));
+    until([&]{return host.Npcs().size()==1;});
+    const auto entity=host.Npcs().begin()->first;
+    CHECK(joiner.SetLocal({{11,20,30},{}})); joiner.SetActive(true);
+    until([&]{return joiner.ReadFrame(net::NowMs()).npcs.size()==1;});
+    auto first=joiner.ReadFrame(net::NowMs());
+    CHECK(!first.npcs.front().lifeState); // Never manufacture an Alive baseline.
+    CHECK(host.PublishNpcLifeState(entity,75,100,NpcLifeStatus::Alive));
+    auto hasLife=[&](NpcLifeStatus status) {
+        auto f=joiner.ReadFrame(net::NowMs());
+        return f.npcs.size()==1 && f.npcs.front().lifeState && f.npcs.front().lifeState->status==status;
+    };
+    waitingFor="admitted Alive baseline is missing from RenderNpc";
+    until([&]{return hasLife(NpcLifeStatus::Alive);});
+    const auto alive=joiner.ReadFrame(net::NowMs());
+    const auto baseline=*alive.npcs.front().lifeState;
+    CHECK(baseline.entity==entity && baseline.health==75 && baseline.maxHealth==100 && baseline.revision==1);
+    CHECK(host.PublishNpcLifeState(entity,0,100,NpcLifeStatus::Defeated));
+    waitingFor="Defeated baseline update";
+    until([&]{return hasLife(NpcLifeStatus::Defeated);});
+    CHECK(alive.npcs.front().lifeState==baseline); // ReadFrame owns its copy.
+    CHECK(host.PublishNpcLifeState(entity,0,100,NpcLifeStatus::Dead));
+    waitingFor="Dead baseline update";
+    until([&]{return hasLife(NpcLifeStatus::Dead);});
+    const auto dead=joiner.ReadFrame(net::NowMs());
+    CHECK(dead.npcs.front().lifeState->revision==3 && dead.npcs.front().lifeState->health==0);
+    joiner.SetActive(false);
+    CHECK(joiner.ReadFrame(net::NowMs()).npcs.empty());
+    CHECK(joiner.SetLocal({{11,20,30},{}}));
+    joiner.SetActive(true);
+    waitingFor="latest Dead baseline on reconnect";
+    until([&]{auto f=joiner.ReadFrame(net::NowMs());return f.phase==ClientPhase::Active
+        && f.member.player!=dead.member.player && hasLife(NpcLifeStatus::Dead);});
+    CHECK(joiner.ReadFrame(net::NowMs()).npcs.front().lifeState==dead.npcs.front().lifeState);
+    CHECK(host.DespawnNpc(entity));
+    waitingFor="NPC removal and replacement without old life state";
+    until([&]{return joiner.ReadFrame(net::NowMs()).npcs.empty() && host.Npcs().empty();});
+    CHECK(host.AdoptNpc(2,123,{{12,20,30},{}}));
+    until([&]{return joiner.ReadFrame(net::NowMs()).npcs.size()==1;});
+    const auto replacement=joiner.ReadFrame(net::NowMs());
+    CHECK(replacement.npcs.front().descriptor.entity!=entity && !replacement.npcs.front().lifeState);
+    joiner.SetActive(false); host.Disconnect();
+}
+int main() { return Run([]{Registry(); Events(); WorkerSockets(); NpcLifeFrameSockets();}); }

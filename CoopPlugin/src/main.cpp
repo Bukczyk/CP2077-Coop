@@ -73,6 +73,10 @@ coop::ClientConfig Config(const std::filesystem::path& directory) {
 }
 const g::RenderPlayer* Current() { return selected<frame.players.size()?&frame.players[selected]:nullptr; }
 const g::RenderNpc* CurrentNpc() { return selectedNpc<frame.npcs.size()?&frame.npcs[selectedNpc]:nullptr; }
+const coop::NpcLifeState* CurrentNpcLife() {
+    const auto* npc=CurrentNpc();
+    return npc && npc->lifeState && npc->lifeState->entity==npc->descriptor.entity ? &*npc->lifeState : nullptr;
+}
 #define NATIVE(name,type) void name(RED4ext::IScriptable*,RED4ext::CStackFrame* f,type* out,int64_t)
 NATIVE(SetActive,void) {
     bool active=false; RED4ext::GetParameter(f,&active); ++f->code;
@@ -152,6 +156,11 @@ NATIVE(NpcX,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.positi
 NATIVE(NpcY,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.y:0; }
 NATIVE(NpcZ,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.position.z:0; }
 NATIVE(NpcYaw,float) { ++f->code; *out=CurrentNpc()?CurrentNpc()->transform.rotation.z:0; }
+NATIVE(NpcLifeKnown,bool) { ++f->code; *out=CurrentNpcLife()!=nullptr; }
+NATIVE(NpcLifeHealth,float) { ++f->code; *out=CurrentNpcLife()?CurrentNpcLife()->health:0; }
+NATIVE(NpcLifeMaxHealth,float) { ++f->code; *out=CurrentNpcLife()?CurrentNpcLife()->maxHealth:0; }
+NATIVE(NpcLifeStatus,std::uint32_t) { ++f->code; *out=CurrentNpcLife()?static_cast<std::uint32_t>(CurrentNpcLife()->status):0; }
+NATIVE(NpcLifeRevision,std::uint32_t) { ++f->code; *out=CurrentNpcLife()?CurrentNpcLife()->revision:0; }
 std::string Text(const RED4ext::CString& value) { return {value.c_str(),value.Length()}; }
 NATIVE(GameplayScope,RED4ext::CString) {
     ++f->code;
@@ -321,6 +330,16 @@ void RegisterFunctions() {
       fn->flags={.isNative=true,.isStatic=true};
       fn->SetReturnType("Float");
       rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcLifeKnown","CP2077Session_NpcLifeKnown",&NpcLifeKnown);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Bool"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcLifeHealth","CP2077Session_NpcLifeHealth",&NpcLifeHealth);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Float"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcLifeMaxHealth","CP2077Session_NpcLifeMaxHealth",&NpcLifeMaxHealth);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Float"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcLifeStatus","CP2077Session_NpcLifeStatus",&NpcLifeStatus);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Uint32"); rtti->RegisterFunction(fn); }
+    { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_NpcLifeRevision","CP2077Session_NpcLifeRevision",&NpcLifeRevision);
+      fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Uint32"); rtti->RegisterFunction(fn); }
 
     { auto fn=RED4ext::CGlobalFunction::Create("CP2077Session_SelfEntity","CP2077Session_SelfEntity",&SelfEntity);
       fn->flags={.isNative=true,.isStatic=true}; fn->SetReturnType("Uint64"); rtti->RegisterFunction(fn); }
