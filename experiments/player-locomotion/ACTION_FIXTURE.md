@@ -61,6 +61,17 @@ and these reads are not an atomic engine/network snapshot. `Default` does not
 prove ground contact. See the
 [source-pose validation](../../docs/validation/SOURCE_POSE_DIAGNOSTICS_2026-10-20.md).
 
+`ground_probe.lua` is a separate PRIVATE opt-in diagnostic, installed only as
+`zz_CP2077GroundProbe/init.lua` before a fresh game load. It registers read-only
+locomotion observers in CET onInit, checks the exact current local execution
+owner and samples the native state-interface `IsOnGround()` getter. It retains
+no interface/player handle and never applies movement or changes a callback's
+result. Missing/foreign/invalid scope does not become false. Logs stop after
+300 update-clock seconds,36,000 callbacks,1,800 rows or1 MiB, whichever comes
+first. Do not silently rearm or loop around those limits. Raw logs remain local.
+This is a verified source observation, not connected terrain correction; see
+[ground-contact evidence](../../docs/validation/GROUND_CONTACT_2026-10-20.md).
+
 The optional `weapon-probe/components/held_components.reds` now records bounded
 rig/static/skinned component metadata for the exact attached weapon. Its source
 capture waits for two matching resource observations and preserves native chunk
