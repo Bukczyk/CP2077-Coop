@@ -76,6 +76,31 @@ for t in (6,8,9.2,12,18,20,21.2,24,30,36):assert abs(jump_points[t][2]-10)<.0000
 assert jump_points[6]==jump_points[12]==jump_points[18]==jump_points[24]==jump_points[30]==jump_points[36]
 for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions','--crouch-sides','--crouch-diagonals'):
     assert run('--validate-only','--jump-actions',flag).returncode!=0
+sprint=run('--validate-only','--sprint-loop','--origin','0,0,10,0','--key-file','does-not-exist')
+assert sprint.returncode==0 and 'HELLO' not in sprint.stdout and sprint.stdout.count('PHASE ')==15
+assert 'name=sustained_sprint_middle ' in sprint.stdout
+duration=float(re.search(r'SPRINT_LOOP duration=(\S+)',sprint.stdout)[1])
+assert 18.84<duration<18.86 and 'speed=6 laps=6' in sprint.stdout
+def sprint_points(text):
+    return {float(t):(float(x),float(y),float(z),float(yaw)) for t,x,y,z,yaw in re.findall(
+        r'SPRINT_LOOP_POINT t=(\S+) x=(\S+) y=(\S+) z=(\S+) yaw=(\S+)',text)}
+sp=sprint_points(sprint.stdout)
+rot=sprint_points(run('--validate-only','--sprint-loop','--origin','0,0,10,1.57079632679').stdout)
+assert len(sp)==381 and sp[0]==sp[6]==sp[24.85]==sp[30]==sp[36], 'closed circuit must settle without a teleport'
+prior=None
+for t,p in sorted(sp.items()):
+    x,y,z,yaw=p
+    assert -3.00001<=x<=3.00001 and -.00001<=y<=6.00001 and z==10 and -math.pi<=yaw<=math.pi
+    assert abs(rot[t][0]+y)<.0001 and abs(rot[t][1]-x)<.0001, 'circuit must respect observer origin yaw'
+    if prior and 6<=prior[0]<t<=24.8:
+        dt=t-prior[0];dx,dy=x-prior[1][0],y-prior[1][1]
+        speed=math.hypot(dx,dy)/dt
+        assert 5.99<speed<6.01, 'sustained sprint cannot contain hidden stops or teleports'
+        assert (-math.sin(yaw)*dx+math.cos(yaw)*dy)/math.hypot(dx,dy)>.998, 'body heading must follow its motion'
+    prior=(t,p)
+for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions','--crouch-sides','--crouch-diagonals','--jump-actions'):
+    assert run('--validate-only','--sprint-loop',flag).returncode!=0
+assert run('--validate-only','--sprint-loop','--origin','999999,999999,10,0').returncode!=0
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)

@@ -49,8 +49,12 @@ of files changed after game launch do not prove those scripts were loaded.
 For the private action replay, prepare both observers and explicitly start fresh
 diagnostics first. `tools/run_player_action_capture.py` then starts both window
 recorders together, waits for both first frames and admits the92s action replay.
-Its `--mode` selects `actions`, `gaits`, `directions`, `crouch-directions`,
+Its `--mode` selects `actions`, `gaits`, `sprint-loop`, `directions`, `crouch-directions`,
 `unarmed-directions`, `crouch-sides`, `crouch-diagonals` or `jump-actions`.
+The bounded `sprint-loop` runs six radius3m laps at6m/s for18.85 seconds, then
+stops without a teleport. It exercises sustained rendering; the old `gaits`
+sprint lasts only about one second. Both are synthetic local state tests.
+See [recorded sustained sprint](../../docs/validation/SUSTAINED_SPRINT_2026-10-20.md).
 Admission now waits for stable encoded frames after recorder warmup. A replay
 frame gap over250 ms or changed capture tool fails completion. See the
 [recording gate evidence](../../docs/validation/RECORDER_WARMUP_2026-10-20.md).

@@ -57,6 +57,15 @@ constexpr auto GaitPhases=[] {
     phases[5]={"gait_second_stop",36,Ready};
     return phases;
 }();
+constexpr auto SprintLoopPhases=[] {
+    auto phases=GaitPhases;
+    phases[1].name="sustained_sprint_start";
+    phases[2].name="sustained_sprint_middle";
+    phases[3].name="sustained_sprint_late";
+    phases[4].name="sustained_sprint_stop";
+    phases[5].name="sustained_sprint_settled";
+    return phases;
+}();
 constexpr auto CrouchDirectionPhases=[] {
     auto phases=Phases;
     const coop::PresentationValues crouchHolstered{S::Crouching,W::Holstered,0,A::NotAiming};
@@ -154,6 +163,19 @@ coop::Transform GaitPose(coop::Transform origin,double t) {
     origin.rotation.z+=static_cast<float>(heading);
     return origin;
 }
+constexpr double SprintLoopDuration=6*3.141592653589793;
+coop::Transform SprintLoopPose(coop::Transform origin,double t) {
+    // Six complete radius3m laps at6m/s:18.85s of continuous sprint. The
+    // bounded circuit stays in the observer area and returns without a snap.
+    const double age=std::clamp(t-6.0,0.0,SprintLoopDuration);
+    const double angle=age<SprintLoopDuration?2*age:0;
+    const double x=3*std::sin(angle),y=3*(1-std::cos(angle));
+    const double yaw=origin.rotation.z;
+    origin.position.x+=static_cast<float>(std::cos(yaw)*x-std::sin(yaw)*y);
+    origin.position.y+=static_cast<float>(std::sin(yaw)*x+std::cos(yaw)*y);
+    origin.rotation.z=static_cast<float>(std::remainder(yaw+angle-3.141592653589793/2,2*3.141592653589793));
+    return origin;
+}
 coop::Transform CrouchSidePose(coop::Transform origin,double t) {
     double distance=0;
     if(t>=6&&t<12)distance=(t-6)*.5;
@@ -195,12 +217,13 @@ void Admit(coop::SessionClient& client,coop::Transform origin) {
 int main(int argc,char** argv) {
     try {
         std::string keyPath,session,originText="-818,821.5,24.393097,-3.141592653589793";
-        bool validate=false,directions=false,gaits=false,crouches=false,unarmed=false,sides=false,diagonals=false,jumps=false;
+        bool validate=false,directions=false,gaits=false,crouches=false,unarmed=false,sides=false,diagonals=false,jumps=false,sprint=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--validate-only"){validate=true;continue;}
             if(arg=="--directions"){directions=true;continue;}
             if(arg=="--gaits"){gaits=true;continue;}
+            if(arg=="--sprint-loop"){sprint=true;continue;}
             if(arg=="--crouch-directions"){crouches=true;continue;}
             if(arg=="--unarmed-directions"){unarmed=true;continue;}
             if(arg=="--crouch-sides"){sides=true;continue;}
@@ -215,17 +238,30 @@ int main(int argc,char** argv) {
         }
         if(session.empty()||session.size()>64||session.find_first_of("\r\n\0",0,3)!=std::string::npos)
             throw std::runtime_error("Invalid session name");
-        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)+static_cast<int>(unarmed)+static_cast<int>(sides)+static_cast<int>(diagonals)+static_cast<int>(jumps)>1)
+        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)+static_cast<int>(unarmed)+static_cast<int>(sides)+static_cast<int>(diagonals)+static_cast<int>(jumps)+static_cast<int>(sprint)>1)
             throw std::runtime_error("Choose one fixture trajectory");
         const auto origin=ParseOrigin(originText);
-        const auto& phases=jumps?JumpActionPhases:diagonals?CrouchDiagonalPhases:sides?CrouchSidePhases:unarmed?UnarmedDirectionPhases:crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
+        const auto& phases=sprint?SprintLoopPhases:jumps?JumpActionPhases:diagonals?CrouchDiagonalPhases:sides?CrouchSidePhases:unarmed?UnarmedDirectionPhases:crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
         for(const auto& p:phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
+        if(sprint)for(int i=0;i<=377;++i) {
+            const auto p=SprintLoopPose(origin,6+i/20.0);
+            if(std::abs(p.position.x)>1000000 || std::abs(p.position.y)>1000000)
+                throw std::runtime_error("Sprint loop leaves bounded coordinates");
+        }
         if(validate) {
             std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
             double start=0;for(const auto& p:phases){std::cout<<"PHASE start="<<start<<" until="<<p.until<<" name="<<p.name<<" tick_gap="<<p.gap<<'\n';start=p.until;}
             if(gaits)for(const auto t:{6.0,12.0,18.0,18.5,19.0,24.0,30.0,35.0}) {
                 const auto p=GaitPose(origin,t);
                 std::cout<<"GAIT_POINT t="<<t<<" x="<<p.position.x<<" y="<<p.position.y<<" yaw="<<p.rotation.z<<'\n';
+            }
+            if(sprint) {
+                std::cout<<std::setprecision(12)<<"SPRINT_LOOP duration="<<SprintLoopDuration<<" speed=6 laps=6\n";
+                const auto point=[&](double t) {
+                    const auto p=SprintLoopPose(origin,t);
+                    std::cout<<"SPRINT_LOOP_POINT t="<<t<<" x="<<p.position.x<<" y="<<p.position.y<<" z="<<p.position.z<<" yaw="<<p.rotation.z<<'\n';
+                };
+                point(0);for(int i=0;i<=377;++i)point(6+i/20.0);point(30);point(36);
             }
             if(crouches)for(const auto t:{6.0,12.0,18.0,21.0,24.0,30.0,35.0}) {
                 const auto p=CrouchPose(origin,t);
@@ -269,7 +305,8 @@ int main(int argc,char** argv) {
             }
             if(index!=12) {
                 auto pose=origin;
-                if(jumps&&index<=5)pose=JumpActionPose(origin,t);
+                if(sprint&&index<=5)pose=SprintLoopPose(origin,t);
+                else if(jumps&&index<=5)pose=JumpActionPose(origin,t);
                 else if(diagonals&&index<=5)pose=CrouchDiagonalPose(origin,t);
                 else if(sides&&index<=5)pose=CrouchSidePose(origin,t);
                 else if(crouches&&index<=5)pose=CrouchPose(origin,t);
