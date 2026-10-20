@@ -1,5 +1,6 @@
 -- PRIVATE read-only engine capture. It does not deliver state to another game.
 local clock,due,rows,bytes=0,0,0,0
+local aimAvailable,aimDirection=pcall(require,"aim_direction")
 local visualSignature,visualAttempts,visualCaptured,visualPending=nil,0,false,nil
 local function visuals(player,signature)
     if visualSignature~=signature then visualSignature,visualAttempts,visualCaptured,visualPending=signature,0,false,nil end
@@ -46,6 +47,12 @@ registerForEvent("onUpdate",function(dt)
             template=templateOk and template or nil,
             appearanceDiagnostic=appearanceOk and appearance or nil,
             scope="read-only local source, not synchronized"}
+        if aimAvailable and type(aimDirection)=="table" then
+            local directionOk,direction=pcall(function()
+                return aimDirection.fromVectors(Game.GetCameraSystem():GetActiveCameraForward(),p:GetWorldForward())
+            end)
+            if directionOk then sample.cameraAim=direction end
+        end
         if held then
             local visualOk,observed=pcall(visuals,p,record.."|"..tostring(template).."|"..tostring(appearance))
             if visualOk then sample.visuals=observed end

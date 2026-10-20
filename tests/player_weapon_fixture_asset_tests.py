@@ -12,6 +12,10 @@ for path,parent,appearance in m.MESHES:
         'path':path,'parent':parent,'skin':parent,'slot':'None','enabled':True,
         'mask':'18446744073709551615','appearance':{'pimp':'pimp1','receiver':'pimp1_igla'}.get(appearance,appearance)})
 entity,graph=m.sources(sample);m.validate(entity,graph,sample)
+se,sg=m.sources(sample,'shotgundual');m.validate(se,sg,sample,'shotgundual')
+try:m.validate(se,sg,sample,'rifle')
+except ValueError:pass
+else:raise AssertionError('Weapon entity accepted with mismatched pose cache')
 
 
 def rejects_sample(change):

@@ -6,6 +6,16 @@ root=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('action_fixture',root/'experiments/player-locomotion/build_action_fixture.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 e,g=m.sources();m.validate(e,g)
+se,sg=m.sources('shotgundual');m.validate(se,sg,'shotgundual')
+cache,clips=m.profile_values('shotgundual')
+assert len(cache)==4 and clips[:3]==tuple('cp_coop_shotgundual_'+x for x in ('ovr_idle','ovr_walk','ovr_sprint'))
+assert clips[3:5]==('cp_coop_rifle_aim_ovr_idle','cp_coop_rifle_aim_ovr_walk')
+try:m.validate(se,sg,'rifle')
+except ValueError:pass
+else:raise AssertionError('Mismatched weapon cache/graph profile accepted')
+try:m.sources('unknown')
+except ValueError:pass
+else:raise AssertionError('Unknown pose profile accepted')
 
 
 def find(doc,kind):return next(v for v in m.base.walk(doc) if v.get('$type')==kind)

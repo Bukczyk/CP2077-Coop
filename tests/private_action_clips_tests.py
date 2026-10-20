@@ -33,6 +33,12 @@ for selected,source in zip(prepared['Data']['RootChunk']['animations'],[doc['Dat
     m.animation(normalized)['name'] = copy.deepcopy(m.animation(source)['name'])
     assert normalized == source  # No animation/event/buffer modification hidden by aliasing.
 assert m.alias('rifle','ovr_idle') != m.alias('handgunboth','ovr_idle')
+shotgun=copy.deepcopy(doc)
+shotgun['Data']['RootChunk']['animations']=[entry(n,i) for i,n in enumerate(m.PROFILES['shotgundual'][1])]
+selected=m.prepare(shotgun,'shotgundual')
+assert [m.animation(e)['name']['$value'] for e in selected['Data']['RootChunk']['animations']]==[
+    'cp_coop_shotgundual_'+n for n in m.PROFILES['shotgundual'][1]]
+assert m.buffer_hashes(selected)==m.buffer_hashes(shotgun)
 
 
 def reject(change):

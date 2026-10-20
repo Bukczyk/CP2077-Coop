@@ -1,4 +1,5 @@
 local root=assert(arg[1]);local originalIo=io
+package.path=root..'/experiments/player-locomotion/?.lua;'..package.path
 local checks=0
 local function check(value,message)checks=checks+1;assert(value,message)end
 local function fixture()
@@ -13,6 +14,7 @@ local function fixture()
             write=function(_,line)f.fileSize=f.fileSize+#line;f.writes=f.writes+1;f.outputs[#f.outputs+1]=f.sample end}
     end}
     local player={CP2077Capture_Ready=function()return true end,
+        GetWorldForward=function()return {x=0,y=1,z=0}end,
         CP2077Capture_HeldTemplate=function()return 'base/weapon_root.ent' end,
         CP2077Capture_HeldAppearance=function()return 'variant' end,
         CP2077Capture_Crouched=function()return false end,CP2077Capture_Aiming=function()return true end,
@@ -24,6 +26,7 @@ local function fixture()
                 enabled=true,mask=f.badMask and 1 or '18446744073709551615ULL',localTransform={}}}
         end}
     Game={GetPlayer=function()return player end,CP2077Session_Phase=function()return 4 end,
+        GetCameraSystem=function()if f.failCamera then error('unavailable')end;return {GetActiveCameraForward=function()return {x=0,y=1,z=0}end}end,
         GetSystemRequestsHandler=function()return {IsGamePaused=function()return f.paused end}end,
         CP2077Session_Self=function()return 2 end,CP2077Session_Session=function()return '1ULL' end}
     assert(loadfile(root..'/experiments/player-locomotion/capture_fixture.lua'))()
@@ -34,8 +37,13 @@ do
     local f=fixture();f:tick(3)
     check(f.outputs[1].visuals==nil and f.outputs[2].visuals[1].mask=='18446744073709551615','stable metadata retains the exact opaque native mask')
     check(f.visualCalls==2 and f.writes==3,'two matching observations qualify metadata while essential state continues')
+    check(f.outputs[1].cameraAim.yawDegrees==0 and f.outputs[1].cameraAim.pitchDegrees==0,'read-only camera angles captured without changing core state')
     f.held=false;f:tick();f.held=true;f:tick(2)
     check(f.visualCalls==4,'redraw allows a fresh assembled-weapon observation')
+end
+do
+    local f=fixture();f.failCamera=true;f:tick(3)
+    check(f.writes==3 and f.outputs[1].cameraAim==nil and not f.error,'camera failure cannot stop essential action capture')
 end
 do
     local f=fixture();f.failVisuals=true;f:tick(25)
