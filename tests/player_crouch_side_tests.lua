@@ -30,4 +30,31 @@ local b=route(.5,0,0,1,0,1.4817253351211548)
 L.step(b,pose(.51,0),2);near(b.crouchSideWeight,0);near(b.crouchProgress,0)
 local c=L.new();L.step(c,pose(0,0),0);L.step(c,pose(.1,0),.1)
 near(c.crouchSideWeight,0);near(c.cycles,.1/3.7953503131866455)
+-- Noisy diagonal velocities must not alternate clips. Crossing the boundary
+-- deliberately must select the next axis and settle at the real-clock rate.
+for _,yaw in ipairs({0,math.pi/2})do
+    local state=L.new(true,true);local x,y,t=0,0,0
+    L.step(state,pose(x,y,yaw),t)
+    local expected={0,1,1,2,2,3,3,0}
+    for leg,angle in ipairs({35,55,125,145,215,235,305,325})do
+        for frame=1,90 do
+            local a=(angle+(frame%2==0 and .5 or -.5))*math.pi/180
+            local dx,dy=math.sin(a)/60,math.cos(a)/60
+            x=x+math.cos(yaw)*dx-math.sin(yaw)*dy
+            y=y+math.sin(yaw)*dx+math.cos(yaw)*dy;t=t+1/30
+            local p=pose(x,y,yaw);L.step(state,p,t)
+            near(state.crouchDirection,expected[leg])
+            assert(p.x==x and p.y==y and p.yaw==yaw,'diagonal inference cannot rewrite the network root')
+            assert(state.directionWeight==0,'diagonal crouch cannot expose the standing direction bank')
+            if frame>=3 then
+                local side=expected[leg]==1 or expected[leg]==3
+                near(state.crouchSideWeight,side and 1 or 0)
+                near(state.crouchBackward,expected[leg]==2 and 1 or 0)
+            end
+        end
+    end
+    local held=state.crouchProgress
+    for i=1,6 do t=t+1/30;L.step(state,pose(x,y,yaw),t);near(state.crouchProgress,held)end
+    near(state.phase,0)
+end
 print('Side crouch: four body-relative routes, measured stride, frozen stop/departure, real-clock blend, guards and default isolation passed')

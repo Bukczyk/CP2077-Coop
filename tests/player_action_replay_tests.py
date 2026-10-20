@@ -44,6 +44,26 @@ for t,x in [(6,0),(12,3),(18,3),(21,1.5),(24,0),(30,0),(33,1.5),(35,.5)]:
     assert f'CROUCH_SIDE_POINT t={t} x={x} y=0 yaw=0' in sides.stdout
 for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions'):
     assert run('--validate-only','--crouch-sides',flag).returncode!=0
+diagonals=run('--validate-only','--crouch-diagonals','--origin','0,0,0,0')
+assert diagonals.returncode==0 and 'HELLO' not in diagonals.stdout and diagonals.stdout.count('PHASE ')==15
+for name in ('crouch_diagonal_idle','crouch_diagonal_unarmed_ne','crouch_diagonal_unarmed_se',
+             'crouch_diagonal_armed_sw','crouch_diagonal_aim_nw','crouch_diagonal_aim_stop'):
+    assert 'name='+name+' ' in diagonals.stdout
+import math,re
+def diagonal_points(text):
+    return {float(t):(float(x),float(y),float(yaw)) for t,x,y,yaw in re.findall(
+        r'CROUCH_DIAGONAL_POINT t=(\S+) x=(\S+) y=(\S+) yaw=(\S+)',text)}
+points=diagonal_points(diagonals.stdout)
+rotated=diagonal_points(run('--validate-only','--crouch-diagonals','--origin','0,0,0,1.57079632679').stdout)
+assert len(points)==10 and points[6]==(0,0,0)
+for t in range(9,31,3):
+    dx,dy=points[t][0]-points[t-3][0],points[t][1]-points[t-3][1]
+    assert abs(math.hypot(dx,dy)-1.5)<.0001,'each diagonal leg must retain 0.5 m/s'
+    assert points[t][2]==0,'direction fixture cannot rotate the body'
+    assert abs(rotated[t][0]+points[t][1])<.0001 and abs(rotated[t][1]-points[t][0])<.0001
+assert math.hypot(*points[30][:2])<.0001 and points[30]==points[36],'closed route must stop without teleporting'
+for flag in ('--directions','--gaits','--unarmed-directions','--crouch-directions','--crouch-sides'):
+    assert run('--validate-only','--crouch-diagonals',flag).returncode!=0
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)
