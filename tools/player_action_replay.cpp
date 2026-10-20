@@ -23,14 +23,15 @@ constexpr coop::PresentationValues Ready{S::Standing,W::DrawnSupported,coop::kPr
 constexpr coop::PresentationValues Crouch{S::Crouching,W::DrawnSupported,coop::kPresentationIglaPimp,A::NotAiming};
 constexpr coop::PresentationValues CrouchAim{S::Crouching,W::DrawnSupported,coop::kPresentationIglaPimp,A::Aiming};
 constexpr coop::PresentationValues Aim{S::Standing,W::DrawnSupported,coop::kPresentationIglaPimp,A::Aiming};
-constexpr std::array<Phase,14> Phases{{
+constexpr std::array<Phase,15> Phases{{
     {"holstered",6,Holstered},{"igla_ready",12,Ready},
     {"crouch_ready",18,Crouch},{"crouch_aim",24,CrouchAim},
     {"crouch_walk_aim",30,CrouchAim},{"sprint_ready",36,Ready},
     {"stop_aim",42,Aim},{"action_gap_movement_continues",48,Aim,true},
     {"same_state_repair",54,Aim},{"holster",60,Holstered},
     {"unsupported_overture",66,{S::Standing,W::DrawnUnsupported,0x1c477e6908ULL,A::NotAiming}},
-    {"unavailable",72,{}},{"disconnected",78,{}},{"reconnected_crouch_aim",86,CrouchAim}
+    {"unavailable",72,{}},{"disconnected",78,{}},{"reconnected_crouch_aim",86,CrouchAim},
+    {"crouch_walk_unarmed",92,{S::Crouching,W::Holstered,0,A::NotAiming}}
 }};
 coop::Transform ParseOrigin(std::string value) {
     if(std::count(value.begin(),value.end(),',')!=3)throw std::runtime_error("Origin needs x,y,z,yaw");
@@ -78,7 +79,7 @@ int main(int argc,char** argv) {
         const auto origin=ParseOrigin(originText);
         for(const auto& p:Phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
         if(validate) {
-            std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration=86 protocol="<<coop::kProtocolVersion<<'\n';
+            std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<Phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
             double start=0;for(const auto& p:Phases){std::cout<<"PHASE start="<<start<<" until="<<p.until<<" name="<<p.name<<" tick_gap="<<p.gap<<'\n';start=p.until;}
             return 0;
         }
@@ -94,7 +95,7 @@ int main(int argc,char** argv) {
         const auto started=coop::net::NowMs();std::size_t prior=Phases.size();double nextReport=0;
         while(true) {
             auto now=coop::net::NowMs();double t=static_cast<double>(now-started)/1000.0;
-            if(t>=86)break;
+            if(t>=Phases.back().until)break;
             const auto it=std::find_if(Phases.begin(),Phases.end(),[&](const auto& p){return t<p.until;});
             const auto index=static_cast<std::size_t>(it-Phases.begin());
             const auto& phase=*it;
@@ -109,6 +110,7 @@ int main(int argc,char** argv) {
                 if(index==4)pose.position.x+=static_cast<float>(Triangle(t-24,1));
                 if(index==5)pose.position.x+=static_cast<float>(Triangle(t-30,6));
                 if(index==7)pose.position.x+=static_cast<float>(Triangle(t-42,1));
+                if(index==14)pose.position.x+=static_cast<float>(Triangle(t-86,1));
                 if(!phase.gap) {
                     if(!client.SetLocalPresentation(phase.values))throw std::runtime_error("Fixture state rejected");
                     client.Tick(now);
@@ -129,7 +131,7 @@ int main(int argc,char** argv) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
-        client.Disconnect();std::cout<<"ACTION_FIXTURE_DONE duration=86 synthetic_only=true"<<std::endl;
+        client.Disconnect();std::cout<<"ACTION_FIXTURE_DONE duration="<<Phases.back().until<<" synthetic_only=true"<<std::endl;
         return 0;
     }catch(const std::exception& e){std::cerr<<"ACTION_FIXTURE_ERROR "<<e.what()<<'\n';return 1;}
 }

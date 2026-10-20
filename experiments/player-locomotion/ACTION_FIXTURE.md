@@ -1,5 +1,15 @@
 # Isolated crouch and upper-body pose experiment
 
+Current crouch-walk follow-up:
+[recorded correction and rejected mask experiment](../../docs/validation/CROUCH_WALK_2026-10-20.md).
+`lower_crouch_walk.py` is an optional PRIVATE owned-export recipe. It lowers the
+moving pelvis and solves both legs back to the original foot paths. Generated
+GLB/anims/cache must stay outside Git and all public packages. Import with the
+inspected71-joint rig as Anims, then apply `sanitize_native` to the native JSON
+roundtrip to remove retained events/root extraction without changing pose buffers.
+Use a new output, native roundtrip/inventory/hash checks, stopped-game backups and
+fresh recorded visual qualification. This does not change the public runtime.
+
 This is game-side engine work, not connected player-action synchronization.
 The ordinary optional locomotion renderer remains separate and unchanged.
 No protocol/server/VPS or production configuration is changed by these tools.
