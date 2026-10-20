@@ -50,6 +50,28 @@ constexpr auto GaitPhases=[] {
     phases[5]={"gait_second_stop",36,Ready};
     return phases;
 }();
+constexpr auto CrouchDirectionPhases=[] {
+    auto phases=Phases;
+    const coop::PresentationValues crouchHolstered{S::Crouching,W::Holstered,0,A::NotAiming};
+    phases[0]={"crouch_unarmed_idle",6,crouchHolstered};
+    phases[1]={"crouch_armed_forward",12,Crouch};
+    phases[2]={"crouch_armed_stop",18,Crouch};
+    phases[3]={"crouch_aim_backward",24,CrouchAim};
+    phases[4]={"crouch_unarmed_stop",30,crouchHolstered};
+    phases[5]={"crouch_unarmed_out_and_back",36,crouchHolstered};
+    return phases;
+}();
+coop::Transform CrouchPose(coop::Transform origin,double t) {
+    double distance=0;
+    if(t>=6&&t<12)distance=(t-6)*.5;
+    else if(t>=12&&t<18)distance=3;
+    else if(t>=18&&t<24)distance=3-(t-18)*.5;
+    else if(t>=30&&t<36)distance=(t<33?t-30:36-t)*.5;
+    const auto yaw=static_cast<double>(origin.rotation.z);
+    origin.position.x-=static_cast<float>(std::sin(yaw)*distance);
+    origin.position.y+=static_cast<float>(std::cos(yaw)*distance);
+    return origin;
+}
 coop::Transform GaitPose(coop::Transform origin,double t) {
     double distance=0,heading=0;
     if(t>=6&&t<12)distance=t-6;
@@ -94,12 +116,13 @@ void Admit(coop::SessionClient& client,coop::Transform origin) {
 int main(int argc,char** argv) {
     try {
         std::string keyPath,session,originText="-818,821.5,24.393097,-3.141592653589793";
-        bool validate=false,directions=false,gaits=false;
+        bool validate=false,directions=false,gaits=false,crouches=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--validate-only"){validate=true;continue;}
             if(arg=="--directions"){directions=true;continue;}
             if(arg=="--gaits"){gaits=true;continue;}
+            if(arg=="--crouch-directions"){crouches=true;continue;}
             if(i+1>=argc)throw std::runtime_error("Missing option value");
             const std::string value=argv[++i];
             if(arg=="--key-file")keyPath=value;
@@ -109,9 +132,10 @@ int main(int argc,char** argv) {
         }
         if(session.empty()||session.size()>64||session.find_first_of("\r\n\0",0,3)!=std::string::npos)
             throw std::runtime_error("Invalid session name");
-        if(directions&&gaits)throw std::runtime_error("Choose one fixture trajectory");
+        if(static_cast<int>(directions)+static_cast<int>(gaits)+static_cast<int>(crouches)>1)
+            throw std::runtime_error("Choose one fixture trajectory");
         const auto origin=ParseOrigin(originText);
-        const auto& phases=gaits?GaitPhases:directions?DirectionPhases:Phases;
+        const auto& phases=crouches?CrouchDirectionPhases:gaits?GaitPhases:directions?DirectionPhases:Phases;
         for(const auto& p:phases)if(!coop::ValidatePresentation(p.values))throw std::runtime_error("Invalid fixture state");
         if(validate) {
             std::cout<<"ACTION_FIXTURE_VALID loopback_only=true duration="<<phases.back().until<<" protocol="<<coop::kProtocolVersion<<'\n';
@@ -119,6 +143,10 @@ int main(int argc,char** argv) {
             if(gaits)for(const auto t:{6.0,12.0,18.0,18.5,19.0,24.0,30.0,35.0}) {
                 const auto p=GaitPose(origin,t);
                 std::cout<<"GAIT_POINT t="<<t<<" x="<<p.position.x<<" y="<<p.position.y<<" yaw="<<p.rotation.z<<'\n';
+            }
+            if(crouches)for(const auto t:{6.0,12.0,18.0,21.0,24.0,30.0,35.0}) {
+                const auto p=CrouchPose(origin,t);
+                std::cout<<"CROUCH_POINT t="<<t<<" x="<<p.position.x<<" y="<<p.position.y<<" yaw="<<p.rotation.z<<'\n';
             }
             return 0;
         }
@@ -146,7 +174,8 @@ int main(int argc,char** argv) {
             }
             if(index!=12) {
                 auto pose=origin;
-                if(gaits&&index>=1&&index<=5)pose=GaitPose(origin,t);
+                if(crouches&&index<=5)pose=CrouchPose(origin,t);
+                else if(gaits&&index>=1&&index<=5)pose=GaitPose(origin,t);
                 else if(directions&&index>=2&&index<=5) {
                     double x=0,y=0;
                     if(index==2)y=t-12;

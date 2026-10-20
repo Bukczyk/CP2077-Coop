@@ -265,6 +265,7 @@ function Controller:diagnostics()
             gaitBlendEnabled=m and m.smooth,gaitBlendWeight=m and m.phaseWeight,
             gaitBlendPreviousPhase=m and m.previousPhase,gaitBlendPreviousProgress=m and m.previousProgress,
             gaitBlendPreviousDirection=m and m.phaseDirection,gaitBlendPreviousDirectionWeight=m and m.phaseDirectionWeight,
+            gaitCrouchBackward=m and m.crouchBackward,gaitCrouchProgress=m and m.crouchProgress,
             gaitDirectionEnabled=self.directionalWalk,gaitDirection=m and m.direction,
             gaitPreviousDirection=m and m.previousDirection,gaitDirectionBlend=m and m.directionBlend,
             gaitDirectionWeight=m and m.directionWeight,gaitPreviousProgress=m and m.directionPreviousProgress}

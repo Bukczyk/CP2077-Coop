@@ -35,7 +35,8 @@ def profile_values(weapon_profile,directional_walk=False):
     # shoulder-aim clips for the iron-sight Igla while comparing shotgun ready.
     profiles=('stealth','rifle','handgunboth') if weapon_profile=='rifle' else ('stealth','shotgundual','rifle','handgunboth')
     cache=tuple(r'base\cp2077coop\private\player_'+name+'.anims' for name in profiles)
-    if directional_walk:cache += (r'base\cp2077coop\private\player_directional.anims',)
+    if directional_walk:cache += (r'base\cp2077coop\private\player_directional.anims',
+                                  r'base\cp2077coop\private\player_crouch_backward.anims')
     clips=tuple('cp_coop_'+weapon_profile+'_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint'))+tuple(
         'cp_coop_rifle_'+clip for clip in ('aim_ovr_idle','aim_ovr_walk'))+tuple(
         'cp_coop_handgunboth_'+clip for clip in ('ovr_idle','ovr_walk','ovr_sprint','aim_ovr_idle','aim_ovr_walk'))
@@ -98,6 +99,8 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
         direction_weight=variable('cp_coop_walk_direction_weight',1)
         gait_direction=variable('cp_coop_loco_previous_direction',3)
         gait_direction_weight=variable('cp_coop_loco_previous_direction_weight',1)
+        crouch_progress=variable('cp_coop_crouch_progress',1)
+        crouch_backward=variable('cp_coop_crouch_backward',1)
     progress=next({'HandleRefId':k} for k,v in definitions.items()
         if v.get('$type')=='animAnimNode_FloatVariable' and v['variableName']==base.cname('cp_coop_loco_progress'))
     def clip(name,sampled=False,reader=None):
@@ -129,7 +132,10 @@ def sources(weapon_profile='rifle',aim_fixture=False,directional_walk=False):
         previous_clips[1]=blend(previous_clips[1],
             switch([clip(n,True,gait_progress) for n in names],gait_direction),gait_direction_weight)
     standing=blend(standing,switch(previous_clips,previous_phase),gait_weight)
-    crouch=blend(clip('cp_coop_stealth_idle_low_unarmed'),clip('cp_coop_stealth_walk_0',True),moving)
+    crouch_walk=clip('cp_coop_stealth_walk_0',True,crouch_progress if directional_walk else progress)
+    if directional_walk:
+        crouch_walk=blend(crouch_walk,clip('cp_coop_crouch_backward_walk_180',True,crouch_progress),crouch_backward)
+    crouch=blend(clip('cp_coop_stealth_idle_low_unarmed'),crouch_walk,moving)
     lower=blend(standing,crouch,stance)
     def weapon_clips(reader):
         return [clip(name,'walk' in name or 'sprint' in name,reader) for name in upper_clips]
@@ -212,7 +218,8 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
         ('cp_coop_loco_previous_phase',5),('cp_coop_loco_previous_progress',1),('cp_coop_loco_blend_weight',1)]
     if directional_walk:expected += [('cp_coop_walk_direction',3),('cp_coop_walk_previous_direction',3),
         ('cp_coop_walk_direction_blend',1),('cp_coop_walk_previous_progress',1),('cp_coop_walk_direction_weight',1),
-        ('cp_coop_loco_previous_direction',3),('cp_coop_loco_previous_direction_weight',1)]
+        ('cp_coop_loco_previous_direction',3),('cp_coop_loco_previous_direction_weight',1),
+        ('cp_coop_crouch_progress',1),('cp_coop_crouch_backward',1)]
     if aim_fixture:expected += [('cp_coop_aim_pitch',40),('cp_coop_aim_yaw',45)]
     if [(data(v)['name']['$value'],data(v)['max']) for v in variables]!=expected:
         raise ValueError('Wrong action variables')
@@ -267,8 +274,21 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
     selector(departing,'cp_coop_loco_previous_phase',len(base.CLIPS))
     previous=data(upper['firstInputNode']['node']);current=data(upper['secondInputNode']['node'])
     selector(previous,'cp_coop_weapon_previous_pose',len(upper_clips));selector(current,'cp_coop_weapon_pose',len(upper_clips))
-    if [data(crouch[k]['node'])['animation']['$value'] for k in ('firstInputNode','secondInputNode')]!=['cp_coop_stealth_idle_low_unarmed','cp_coop_stealth_walk_0']:
+    if data(crouch['firstInputNode']['node'])['animation']['$value']!='cp_coop_stealth_idle_low_unarmed':
         raise ValueError('Wrong crouch animation names')
+    crouch_walk=data(crouch['secondInputNode']['node'])
+    crouch_clips=[crouch_walk]
+    names=['cp_coop_stealth_walk_0']
+    if directional_walk:
+        blend(crouch_walk,'cp_coop_crouch_backward')
+        crouch_clips=[data(crouch_walk[k]['node']) for k in ('firstInputNode','secondInputNode')]
+        names+=['cp_coop_crouch_backward_walk_180']
+    if [v['animation']['$value'] for v in crouch_clips]!=names:raise ValueError('Wrong crouch walking clips')
+    for node in crouch_clips:
+        if (node['$type']!='animAnimNode_SkFrameAnim' or node['isLooped']
+            or data(node['progressLink']['node'])['variableName']!=base.cname('cp_coop_crouch_progress' if directional_walk else 'cp_coop_loco_progress')
+            or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
+            raise ValueError('Crouch gait must use held distance samples')
     standing_clips=list(standing['inputNodes'])
     departing_clips=list(departing['inputNodes'])
     if directional_walk:
@@ -318,7 +338,7 @@ def validate(entity,graph,weapon_profile='rifle',aim_fixture=False,directional_w
                 raise ValueError('Wrong weapon gait progress')
             if sampled and (node['isLooped'] or any(node[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('timeLink','frameLink'))):
                 raise ValueError('Weapon gait must not use engine-time playback')
-    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(7 if directional_walk else 4):
+    if len([v for v in definitions.values() if v.get('$type')=='animAnimNode_Blend2'])!=(8 if directional_walk else 4):
         raise ValueError('Wrong real-time blend layer count')
     nodes={k for k,v in definitions.items() if v.get('$type','').startswith('animAnimNode_')}
     init=[v.get('HandleId',v.get('HandleRefId')) for v in gr['nodesToInit']]

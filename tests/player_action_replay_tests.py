@@ -22,6 +22,14 @@ for name in ['gait_walk_forward','gait_walk_stop','gait_sprint_then_stop','gait_
 for t,y in [(6,0),(12,6),(18,6),(18.5,3),(19,0),(24,0),(30,6),(35,6)]:
     assert f'GAIT_POINT t={t} x=0 y={y} ' in gaits.stdout
 assert run('--validate-only','--gaits','--directions').returncode!=0
+crouches=run('--validate-only','--crouch-directions','--origin','0,0,0,0')
+assert crouches.returncode==0 and 'HELLO' not in crouches.stdout and crouches.stdout.count('PHASE ')==15
+for name in ['crouch_unarmed_idle','crouch_armed_forward','crouch_armed_stop','crouch_aim_backward','crouch_unarmed_stop','crouch_unarmed_out_and_back']:
+    assert 'name='+name+' ' in crouches.stdout
+for t,y in [(6,0),(12,3),(18,3),(21,1.5),(24,0),(30,0),(35,.5)]:
+    assert f'CROUCH_POINT t={t} x=0 y={y} yaw=0' in crouches.stdout
+for flag in ('--directions','--gaits'):
+    assert run('--validate-only','--crouch-directions',flag).returncode!=0
 for origin in ('nan,1,2,3','0,inf,2,3','0,1,2,1001','1000001,1,2,0','0,1,2,0,5','0,1,2','0,1,2,0trailing'):
     bad=run('--validate-only','--origin',origin)
     assert bad.returncode!=0 and 'HELLO' not in bad.stdout,(origin,bad.stdout)

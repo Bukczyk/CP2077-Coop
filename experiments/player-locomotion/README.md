@@ -61,9 +61,11 @@ additional qualification. The projection has no collision, damage or PvP role.
 The private action renderer additionally supports the default-off
 `experimentalPlayerDirectionalWalk` candidate. It requires matching action AND
 weapon assets built with `--directional-walk`, the separate uniquely aliased
-private direction cache, and experimental presentation. Fresh standing supported
-Igla walking selects four directions relative to unchanged body yaw. Crouch,
-unarmed, unsupported and stale state retain the original walk path. Direction
+private standing-direction and backward-crouch caches, and experimental presentation. Fresh standing supported
+Igla walking selects four directions relative to unchanged body yaw. Standing unarmed, unsupported and stale state retain the original walk path.
+Fresh crouch additionally selects the separately qualified backward clip and
+measured stealth stride, holding its last sample through stop fades. Sideways
+crouch retains the original forward fallback and is not qualified. Direction
 retargeting blends over80 real milliseconds with hysteresis; short zero-motion
 samples retain the existing50ms walk hold and freeze progress. Real stops still
 select idle promptly. This is cosmetic inference, with no protocol/server or

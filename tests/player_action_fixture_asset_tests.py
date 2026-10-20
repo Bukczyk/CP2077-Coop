@@ -29,6 +29,16 @@ for profile in ['rifle','shotgundual']:
         try:m.validate(de,bad,profile,aim,True)
         except ValueError:pass
         else:raise AssertionError('Non-aliased wrong directional clip accepted')
+        bad=copy.deepcopy(dg)
+        definitions={v['HandleId']:v['Data'] for v in m.base.walk(bad) if 'HandleId' in v}
+        back=next(v for v in definitions.values() if v.get('$type')=='animAnimNode_SkFrameAnim'
+            and v['animation']['$value']=='cp_coop_crouch_backward_walk_180')
+        live=next(k for k,v in definitions.items() if v.get('$type')=='animAnimNode_FloatVariable'
+            and v['variableName']==m.base.cname('cp_coop_loco_progress'))
+        back['progressLink']['node']={'HandleRefId':live}
+        try:m.validate(de,bad,profile,aim,True)
+        except ValueError:pass
+        else:raise AssertionError('Backward crouch may not reset feet to ordinary idle progress')
 
 
 def find(doc,kind):return next(v for v in m.base.walk(doc) if v.get('$type')==kind)
