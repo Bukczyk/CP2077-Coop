@@ -103,7 +103,7 @@ rigs and the separate private action cache remain references.
 The private `weapon_fixture.reds` hook checks the exact fixture template and
 every named part before submitting visibility changes on the game thread.
 It does not equip inventory, create a WeaponObject or run firing/AI/damage.
-The fixture request accepts only `poses` or `igla`, never an arbitrary resource.
+The fixture request accepts only `poses`, `igla` or `igla-aim`, never an arbitrary resource.
 The Igla sequence exercises hidden/ready/aim/crouched/walking/hidden transitions
 and exact actor cleanup. The ready/aim clips are a rifle-pose mount experiment;
 native serialization and submission do not prove correct shotgun grip.
@@ -116,3 +116,25 @@ python experiments/player-locomotion/record_action_fixture.py --game-root '<JOIN
 ```
 
 This remains an engine fixture, not a player-action transport or a release.
+
+## Isolated upper-body aim
+
+`build_action_fixture.py --aim-fixture --weapon-profile shotgundual` adds two
+bounded model-space `Spine2` rotations after the weapon overlay. Pitch uses X
+within +/-40 degrees and yaw uses Z within +/-45. Both default to zero, clamp,
+and use nonincremental rotation. Pelvis, feet and entity transforms are outside
+this rotation layer. This is an explicit opt-in; the ordinary graph has no aim
+rotation nodes. The weapon entity is unchanged and references the same graph.
+
+With the matched private graph installed in stopped games, the recorder accepts
+`--model igla-aim`. It tests ten five-second standing/crouched, single/combined
+angle phases and exact removal. Recordings show both signs of both axes moving
+the hands and passive weapon. This does not qualify camera-to-sight calibration,
+all torso deformation, aim delivery or actual player-input synchronization.
+
+The read-only source diagnostic now uses the player's own FPP camera component:
+`Matrix.GetDirectionVector(player:GetFPPCameraComponent():GetLocalToWorld())`.
+Actual2.31 calls and matrix RTTI were verified in game. Invalid matrices or an
+absent component return no angle, with no active-scene-camera fallback. Current
+view eligibility in vehicles, menus, scenes and photo mode remains unqualified.
+The helper never changes cameras, actors, inventory or network state.

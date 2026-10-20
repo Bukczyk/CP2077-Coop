@@ -15,6 +15,10 @@ local function fixture()
     end}
     local player={CP2077Capture_Ready=function()return true end,
         GetWorldForward=function()return {x=0,y=1,z=0}end,
+        GetFPPCameraComponent=function()
+            if f.failCamera then error('unavailable')end
+            return {GetLocalToWorld=function()return {}end}
+        end,
         CP2077Capture_HeldTemplate=function()return 'base/weapon_root.ent' end,
         CP2077Capture_HeldAppearance=function()return 'variant' end,
         CP2077Capture_Crouched=function()return false end,CP2077Capture_Aiming=function()return true end,
@@ -26,9 +30,10 @@ local function fixture()
                 enabled=true,mask=f.badMask and 1 or '18446744073709551615ULL',localTransform={}}}
         end}
     Game={GetPlayer=function()return player end,CP2077Session_Phase=function()return 4 end,
-        GetCameraSystem=function()if f.failCamera then error('unavailable')end;return {GetActiveCameraForward=function()return {x=0,y=1,z=0}end}end,
+        GetCameraSystem=function()error('active camera fallback must not be read')end,
         GetSystemRequestsHandler=function()return {IsGamePaused=function()return f.paused end}end,
         CP2077Session_Self=function()return 2 end,CP2077Session_Session=function()return '1ULL' end}
+    Matrix={IsOk=function()return true end,GetDirectionVector=function()return {x=0,y=1,z=0}end}
     assert(loadfile(root..'/experiments/player-locomotion/capture_fixture.lua'))()
     function f:tick(n)for _=1,n or 1 do events.onUpdate(.25)end end
     return f

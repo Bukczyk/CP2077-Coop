@@ -41,7 +41,7 @@ def profile_values(weapon_profile):
     return cache,clips
 
 
-def sources(weapon_profile='rifle'):
+def sources(weapon_profile='rifle',aim_fixture=False):
     cache,upper_clips=profile_values(weapon_profile)
     entity,graph=base.sources('full')
     base.validate(entity,graph,'full')
@@ -73,9 +73,9 @@ def sources(weapon_profile='rifle'):
         return {'HandleRefId':handle['HandleId']} if is_node else handle
     def link(h,kind='animPoseLink'):return {'$type':kind,'node':h}
     variables=data(gr['variables'])
-    def variable(name,maximum):
+    def variable(name,maximum,minimum=0):
         value=copy.deepcopy(proto['animAnimVariableFloat'])
-        value['name']=base.cname(name);value.update(min=0,max=maximum,default=0,value=0)
+        value['name']=base.cname(name);value.update(min=minimum,max=maximum,default=0,value=0)
         variables['floatVariables'].append(add(value,False))
         reader=copy.deepcopy(proto['animAnimNode_FloatVariable']);reader['variableName']=base.cname(name)
         return add(reader)
@@ -116,7 +116,21 @@ def sources(weapon_profile='rifle'):
                  for name in UPPER_BONES],
         'blendAllTracks':0,'blendTrackMode':'AGBT_Interpolate','tracks':[],
         'getDeltaMotionFromOverride':0,'timeWarpingEnabled':0,'syncMethod':None,'blendMethod':None,'postProcess':None}
-    output['node']=link(add(override))
+    result=link(add(override))
+    if aim_fixture:
+        # Private engine qualification only. No production capture/wire consumer.
+        # Model-space spine rotations carry hands and their passive weapon child,
+        # without rotating the pelvis, feet or entity/world transform.
+        for name,axis,limit in (('pitch','X_Axis',40),('yaw','Z_Axis',45)):
+            reader=variable('cp_coop_aim_'+name,limit,-limit)
+            result=link(add({'$type':'animAnimNode_RotateBone','id':4294967295,
+                'inputNode':result,'angleNode':link(reader,'animFloatLink'),
+                'minValueNode':{'$type':'animFloatLink','node':None},
+                'maxValueNode':{'$type':'animFloatLink','node':None},
+                'bone':{'$type':'animTransformIndex','name':base.cname('Spine2')},
+                'axis':axis,'scale':1,'biasAngle':0,'minAngle':-limit,'maxAngle':limit,
+                'clampRotation':1,'useIncrementalMode':0,'resetOnActivation':1,'inModelSpace':1}))
+    output['node']=result
     root['nodes'] += new_nodes
     gr['nodesToInit'] += [{'HandleRefId':h['HandleId']} for h in new_nodes]
     # WolvenKit's JSON reader resolves references as it reads, so definitions
@@ -140,7 +154,7 @@ def inline_first_use(doc):
     return visit(doc)
 
 
-def validate(entity,graph,weapon_profile='rifle'):
+def validate(entity,graph,weapon_profile='rifle',aim_fixture=False):
     cache,upper_clips=profile_values(weapon_profile)
     er=entity['Data']['RootChunk'];gr=graph['Data']['RootChunk']
     # Reuse the base profile's binding/LOD/no-AI checks without weakening them.
@@ -170,10 +184,14 @@ def validate(entity,graph,weapon_profile='rifle'):
     expected=[('cp_coop_loco_phase',5),('cp_coop_loco_progress',1),('cp_coop_stance',1),
         ('cp_coop_crouch_motion',1),('cp_coop_weapon_pose',len(upper_clips)-1),('cp_coop_weapon_weight',1),
         ('cp_coop_weapon_previous_pose',len(upper_clips)-1),('cp_coop_weapon_blend',1),('cp_coop_weapon_previous_progress',1)]
+    if aim_fixture:expected += [('cp_coop_aim_pitch',40),('cp_coop_aim_yaw',45)]
     if [(data(v)['name']['$value'],data(v)['max']) for v in variables]!=expected:
         raise ValueError('Wrong action variables')
-    if any(data(v)[k]!=0 for v in variables for k in ('min','default','value')):
+    if any(data(v)[k]!=0 for v in variables for k in ('default','value')):
         raise ValueError('Non-neutral action defaults')
+    for v in variables:
+        value=data(v);minimum={'cp_coop_aim_pitch':-40,'cp_coop_aim_yaw':-45}.get(value['name']['$value'],0)
+        if value['min']!=minimum:raise ValueError('Wrong action variable bounds')
     for value in definitions.values():
         if value.get('$type') in ('animAnimNode_SkAnim','animAnimNode_SkFrameAnim'):
             if any(value[k] for k in ('applyMotion','collectEvents','fireAnimLoopEvent','resume')):
@@ -181,7 +199,21 @@ def validate(entity,graph,weapon_profile='rifle'):
     overrides=[v for v in definitions.values() if v.get('$type')=='animAnimNode_BlendOverride']
     if len(overrides)!=1:raise ValueError('One upper-body overlay required')
     overlay=overrides[0]
-    if data(output['node']['node']) is not overlay:raise ValueError('Upper-body layer disconnected')
+    terminal=data(output['node']['node'])
+    rotations=[v for v in definitions.values() if v.get('$type')=='animAnimNode_RotateBone']
+    if len(rotations)!=(2 if aim_fixture else 0):raise ValueError('Unexpected aim rotation layer')
+    if aim_fixture:
+        for name,axis,limit in (('yaw','Z_Axis',45),('pitch','X_Axis',40)):
+            value=terminal
+            if (value['$type']!='animAnimNode_RotateBone' or value['bone']['name']!=base.cname('Spine2')
+                or value['axis']!=axis or value['scale']!=1 or value['biasAngle']!=0
+                or value['minAngle']!=-limit or value['maxAngle']!=limit or not value['clampRotation']
+                or value['useIncrementalMode'] or not value['resetOnActivation'] or not value['inModelSpace']
+                or data(value['angleNode']['node'])['variableName']!=base.cname('cp_coop_aim_'+name)
+                or any(value[k]['node'] not in (None,{'HandleRefId':'-1'}) for k in ('minValueNode','maxValueNode'))):
+                raise ValueError('Unsafe aim rotation')
+            terminal=data(value['inputNode']['node'])
+    if terminal is not overlay:raise ValueError('Upper-body layer disconnected')
     if (overlay['getDeltaMotionFromOverride'] or overlay['blendAllTracks']
         or [v['transformIndex']['name']['$value'] for v in overlay['bones']]!=list(UPPER_BONES)
         or any(v['weight']!=1 for v in overlay['bones'])):raise ValueError('Unsafe upper-body mask')
@@ -229,11 +261,11 @@ def validate(entity,graph,weapon_profile='rifle'):
         raise ValueError('Gameplay graph command execution forbidden')
 
 
-def build(wolvenkit,output,weapon_profile='rifle'):
+def build(wolvenkit,output,weapon_profile='rifle',aim_fixture=False):
     if output.exists():raise ValueError('Choose a new output folder')
     if hashlib.sha256(wolvenkit.read_bytes()).hexdigest()!='7ae9c308da2fe003220b55ce4ca9c122b51f0701a67db1618cca3ff4f7ff6738':
         raise ValueError('Pinned WolvenKit required')
-    entity,graph=sources(weapon_profile);validate(entity,graph,weapon_profile)
+    entity,graph=sources(weapon_profile,aim_fixture);validate(entity,graph,weapon_profile,aim_fixture)
     output.mkdir(parents=True);stage=output/'CP2077Coop_ActionFixture';records={};logs=[]
     def run(*args):
         result=subprocess.run([str(wolvenkit),*map(str,args)],capture_output=True,text=True,encoding='utf-8',errors='replace')
@@ -248,7 +280,7 @@ def build(wolvenkit,output,weapon_profile='rifle'):
         records[path]=hashlib.sha256(dest.read_bytes()).hexdigest()
         run('convert','serialize',dest,'-o',roundtrip)
     validate(json.loads((roundtrip/'player_actions_fixture.ent.json').read_text()),
-             json.loads((roundtrip/'player_actions_fixture.animgraph.json').read_text()),weapon_profile)
+             json.loads((roundtrip/'player_actions_fixture.animgraph.json').read_text()),weapon_profile,aim_fixture)
     packed=output/'out';packed.mkdir();run('pack',stage,'-o',packed)
     archive=packed/(stage.name+'.archive')
     if sorted(run('archive',archive,'--list').strip().splitlines())!=sorted((ENTITY,GRAPH)):
@@ -260,6 +292,7 @@ def build(wolvenkit,output,weapon_profile='rifle'):
         'archive':str(archive),'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),
         'resources':records,'required_private_cache':list(profile_values(weapon_profile)[0]),'bundled_vanilla_resources':[],
         'weapon_pose_profile':weapon_profile,
+        'isolated_aim_fixture':aim_fixture,
         'builder_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'visual_validation':'pending'}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8');print(json.dumps(manifest))
@@ -270,4 +303,5 @@ if __name__=='__main__':
     parser.add_argument('--wolvenkit',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--weapon-profile',choices=('rifle','shotgundual'),default='rifle')
-    args=parser.parse_args();build(args.wolvenkit,args.output,args.weapon_profile)
+    parser.add_argument('--aim-fixture',action='store_true',help='PRIVATE isolated upper-body aim qualification only')
+    args=parser.parse_args();build(args.wolvenkit,args.output,args.weapon_profile,args.aim_fixture)

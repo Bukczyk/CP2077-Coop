@@ -49,7 +49,7 @@ registerForEvent("onUpdate",function(dt)
             scope="read-only local source, not synchronized"}
         if aimAvailable and type(aimDirection)=="table" then
             local directionOk,direction=pcall(function()
-                return aimDirection.fromVectors(Game.GetCameraSystem():GetActiveCameraForward(),p:GetWorldForward())
+                return aimDirection.fromPlayer(p)
             end)
             if directionOk then sample.cameraAim=direction end
         end

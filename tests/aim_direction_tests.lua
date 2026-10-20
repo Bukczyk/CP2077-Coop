@@ -18,4 +18,21 @@ assert(M.fromVectors(nil,vector(0))==nil)
 assert(M.fromVectors(vector(0),nil)==nil)
 local scaled=vector(30,20);scaled.x,scaled.y,scaled.z=scaled.x*.9,scaled.y*.9,scaled.z*.9
 local result=assert(M.fromVectors(scaled,vector(0)));near(result.yawDegrees,30);near(result.pitchDegrees,20)
+do
+    local f={ok=true,camera=vector(30,20)}
+    Matrix={IsOk=function()return f.ok end,GetDirectionVector=function()return f.camera end}
+    Game={GetCameraSystem=function()error('unrelated scene camera must never be read')end}
+    local player={GetWorldForward=function()return vector(10)end,
+        GetFPPCameraComponent=function()
+            if f.throw then error('camera unavailable')end
+            if f.missing then return nil end
+            return {GetLocalToWorld=function()return {}end}
+        end}
+    local angles=assert(M.fromPlayer(player));near(angles.yawDegrees,20);near(angles.pitchDegrees,20)
+    assert(angles.source=='player_fpp_component')
+    f.ok=false;assert(M.fromPlayer(player)==nil);f.ok=nil;assert(M.fromPlayer(player)==nil);f.ok=true
+    f.camera=vector(0,90);assert(M.fromPlayer(player)==nil)
+    f.camera=vector(30,20);f.missing=true;assert(M.fromPlayer(player)==nil);f.missing=false
+    f.throw=true;assert(M.fromPlayer(player)==nil);assert(M.fromPlayer(nil)==nil)
+end
 print('Aim direction: axes, pitch, wraparound, normalization and unavailable/nonfinite rejection passed')

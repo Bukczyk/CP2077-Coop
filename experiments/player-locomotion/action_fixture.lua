@@ -23,6 +23,18 @@ local weaponPhases={
     {name="igla_crouch_aim",stance=1,weight=1,pose=3},
     {name="igla_crouch_walk",stance=1,weight=1,pose=0,moving=true},
     {name="igla_holstered_return",stance=0,weight=0,pose=0}}
+local aimPhases={
+    {name="aim_neutral",stance=0,weight=1,pose=3},
+    {name="aim_up",stance=0,weight=1,pose=3,pitch=25},
+    {name="aim_down",stance=0,weight=1,pose=3,pitch=-25},
+    {name="aim_left",stance=0,weight=1,pose=3,yaw=30},
+    {name="aim_right",stance=0,weight=1,pose=3,yaw=-30},
+    {name="aim_up_left",stance=0,weight=1,pose=3,pitch=25,yaw=30},
+    {name="aim_down_right",stance=0,weight=1,pose=3,pitch=-25,yaw=-30},
+    {name="aim_crouch_up",stance=1,weight=1,pose=3,pitch=25},
+    {name="aim_crouch_down",stance=1,weight=1,pose=3,pitch=-25},
+    {name="aim_neutral_return",stance=0,weight=1,pose=3}}
+local function weaponModel(model)return model=="igla" or model=="igla-aim" end
 local function key(v)return tostring(v):gsub("[uUlL]+$","") end
 local function read()
     local f=io.open("action-request.json","r");if not f then return end
@@ -82,11 +94,11 @@ registerForEvent("onUpdate",function(dt)
         if key(actor:GetEntityID().hash)~=key(active.id.hash) then error("fixture identity changed") end
         active.actor,active.seenReady=actor,true;active.started=active.started or clock
         local elapsed=clock-active.started;local index=math.floor(elapsed/5)+1
-        local sequence=active.model=="igla" and weaponPhases or phases
+        local sequence=active.model=="igla-aim" and aimPhases or active.model=="igla" and weaponPhases or phases
         if index>#sequence then active.finishing=true;report("poses_submitted","visual review required");cleanup();return end
         local phase=sequence[index]
         if active.phase~=index then
-            if active.model=="igla" then
+            if weaponModel(active.model) then
                 local ok,submitted=pcall(function()return actor:CP2077Fixture_SetWeaponVisible(phase.weight==1) end)
                 if not ok or submitted~=true then
                     active.finishing=true;report("failed","exact fixture visibility submission rejected");cleanup();return
@@ -102,18 +114,21 @@ registerForEvent("onUpdate",function(dt)
         input(actor,"cp_coop_weapon_weight",phase.weight);input(actor,"cp_coop_weapon_pose",phase.pose)
         input(actor,"cp_coop_weapon_previous_pose",phase.pose);input(actor,"cp_coop_weapon_blend",1)
         input(actor,"cp_coop_weapon_previous_progress",0)
+        if active.model=="igla-aim" then
+            input(actor,"cp_coop_aim_pitch",phase.pitch or 0);input(actor,"cp_coop_aim_yaw",phase.yaw or 0)
+        end
         input(actor,"cp_coop_loco_phase",0);input(actor,"cp_coop_loco_progress",(elapsed*0.6)%1)
         return
     end
     if clock>=1800 or count>=3 or clock<due then return end
     due=clock+0.2;local r=read();if not r or seen[r.request] then return end
     seen[r.request]=true;count=count+1
-    if r.model~=nil and r.model~="poses" and r.model~="igla" then spdlog.info("[ActionFixture] rejected model");return end
+    if r.model~=nil and r.model~="poses" and not weaponModel(r.model) then spdlog.info("[ActionFixture] rejected model");return end
     if not context(r) then spdlog.info("[ActionFixture] rejected context");return end
     local system=Game.GetStaticEntitySystem();if not system or system:IsReady()~=true then return end
     active={version=r.version,mode=r.mode,request=r.request,session=r.session,system=system,admitted=clock,model=r.model or "poses"}
     local spec=StaticEntitySpec.new()
-    spec.templatePath=ResRef.FromName(active.model=="igla" and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
+    spec.templatePath=ResRef.FromName(weaponModel(active.model) and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
         or "base\\cp2077coop\\entities\\player_actions_fixture.ent")
     spec.position=Vector4.new(-813,821.5,24.4042,1);spec.orientation=Quaternion.new(0,0,1,0)
     spec.attached=true;spec.tags={CName.new("CP2077Coop.PrivateActionFixture"),CName.new(r.request)}

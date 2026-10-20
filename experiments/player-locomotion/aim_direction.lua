@@ -1,5 +1,5 @@
 -- PRIVATE read-only aim investigation. No wire fields or actor operations.
--- Camera direction is not proof that the active camera belongs to the player.
+-- A player-owned camera direction is not proof that it is the current view.
 local M={}
 local atan2=math.atan2 or function(y,x)return math.atan(y,x)end -- CET LuaJIT / test Lua5.4
 local function finite(v)return type(v)=="number" and v==v and math.abs(v)<math.huge end
@@ -19,5 +19,22 @@ function M.fromVectors(camera,body)
     local pitch=math.asin(math.max(-1,math.min(1,cz)))*180/math.pi
     return {yawDegrees=yaw,pitchDegrees=pitch,cameraX=cx,cameraY=cy,cameraZ=cz,
         bodyX=bx,bodyY=by,scope="read-only camera/body angles; camera ownership not qualified"}
+end
+function M.fromPlayer(player)
+    -- Verified in the actual2.31 runtime. Never fall back to an unrelated active
+    -- scene camera when the player's own component is absent or invalid.
+    local ok,result=pcall(function()
+        local camera=player:GetFPPCameraComponent()
+        if not camera then return end
+        local matrix=camera:GetLocalToWorld()
+        if Matrix.IsOk(matrix)~=true then return end
+        local angles=M.fromVectors(Matrix.GetDirectionVector(matrix),player:GetWorldForward())
+        if angles then
+            angles.source="player_fpp_component"
+            angles.scope="read-only player-owned FPP direction; current-view eligibility not qualified"
+        end
+        return angles
+    end)
+    return ok and result or nil
 end
 return M

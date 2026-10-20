@@ -30,7 +30,7 @@ local function fixture(stale)
         end}
     local system={IsReady=function()return f.ready end,
         SpawnEntity=function(_,spec)
-            check(spec.templatePath==(f.request.model=="igla" and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
+            check(spec.templatePath==((f.request.model=="igla" or f.request.model=="igla-aim") and "base\\cp2077coop\\entities\\player_weapon_igla_fixture.ent"
                 or "base\\cp2077coop\\entities\\player_actions_fixture.ent"),"fixed fixture only")
             f.spawns=f.spawns+1;f.managed=true;f.spawning=true;return {hash="100ULL"}
         end,GetEntity=function()return f.spawned and actor or nil end,
@@ -76,6 +76,22 @@ do
         "weapon visibility follows holster/ready/holster sequence")
     check(#f.visibility==8 and f.receipt.model=="igla" and f.receipt.status=="removed",
         "one submission per phase and exact cleanup")
+end
+do
+    local f=fixture();f:arm();f.request.model="igla-aim";f:tick();f:attach();f:tick(1050)
+    local pitchLow,pitchHigh,yawLow,yawHigh=false,false,false,false
+    for _,event in ipairs(f.inputs)do
+        if event.key=="cp_coop_aim_pitch" then
+            check(event.value>=-40 and event.value<=40,"pitch remains within graph limits")
+            pitchLow=pitchLow or event.value<0;pitchHigh=pitchHigh or event.value>0
+        elseif event.key=="cp_coop_aim_yaw" then
+            check(event.value>=-45 and event.value<=45,"yaw remains within graph limits")
+            yawLow=yawLow or event.value<0;yawHigh=yawHigh or event.value>0
+        end
+    end
+    check(pitchLow and pitchHigh and yawLow and yawHigh,"both axes exercised in both directions")
+    check(#f.visibility==10 and f.spawns==1 and f.despawns==1 and f.receipt.status=="removed",
+        "bounded isolated aim fixture keeps exact cleanup")
 end
 do
     local f=fixture();f:arm();f.request.model="igla";f:tick();f:attach();f.visibilityAccepted=false;f:tick()

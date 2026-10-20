@@ -20,7 +20,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--game-root',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
-    parser.add_argument('--model',choices=('poses','igla'),default='poses')
+    parser.add_argument('--model',choices=('poses','igla','igla-aim'),default='poses')
     args=parser.parse_args()
     if args.output.exists():parser.error('Choose a new private output folder')
     mods=args.game_root/'bin/x64/plugins/cyber_engine_tweaks/mods'
@@ -41,7 +41,7 @@ def main():
         'capture_hooks':args.game_root/'r6/scripts/CP2077ActionCapture/player_capture.reds',
         'authored_archive':args.game_root/'archive/pc/mod/CP2077Coop_ActionFixture.archive',
         'private_cache':args.game_root/'archive/pc/mod/PRIVATE_DO_NOT_DISTRIBUTE_ActionClips.archive'}
-    if args.model=='igla':
+    if args.model in ('igla','igla-aim'):
         files['weapon_archive']=args.game_root/'archive/pc/mod/CP2077Coop_WeaponFixture.archive'
         files['weapon_hook']=args.game_root/'r6/scripts/CP2077ActionCapture/weapon_fixture.reds'
     hashes={name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in files.items()}
@@ -80,6 +80,7 @@ def main():
                 time.sleep(.05)
             else:raise RuntimeError('No observer submission receipt')
             nonce=str(uuid.uuid4());result['request']=nonce
+            result['request_submitted_utc']=datetime.now(timezone.utc).isoformat()
             request(fixture,'action-request.json',{'version':1,'mode':'action-fixture','session':session,'request':nonce,'model':args.model})
             until=time.monotonic()+57
             while time.monotonic()<until:
@@ -88,6 +89,8 @@ def main():
                     if receipt.get('request')==nonce:
                         if result.get('last_fixture_receipt')!=receipt and len(result['phase_receipts'])<16:
                             result['phase_receipts'].append(receipt)
+                            result.setdefault('phase_observations',[]).append({
+                                'observed_utc':datetime.now(timezone.utc).isoformat(),'receipt':receipt})
                         result['last_fixture_receipt']=receipt
                         if receipt['status']=='removed':break
                         if receipt['status']=='failed':raise RuntimeError('Fixture engine operation failed')
