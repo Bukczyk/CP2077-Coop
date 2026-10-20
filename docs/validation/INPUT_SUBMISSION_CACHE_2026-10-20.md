@@ -61,6 +61,20 @@ all tools remain unchanged. These sampled frames show no sustained T-pose in
 visible actors. The gait route's sprint lasts about one second, so this evidence
 does not qualify sustained sprinting. That needs a longer separate replay.
 
+The later six-lap route qualifies a separate18.85-second synthetic sprint; see
+`SUSTAINED_SPRINT_2026-10-20.md`. The M14 `connected-input-cache-jump01`
+regression also completes92 seconds with117-second videos in both games.
+There are409/411 complete matching rows, no faults, root error<=0.000004 m and
+distinct actors after rejoin (HOST10844840/10844873, JOINER10844694/10844736).
+The late-crouch flight/landing windows contain14 matching samples in each view;
+none reaches a fully weighted crouch. Two HOST boundary samples retain a
+decaying crouch weight, while12 HOST and all14 JOINER samples are neutral.
+All24 original selected frames per view were inspected. The known wide unarmed
+flight pose remains; it is not a newly cleared animation-quality requirement.
+Maximum replay frame gaps are68.3/67.4 ms, with unchanged runner/replay/recorder
+hashes. This is synthetic input rendered in two real games, not a keyboard or
+WAN jump qualification.
+
 Private original videos, PTS, diagnostic rows and before/after modules are kept
 under `20261020-crouch-mask`. Controls, configuration, graphics and current saves
 are preserved. Stable v0.0.37/latest is untouched. KyleBuildsAI owns the lower

@@ -50,6 +50,17 @@ The log is not a wire codec or proof that arbitrary locomotion states are
 classified correctly. Unsupported entity/weapon/state handling needs production
 capture policy before connection.
 
+The optional source-pose diagnostic adds the actual root position, body yaw and
+native locomotion enum to that same game-thread callback, beside crouch, aim and
+camera angles. Exact local EntityID and SessionEntityId remain separate strings;
+session generation and epoch are rechecked after readback. A missing getter,
+non-finite value, lossy numeric ID or changing scope marks only this optional
+context unavailable. It cannot stop the essential action log. The bounded local
+observation ordinal and update clock are not packet sequence/capture timestamps,
+and these reads are not an atomic engine/network snapshot. `Default` does not
+prove ground contact. See the
+[source-pose validation](../../docs/validation/SOURCE_POSE_DIAGNOSTICS_2026-10-20.md).
+
 The optional `weapon-probe/components/held_components.reds` now records bounded
 rig/static/skinned component metadata for the exact attached weapon. Its source
 capture waits for two matching resource observations and preserves native chunk
