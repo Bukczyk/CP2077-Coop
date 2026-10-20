@@ -42,6 +42,10 @@ currently requires Active, so the synthetic replay cannot preseed stance before
 admission. Do not silently change that networking contract or assume the same
 initialization behavior is proven for actual game clients.
 
+The subsequent [actual crouched reconnect](ACTUAL_CROUCHED_RECONNECT_2026-10-20.md)
+shows a real JOINER replacement already crouched in the reviewed first visible
+frames. Keep the synthetic and actual-client results separate.
+
 Earlier `connected-warmup01` is retained as diagnostic evidence; runner edits
 near its completion leave load-time source provenance unconfirmed. It is
 superseded by02. Older duration-qualified recordings still support their reviewed
