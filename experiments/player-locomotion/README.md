@@ -46,6 +46,18 @@ in the matched private test installs. Keep `experimentalNpcReplication=false`.
 Record exact installed hashes and the live `loadedPresentationVersion`; hashes
 of files changed after game launch do not prove those scripts were loaded.
 
+For the private action replay, prepare both observers and explicitly start fresh
+diagnostics first. `tools/run_player_action_capture.py` then starts both window
+recorders together, waits for both first frames and admits the92s action replay.
+Its `--mode` selects `actions`, `gaits`, `directions` or `crouch-directions`.
+Supply `--replay`, the distinct `--host-root`/`--joiner-root`, `--session`, private
+`--key-file` and a new private `--output` folder. It neither launches games nor
+positions cameras. Require `recording_complete=true` and inspect both videos;
+`visual_pass=false` deliberately remains until a separate review. It copies only
+bounded diagnostic logs, never private session configuration or credential bytes.
+Do not publish the private output. See
+[timing and recording limits](../../docs/validation/ACTION_ROOT_TIMING_2026-10-20.md).
+
 Use the loopback production `SessionClient` replay and record the actual game
 window. Review jump frames, walking/sprint/reversals, stop-to-idle, facing and a
 second join after disconnect. A successful native call or green unit test is

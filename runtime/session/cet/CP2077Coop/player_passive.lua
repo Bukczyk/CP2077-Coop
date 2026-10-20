@@ -262,6 +262,7 @@ function Controller:diagnostics()
             lifecycle=entry.retiring and "retiring" or "static",
             x=t and t.x,y=t and t.y,z=t and t.z,yaw=t and t.yaw,
             speed=m and m.speed, gait=m and m.phase, commandAge=0, commands=0,snaps=0,
+            presentationTime=m and m.previous and m.previous.time,
             gaitBlendEnabled=m and m.smooth,gaitBlendWeight=m and m.phaseWeight,
             gaitBlendPreviousPhase=m and m.previousPhase,gaitBlendPreviousProgress=m and m.previousProgress,
             gaitBlendPreviousDirection=m and m.phaseDirection,gaitBlendPreviousDirectionWeight=m and m.phaseDirectionWeight,

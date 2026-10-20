@@ -87,6 +87,16 @@ motor-cached observations and can be stale while paused or faulted. This is not
 a measurement of network ping. Logs sample at most 16 remote actors per frame;
 that diagnostic limit is not a supported-player claim.
 
+For a separate, explicitly started local timing investigation, the current
+diagnostic source accepts `GetMod("CP2077MovementDiagnostics").startCapture("timing-1",30)`
+in the existing CET console. Omit the second argument to keep5Hz. Only5 or30Hz
+are accepted; neither mode catches up after a pause. The same8MiB/9000-frame,
+16-player sampling and16 explicit-capture limits apply. Higher rate reaches the
+byte cap sooner, and actual samples remain limited by CET update cadence.
+`presentationTime` is the cosmetic renderer's local update clock, not a shared
+network timestamp or measured latency. Collect the bounded logs promptly. This
+does not update an older published package or qualify animation by itself.
+
 Pass only after both PCs visibly show walking/stopping/turning, no repeated
 snapping or frozen actor, no latched motor/bridge fault, and no duplicate or
 leftover actors after reconnect. Report actual position-error distribution and

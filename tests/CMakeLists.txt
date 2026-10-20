@@ -61,6 +61,8 @@ foreach(suite passive_model_fixture passive_model_engine passive_model_entrypoin
 endforeach()
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+    add_test(NAME player_action_video_capture COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/player_action_capture_tests.py")
+    set_tests_properties(player_action_video_capture PROPERTIES TIMEOUT 15)
     add_test(NAME player_presentation_native COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/player_presentation_native_tests.py")
     set_tests_properties(player_presentation_native PROPERTIES TIMEOUT 10)
     add_test(NAME player_locomotion_asset COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/player_locomotion_asset_tests.py")

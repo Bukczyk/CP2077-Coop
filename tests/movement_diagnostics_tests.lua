@@ -39,6 +39,18 @@ assert(#cap==17 and cap[1]:find("remotes=30",1,true))
 assert(cap[2]:find("x=invalid",1,true) and cap[2]:find("actor=na",1,true))
 capped.frames=9000; capped:step(1,capture)
 assert(capped.stopped and cap[#cap]:find("frame_limit",1,true))
+-- Timing captures resolve short transitions without changing gameplay or the
+-- normal5Hz default, bypassing limits, or catching up after slow frames.
+local timingCalls=0
+local timing=R.new(function()end,nil,30)
+local function timingCapture()timingCalls=timingCalls+1;return {players={}}end
+for i=1,60 do timing:step(1/60,timingCapture)end
+assert(timingCalls>=24 and timingCalls<=31,"bounded30Hz sampling")
+local beforeTiming=timingCalls;timing:step(10,timingCapture)
+assert(timingCalls==beforeTiming+1,"no catch-up burst at high rate")
+for _,rate in ipairs({0,-1,29,60,math.huge,0/0,"30"})do
+    assert(not pcall(R.new,function()end,nil,rate),"invalid rate rejected")
+end
 -- Execute actual CET wrapper: module load/pre-init do not read engine state.
 local events, reads={},0
 registerForEvent=function(name,fn) events[name]=fn end
@@ -86,6 +98,11 @@ events.onUpdate(1)
 assert(lines[#lines]:find("focusDilation=na",1,true) and not lines[#lines]:find("ERROR",1,true))
 local before=api.captureStatus()
 assert(before.frames > 0 and before.captures == 0)
+assert(before.rateHz==5)
+for _,rate in ipairs({0,1,20,60,0/0,math.huge,"30"})do
+    assert(not api.startCapture("timing-invalid",rate))
+end
+assert(api.captureStatus().captures==0 and api.captureStatus().frames==before.frames)
 for _,label in ipairs({"", "bad label", "injected\nline", string.rep("x",49)}) do
     assert(not api.startCapture(label))
 end
@@ -97,7 +114,10 @@ assert(reads==readsBefore and api.captureStatus().frames==0)
 assert(lines[#lines]:find("CAPTURE label=flat-off-1 ordinal=1",1,true))
 events.onUpdate(1)
 assert(reads==readsBefore+1 and api.captureStatus().frames==1)
-for i=2,16 do assert(api.startCapture("capture-"..i)) end
+assert(api.startCapture("timing-30",30) and api.captureStatus().rateHz==30)
+local readTiming=reads
+events.onUpdate(.01);events.onUpdate(.01);assert(reads==readTiming+1)
+for i=3,16 do assert(api.startCapture("capture-"..i)) end
 assert(not api.startCapture("over-limit") and api.captureStatus().captures==16)
 spdlog=nil
 print=report

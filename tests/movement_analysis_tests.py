@@ -114,6 +114,24 @@ class Analysis(unittest.TestCase):
         self.assertEqual(r['parse_warnings']['unsupported_schema'], 1)
         self.assertEqual(r['parse_warnings']['rows_after_stop'], 1)
 
+    def test_explicit_capture_restarts_after_stop_without_cross_capture_motion(self):
+        cap='[CP2077Movement] CAPTURE label=timing-1 ordinal=1 rate_hz=30 max_bytes=8388608 max_frames=9000\n'
+        r=report(frame(1,.2),player(1,.2),'[CP2077Movement] STOP reason=byte_limit\n',
+                 cap,frame(1,10),player(1,10,x=100,actualX=100))
+        self.assertEqual([x['frames'] for x in r['runs']],[1,1])
+        self.assertEqual(r['runs'][1]['capture_label'],'timing-1')
+        self.assertEqual(r['runs'][1]['requested_rate_hz'],30)
+        self.assertEqual(r['runs'][1]['players'][0]['target_sample_step_m']['samples'],0)
+        self.assertNotIn('rows_after_stop',r['parse_warnings'])
+        # A current explicit header can also be the first retained rotated log.
+        rotated=a.analyze((cap+frame(1,10)+player(1,10)).splitlines())
+        self.assertEqual(rotated['runs'][0]['frames'],1)
+        for bad in (cap.replace('rate_hz=30','rate_hz=300'),cap.replace('ordinal=1','ordinal=17'),
+                    cap.replace('label=timing-1','label=bad/label')):
+            rejected=report(bad,frame(1,.2),player(1,.2))
+            self.assertEqual(len(rejected['runs']),1)
+            self.assertEqual(rejected['parse_warnings']['malformed_capture'],1)
+
     def test_malformed_and_out_of_order_rows(self):
         r = report(frame(1, .2), player(1, .2), frame(1, .1), player(1, .1),
                    '[CP2077Movement] t=1 frame=3 player=2 t=2\n',

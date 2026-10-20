@@ -18,7 +18,7 @@ COUNTERS = ('commands', 'snaps', 'observedSnaps', 'turns')
 LIMITATIONS = [
     'Local sampled readback, not a visual smoothness or multiplayer PASS verdict.',
     'Recorder time is local to each run; it cannot measure RTT or align two PCs.',
-    '5 Hz sampling can miss short corrections, animation faults and orphan actors.',
+    'Bounded sampling, normally5Hz or explicitly requested30Hz, can miss short transitions and orphan actors.',
     'Counters report increases within one actor lifetime; initial totals are excluded.',
     'Cached motor error/speed are not used as fresh position measurements.',
 ]
@@ -91,6 +91,26 @@ def analyze(lines):
         if text.startswith('BUILD '):
             pending_build = text[6:][:256]
             continue
+        if text.startswith('CAPTURE '):
+            # An explicit restart is a new bounded recording, even after STOP
+            # or when preceding START bytes have rotated out of the retained log.
+            try:
+                metadata=fields_from(text)
+                rate=integer(metadata.get('rate_hz','5'))
+                ordinal=integer(metadata.get('ordinal'))
+                label=metadata.get('label','')
+                if rate not in (5,30) or ordinal is None or not 1<=ordinal<=16 or not re.fullmatch(r'[\w-]{1,48}',label,flags=re.ASCII):
+                    raise ValueError('invalid capture header')
+            except ValueError:
+                warnings['malformed_capture']+=1
+                continue
+            flush()
+            build=pending_build if pending_build is not None else run['build'] if run else None
+            run={'build':build,'schema':'1','capture_label':label,'requested_rate_hz':rate,
+                 'frames':[],'errors':0,'stop_reason':None}
+            pending_build=None
+            runs.append(run)
+            continue
         if text.startswith('START '):
             flush()
             try:
@@ -98,7 +118,8 @@ def analyze(lines):
             except ValueError:
                 metadata = {}
             run = {'build': pending_build, 'schema': metadata.get('schema'),
-                   'frames': [], 'errors': 0, 'stop_reason': None}
+                   'frames': [], 'errors': 0, 'stop_reason': None,
+                   'capture_label': None, 'requested_rate_hz': integer(metadata.get('rate_hz'))}
             pending_build = None
             runs.append(run)
             if run['schema'] != '1':
@@ -256,6 +277,7 @@ def summarize_run(run):
                              ('actual_steps', 'actual_sample_step_m'), ('target_steps', 'target_sample_step_m')):
             p[dest] = distribution(p.pop(source))
     return {'build': run['build'], 'schema': run['schema'], 'frames': len(run['frames']),
+        'capture_label': run['capture_label'], 'requested_rate_hz': run['requested_rate_hz'],
         'capture_errors': run['errors'], 'stop_reason': run['stop_reason'],
         'context_segments': [dict(zip(('session', 'generation', 'self', 'host'), c)) for c in contexts],
         'paused_frames': paused, 'not_ready_frames': not_ready, 'gaps': gaps,
